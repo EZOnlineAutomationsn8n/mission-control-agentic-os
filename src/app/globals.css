@@ -1,26 +1,113 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #05070a;
+  --foreground: #d9e3ea;
+  --panel: #0b0f14;
+  --panel-2: #10151c;
+  --border: #1c2530;
+  --border-strong: #29394a;
+  --accent: #35e0c2;
+  --accent-dim: #1c6b5c;
+  --warn: #f2b84b;
+  --danger: #f2554b;
+  --ok: #35e0c2;
+  --muted: #6b7a8a;
+  --neon-cyan: #35e0c2;
+  --neon-magenta: #ff4fd8;
+  --neon-purple: #8b5cf6;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-border: var(--border);
+  --color-accent: var(--accent);
+  --color-warn: var(--warn);
+  --color-danger: var(--danger);
+  --color-ok: var(--ok);
+  --color-muted: var(--muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: var(--border);
+}
+
+html,
+body {
+  overflow-x: hidden;
+  max-width: 100vw;
 }
 
 body {
-  background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+  background:
+    radial-gradient(ellipse 1200px 600px at 20% -10%, rgba(139, 92, 246, 0.10), transparent 60%),
+    radial-gradient(ellipse 900px 500px at 100% 0%, rgba(53, 224, 194, 0.08), transparent 55%),
+    radial-gradient(ellipse 1000px 700px at 50% 120%, rgba(255, 79, 216, 0.05), transparent 60%),
+    var(--background);
+  background-attachment: fixed;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.mono {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+/* Premium cockpit terminal styling — stronger border + faint inner sheen,
+   readable and calm by default. Glow classes below are applied only while
+   a panel's system is actively running, so idle panels stay quiet. */
+.cockpit-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 45%),
+    var(--panel);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.cockpit-glow-cyan {
+  border-color: rgba(53, 224, 194, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(53, 224, 194, 0.28),
+    0 0 32px rgba(53, 224, 194, 0.14),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.cockpit-glow-magenta {
+  border-color: rgba(255, 79, 216, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(255, 79, 216, 0.28),
+    0 0 32px rgba(255, 79, 216, 0.14),
+    0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+.cockpit-glow-purple {
+  border-color: rgba(139, 92, 246, 0.55);
+  box-shadow:
+    0 0 0 1px rgba(139, 92, 246, 0.28),
+    0 0 32px rgba(139, 92, 246, 0.14),
+    0 10px 30px rgba(0, 0, 0, 0.35);
 }

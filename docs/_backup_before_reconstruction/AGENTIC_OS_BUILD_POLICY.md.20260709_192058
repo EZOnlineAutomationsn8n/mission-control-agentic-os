@@ -1,0 +1,36 @@
+# Agentic OS Build Policy
+
+## STATUS_ONLY_CONNECTOR_PROFILE_V1
+
+This profile applies throughout the complete Agentic OS build unless the user explicitly overrides it.
+
+For every connector integration pass:
+
+- Work only inside /opt/vrn/mission-control/builds/agentic-os-v1 unless explicitly overridden.
+- Do not restart services.
+- Do not start dormant tools.
+- Do not attach to tmux, agent sessions, terminals, or old sessions.
+- Do not send prompts, commands, jobs, or tasks to target systems.
+- Do not wake old sessions.
+- Do not enable heartbeat loops.
+- Do not read secret values.
+- Do not read .env values.
+- Do not read auth files.
+- Do not expose API keys.
+- Do not enable command execution.
+- Do not redesign the cockpit layout.
+- Status-only means: read health/status/state metadata only, sanitize output, expose it through a server-side reader + API route + adapter wrapper.
+- Use the existing live-status UI machinery created for Hermes, FCC/OwlAlpha, and OpenClaw.
+- If a source is unsafe or ambiguous, skip it and report why.
+
+## Current connector sequence
+
+1. Hermes — live status-only
+2. FCC / OwlAlpha — live status-only
+3. OpenClaw — live status-only
+4. Obsidian Graphlink — next
+5. Paperclip / n8n / AGY / Browser Agents — later, status-only first
+
+## Explicit override required
+
+Command execution, service mutation, tmux attach, session wake-up, secret reading, or layout redesign may only happen after explicit user approval.

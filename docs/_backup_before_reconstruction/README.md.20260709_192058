@@ -1,0 +1,124 @@
+# Mission Control — Agentic OS (v1)
+
+An operating-system-style command center for supervising, controlling, connecting, inspecting, routing, and preserving multiple AI agent systems from one interface. Codename **Mission Control**. Owner context: VRN / PortMontage.
+
+This is a shell. Every AI system is a registered **connector** with a live, openable, controllable control room. Nothing here talks to a real service yet — every connector is a typed mock adapter that simulates latency, streaming output, and state changes — but the architecture is built so real adapters attach later without a UI rewrite.
+
+Connector work must follow [AGENTIC_OS_BUILD_POLICY.md](./AGENTIC_OS_BUILD_POLICY.md).
+
+## Running it
+
+```bash
+npm install
+npm run dev
+```
+
+Open http://localhost:3000. `npm run build` produces a clean production build (no TypeScript errors).
+
+## Mental model
+
+- The **sidebar is the System Registry**, not navigation chrome. It renders directly from `ConnectorRegistry` — every entry is a real connector, openable at `/systems/[id]`.
+- **UI never talks to a tool directly.** Every screen calls methods on the `AgentSystemAdapter` interface (`src/lib/connectors/types.ts`). Today that interface is backed by a mock transport; tomorrow it's a real CLI/API/MCP bridge. No component contains agent-specific logic.
+- **Obsidian (the Shared Brain) is a first-class system**, not a note widget. Every other connector has a `memoryWriteObligation` and routes its report/approval writes through the Obsidian adapter.
+- **`AGENT_SESSION_INDEX.md`** is a single, append-only, human-readable global session registry. Agents can only append to it — an overwrite attempt is converted into an `ApprovalRequest` instead of executing (see `vaultEngine.createSessionRegistryEntry` in `src/lib/connectors/mock/obsidian-instance.ts`). If a system has no direct write path, the Shared Brain page can generate a copy/paste-ready block for the operator instead.
+
+## File structure
+
+```
+src/
+  app/                          Next.js App Router routes
+    page.tsx                    Operator Home
+    systems/[id]/page.tsx       Generic Agent Control Room (async params per Next 16)
+    queue/                      Work Queue
+    approvals/                  Approvals Center
+    evidence/                   Evidence / Logs
+    projects/                   Project Layer (PortMontage)
+    brain/                      Shared Brain (Obsidian)
+    registry/                   System Registry settings table
+
+  components/
+    shell/                       Sidebar (System Registry) + TopBar
+    control-room/ControlRoom.tsx One component renders ALL eight systems
+    brain/  queue/  approvals/  evidence/  projects/  registry/
+
+  lib/
+    connectors/
+      types.ts                  Core contracts: ConnectorDescriptor, AgentSystemAdapter,
+                                 AgentSystemState, ApprovalRequest, ObsidianAdapter, etc.
+      registry.ts                ConnectorRegistry — single source of truth for the fleet
+      mock/
+        shared.ts                createMockAdapter() — the generic mock transport factory
+        obsidian-instance.ts     vaultEngine — the actual in-memory vault + session index
+        obsidian.ts              Full ObsidianAdapter (createMockAdapter + vaultEngine)
+        claude-fcc.ts  hermes.ts  openclaw.ts  paperclip.ts
+        n8n.ts  agy.ts  browser-agents.ts
+    queue-store.ts               In-memory Work Queue store (assign/route/state)
+    ui-helpers.ts                Status/risk/run-state color + time formatting helpers
+
+  mocks/
+    vault-notes.ts                Seed Obsidian vault content
+    session-index.ts              Seed AGENT_SESSION_INDEX.md entries
+    work-queue.ts                 Seed Work Queue items
+    portmontage.ts                PortMontage project data (countries/sectors/companies/leads)
+    future-connectors.ts          26 pending connector placeholders (see below)
+```
+
+## Active vs. future connectors
+
+The System Registry holds two kinds of entries, merged by `src/lib/connectors/directory.ts`:
+
+- **8 active connectors** — real `AgentSystemAdapter` implementations in `src/lib/connectors/mock/`. Openable at `/systems/[id]`, with a live control room, streaming output, approvals, and reports.
+- **26 future/pending connectors** — plain `FutureConnectorDescriptor` records in `src/mocks/future-connectors.ts`. No adapter, no mock transport, no control room. They exist to prove the registry scales, not to simulate a live agent. Clicking one (in the Sidebar or `/registry`) opens a details panel showing its category, planned connection modes, and planned capabilities — it never opens `/systems/[id]` or any control-room UI.
+- **34 connectors visible in total**, grouped into the 13 required categories (AI Agents, Orchestrators, Automation, Browser Agents, Knowledge / Memory, Project Management, Communication, Code / Dev Tools, Databases, File Systems, APIs / Webhooks, Governance / Proof, Monitoring / Logs) — 2 future connectors per category, plus the 8 actives layered on top of 5 of those categories.
+
+Both the Sidebar and `/registry` render from `getConnectorDirectory()` / `groupByCategory()` in `directory.ts` — neither component branches on a specific connector id, active or future. Both include a search box (`name`, `category`, `capability` substring match) and category grouping/filtering.
+
+Promoting a future connector to active requires:
+1. One adapter file implementing `AgentSystemAdapter` (any file in `mock/` is a template)
+2. One line added to `src/lib/connectors/registry.ts`
+3. Optionally, one seed mock data file
+4. Then delete its entry from `future-connectors.ts`
+
+Zero UI redesign — the Sidebar, `/registry`, Operator Home, Approvals, Evidence, and Work Queue all already render from the same adapter/summary interfaces.
+```
+
+## How to attach a real adapter
+
+Every mock adapter file contains a marked block:
+
+```ts
+// ─── REAL ADAPTER ATTACHMENT POINT ─────────────────────────────
+// Replace createMockAdapter's internal MockTransport with ...
+```
+
+To connect a real system, replace the body of that file's `createMockAdapter(...)` call with a class/object implementing `AgentSystemAdapter` (or `ObsidianAdapter` for the Brain), then register it in `src/lib/connectors/registry.ts`. Nothing in `app/` or `components/` needs to change — they only ever call the adapter interface.
+
+Per-system attachment targets (also listed as disabled fields on each row in `/registry`):
+
+| Connector | File | Real transport |
+|---|---|---|
+| Claude / FCC | `mock/claude-fcc.ts` | CLI bridge (spawn `claude`, stream stdout) or Claude API |
+| Hermes | `mock/hermes.ts` | Hermes REST API or CLI/gateway |
+| OpenClaw | `mock/openclaw.ts` | OpenClaw CLI, gateway, or API |
+| Paperclip | `mock/paperclip.ts` | Paperclip API, CLI, or direct database adapter |
+| n8n | `mock/n8n.ts` | n8n REST API (workflows/executions) or inbound webhooks |
+| AGY | `mock/agy.ts` | AGY orchestrator API |
+| Obsidian (Shared Brain) | `mock/obsidian-instance.ts` | Local filesystem vault, Obsidian Local REST API plugin, Obsidian MCP server, or CLI/file-watcher fallback |
+| Browser Agents | `mock/browser-agents.ts` | CDP/Playwright or a claude-in-chrome-style bridge |
+
+Adding a **new** agent system requires zero UI changes: write one adapter module (`createMockAdapter({...})` to start, or a real transport directly) plus its seed data, then add one line to `registry.ts`.
+
+## Verification checklist (self-verified against the running app)
+
+- [x] Operator-first: every screen supports commanding (send command, start/pause/resume/stop, approve/reject, route tasks), not just viewing.
+- [x] Every sidebar entry opens a real control room backed by a live adapter.
+- [x] `ControlRoom.tsx` is the single component rendering all eight systems — proven by `/systems/[id]` routing purely off `systemId`.
+- [x] Shared Brain module implements all of §4: vault overview, latest notes, project folders, proof notes, governance records, session registry, handovers, backlink placeholder, save-to-vault, search.
+- [x] `AGENT_SESSION_INDEX.md` is viewable, append-only (`vaultEngine.createSessionRegistryEntry`), searchable by agent/topic/number, with a copy/paste fallback generator.
+- [x] Approvals flow (`/approvals` and inline per control room) writes to `Governance/approvals-log.md` on every decision.
+- [x] Work Queue (`/queue`) supports assigning and routing tasks between agents; routing updates history and reassigns the owning agent.
+- [x] Mock adapters are fully isolated behind `AgentSystemAdapter`; each has a marked real-adapter attachment point.
+- [x] 8 active adapters exist; 26 future/pending connector placeholders exist in `src/mocks/future-connectors.ts`; the System Registry and Sidebar visibly show **34 connectors total**, grouped into all 13 required categories with search/filter.
+- [x] Future connectors are placeholders only — `FutureConnectorDescriptor`, not `AgentSystemAdapter` — with no control room, no start/stop/approve behavior; clicking one opens a details panel (Sidebar) or an inline registry detail row (`/registry`), never `/systems/[id]`.
+- [x] Adding a real connector later requires exactly: 1 adapter file + 1 registry.ts line + optional mock data file + zero UI redesign (Sidebar and `/registry` both render from `getConnectorDirectory()`, with no per-connector branching).
+- [x] `npm run build` passes with zero TypeScript errors; `npx tsc --noEmit` clean; `npx eslint src --max-warnings=0` clean; `npm run dev` serves all nine routes with 200s and real content (verified via `curl`), including the "8 active · 26 pending · 34 total" count rendered in both the Sidebar and `/registry`.

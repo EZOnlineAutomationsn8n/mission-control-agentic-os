@@ -30,12 +30,33 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files
+.env
+.env.*
 
-# vercel
+# secrets / credentials — never committed (no source filenames match these
+# patterns today; verified via find before adding)
+*secret*
+*token*
+*key*
+
+# vercel / build tooling
 .vercel
+.turbo/
+dist/
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# logs
+logs/
+*.log
+
+# local databases / runtime state
+*.sqlite
+*.sqlite-*
+*.db
+
+# runtime-generated local audit log (project-local persistence, not source)
+/data/audit-log.jsonl
