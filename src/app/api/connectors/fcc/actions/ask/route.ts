@@ -18,7 +18,7 @@ export async function POST(request: Request) {
         status: "failed",
         text: null,
         error: "invalid JSON body",
-        transportModelAlias: "claude-3-5-sonnet-20241022",
+        transportModelAlias: "open_router/openrouter/owl-alpha",
         actualRuntimeModel: null,
         attempts: [],
         timestamp,

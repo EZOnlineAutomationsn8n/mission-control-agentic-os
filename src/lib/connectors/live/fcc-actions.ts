@@ -49,16 +49,24 @@ const MAX_PROMPT_LENGTH = 4000;
 //   2/3. direct "open_router/<vendor>/<model>" routes from this host's own
 //      GET /v1/models catalog, bypassing the (currently broken) default.
 const FALLBACK_MODEL_ROUTES: readonly string[] = [
-  "claude-3-5-sonnet-20241022",
-  "open_router/anthropic/claude-haiku-4.5",
-  "open_router/anthropic/claude-fable-5",
+  // FREE-only routes verified from live FCC /v1/models.
+  "open_router/openrouter/owl-alpha",
+  "open_router/qwen/qwen3-coder:free",
+  "open_router/poolside/laguna-m.1:free",
+  "open_router/cohere/north-mini-code:free",
+  "open_router/qwen/qwen3-next-80b-a3b-instruct:free",
+  "open_router/openai/gpt-oss-120b:free",
+  "open_router/nvidia/nemotron-3-ultra-550b-a55b:free",
+  "open_router/google/gemma-4-31b-it:free",
+  "open_router/openai/gpt-oss-20b:free",
+  "open_router/openrouter/free",
 ];
 
 // Observed upstream/provider failure text FCC streams back as ordinary
 // text_delta content (it does not use a distinct SSE error event type for
 // this). Matching this lets us classify the action outcome correctly
 // instead of reporting a provider-side failure as a successful answer.
-const UPSTREAM_PROVIDER_ERROR_PATTERN = /provider api request failed/i;
+const UPSTREAM_PROVIDER_ERROR_PATTERN = /provider api request failed|provider rate limit reached|rate limit reached|rate limited|quota exceeded|temporarily unavailable/i;
 
 function preflightFailure(error: string): FccAskResult {
   return {
