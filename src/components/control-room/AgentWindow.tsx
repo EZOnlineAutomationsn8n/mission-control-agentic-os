@@ -8,21 +8,18 @@ import type { AgentSystemState, OutputEvent } from "@/lib/connectors/types";
 import { runStateColor, statusColor, dotGlowStyle, type PanelAccent } from "@/lib/ui-helpers";
 import { ControlledActionPanel } from "./ControlledActionPanel";
 
-// Large, readable "cockpit window" — the same component renders every
-// system in every focus set (Core 4, Infrastructure 4). It only talks to
-// the AgentSystemAdapter interface, exactly like ControlRoom.tsx (the full
-// page); this is the condensed preview form of the identical contract, not
-// a second, agent-specific UI.
+// Cockpit pane — the same component renders every system. It only talks to
+// the AgentSystemAdapter interface; no per-agent branching.
 //
-// Operator-honesty contract for the footer:
-//   - a system with a real controlledAction renders the REAL send form
-//     (ControlledActionPanel) right here in the cockpit — input → Send →
-//     visible output, no navigation required
-//   - a system that cannot accept commands shows an ACTION REQUIRED panel
-//     with the exact blocker reasons its adapter reports — never a
-//     disabled fake Send button
-//   - only a genuinely mock (not wired) system keeps the mock command
-//     form, labeled as such
+// Operator-honesty contract:
+//   - a system with a real controlledAction renders the REAL send form as
+//     its PRIMARY content (input → Send → output/history directly in the
+//     pane); live status detail is secondary, behind a collapsible section
+//   - a system that cannot accept commands shows its live status detail
+//     plus an ACTION REQUIRED panel with the exact blocker reasons its
+//     adapter reports — never a disabled fake Send button
+//   - a genuinely unwired system says NOT WIRED, with no fake form
+//   - seeded demo data still visible (pending approvals) is labeled DEMO
 
 const MAX_STREAM_EVENTS = 30;
 
@@ -43,7 +40,7 @@ export function AgentWindow({ systemId, accent = "cyan" }: { systemId: string; a
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional initial fetch-on-mount for a live mock adapter poll
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional initial fetch-on-mount for a live adapter poll
     refresh();
     const t = setInterval(refresh, 8000);
     const unsub = adapter?.subscribeOutput((e) => {
@@ -84,118 +81,115 @@ export function AgentWindow({ systemId, accent = "cyan" }: { systemId: string; a
   }
   const label = paneLabel();
 
+  const statusDetailBlock = state?.statusDetail ? (
+    <div className="mono text-xs space-y-1 bg-panel-2 rounded p-2.5">
+      {Object.entries(state.statusDetail).map(([key, value]) => (
+        <div key={key} className="flex gap-2 min-w-0">
+          <span className="text-muted shrink-0">{key}:</span>
+          <span className="break-words min-w-0 text-foreground/90">{value}</span>
+        </div>
+      ))}
+    </div>
+  ) : null;
+
   return (
     <div
-      className={`cockpit-panel rounded-xl flex flex-col min-w-0 h-[calc(100vh-13rem)] min-h-[26rem] max-h-[46rem] overflow-hidden transition-shadow ${
+      className={`cockpit-panel rounded-xl flex flex-col min-w-0 h-[26rem] overflow-hidden transition-shadow ${
         isRunning ? ACCENT_CLASS[accent] : ""
       }`}
     >
-      <header className="flex items-center justify-between gap-2 px-4 py-3 border-b border-border bg-panel-2/60 min-w-0">
+      <header className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-panel-2/60 min-w-0 shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           <span className="status-dot shrink-0" style={dotGlowStyle(statusColor(liveStatus))} />
           <span className="font-semibold text-sm truncate">{d.name}</span>
+          <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono shrink-0 ${label.cls}`}>
+            {label.text}
+          </span>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {state && state.pendingApprovals.length > 0 && (
+            <span className="text-[10px] rounded bg-warn/15 text-warn px-1.5 py-0.5 mono" title="seeded demo approval — not a real request yet">
+              {state.pendingApprovals.length} DEMO approval{state.pendingApprovals.length === 1 ? "" : "s"}
+            </span>
+          )}
           {state && (
             <span
-              className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono shrink-0"
+              className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono"
               style={{ color: runStateColor(state.runState), backgroundColor: `${runStateColor(state.runState)}22` }}
             >
               {state.runState}
             </span>
           )}
         </div>
-        <div className="text-[11px] text-muted mono shrink-0">mode: {d.activeMode}</div>
       </header>
 
-      <div className="px-4 py-2.5 border-b border-border text-xs min-w-0">
-        <span className="text-muted">Current task:</span>{" "}
-        <span className="text-foreground break-words">{state?.currentTask ?? "— idle —"}</span>
-      </div>
-
-      <div className="flex-1 min-h-0 flex flex-col px-4 py-3 gap-1.5 min-w-0">
-        <div className="flex items-center justify-between text-[11px] shrink-0">
-          <span className={`rounded px-1.5 py-0.5 font-medium tracking-wide ${label.cls}`}>{label.text}</span>
-          <span className={state && state.pendingApprovals.length > 0 ? "text-warn" : "text-muted"}>
-            {state?.pendingApprovals.length ?? 0} pending approval(s)
-          </span>
-        </div>
-
-        {isLiveStatus && state?.statusDetail ? (
-          <div className="flex-1 min-h-0 overflow-y-auto mono text-xs space-y-1 bg-panel-2 rounded p-2.5">
-            {Object.entries(state.statusDetail).map(([key, value]) => (
-              <div key={key} className="flex gap-2 min-w-0">
-                <span className="text-muted shrink-0">{key}:</span>
-                <span className="break-words min-w-0 text-foreground/90">{value}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto mono text-xs space-y-1 bg-panel-2 rounded p-2.5">
-            <AnimatePresence initial={false}>
-              {stream.length === 0 && (
-                <div className="text-muted">No output — this system has no real integration attached yet.</div>
-              )}
-              {stream.map((e) => (
-                <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-2 min-w-0">
-                  <span className="text-muted shrink-0">{new Date(e.timestamp).toLocaleTimeString()}</span>
-                  <span className={`break-words min-w-0 ${e.stream === "system" ? "text-accent" : "text-foreground/90"}`}>
-                    {e.text}
-                  </span>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-          </div>
-        )}
-      </div>
-
-      <div className="px-4 py-2 border-t border-border text-[11px] text-muted min-w-0 truncate">
-        Memory target: <span className="mono">{state?.memoryWriteTarget ?? "—"}</span> · Session index:{" "}
-        <span
-          className={
-            state?.sessionIndexStatus === "current"
-              ? "text-ok"
-              : state?.sessionIndexStatus === "stale"
-              ? "text-warn"
-              : "text-danger"
-          }
-        >
-          {state?.sessionIndexStatus ?? "…"}
-        </span>
-      </div>
-
-      <div className="px-4 py-3 border-t border-border shrink-0 space-y-2 max-h-[45%] overflow-y-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-2.5 space-y-2 min-w-0">
         {state?.controlledAction ? (
-          // Real, working operator action — the SAME form/endpoint as the
-          // full system page, usable directly from the cockpit.
-          <ControlledActionPanel systemId={systemId} action={state.controlledAction} />
-        ) : state && !commandsEnabled ? (
-          <ActionRequiredPanel state={state} />
+          <>
+            {/* PRIMARY: the real work form — input → Send → output/history in-pane. */}
+            <ControlledActionPanel systemId={systemId} action={state.controlledAction} />
+            {statusDetailBlock && (
+              <details className="text-xs">
+                <summary className="cursor-pointer text-muted hover:text-foreground select-none">
+                  live status detail
+                </summary>
+                <div className="mt-1.5">{statusDetailBlock}</div>
+              </details>
+            )}
+          </>
+        ) : isLiveStatus && statusDetailBlock ? (
+          <>
+            <div className="text-[11px] text-muted truncate">{state?.currentTask ?? "— idle —"}</div>
+            {statusDetailBlock}
+            {state && !commandsEnabled && <ActionRequiredPanel state={state} />}
+          </>
         ) : (
-          <div className="rounded border border-warn/40 bg-warn/10 p-2.5 space-y-1">
-            <div className="text-[10px] uppercase tracking-wide font-semibold text-warn">Not wired</div>
-            <div className="text-[11px] text-foreground/90">
-              No real integration attached to {d.name} yet — no commands can be sent until its endpoint is wired.
+          <>
+            <div className="mono text-xs space-y-1 bg-panel-2 rounded p-2.5">
+              <AnimatePresence initial={false}>
+                {stream.length === 0 && (
+                  <div className="text-muted">No output — this system has no real integration attached yet.</div>
+                )}
+                {stream.map((e) => (
+                  <motion.div key={e.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-2 min-w-0">
+                    <span className="text-muted shrink-0">{new Date(e.timestamp).toLocaleTimeString()}</span>
+                    <span className={`break-words min-w-0 ${e.stream === "system" ? "text-accent" : "text-foreground/90"}`}>
+                      {e.text}
+                    </span>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
             </div>
-          </div>
+            <div className="rounded border border-warn/40 bg-warn/10 p-2.5 space-y-1">
+              <div className="text-[10px] uppercase tracking-wide font-semibold text-warn">Not wired</div>
+              <div className="text-[11px] text-foreground/90">
+                No real integration attached to {d.name} yet — no commands can be sent until its endpoint is wired.
+              </div>
+            </div>
+          </>
         )}
+      </div>
 
-        <div className="flex justify-end gap-2">
+      <div className="px-3 py-1.5 border-t border-border flex items-center justify-between gap-2 shrink-0">
+        <span className="text-[10px] text-muted mono truncate">mode: {d.activeMode}</span>
+        <span className="flex gap-2 shrink-0">
           {state?.externalUrl && (
             <a
               href={state.externalUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs rounded bg-accent/20 text-accent px-3 py-2 whitespace-nowrap shrink-0 hover:bg-accent/30"
+              className="text-[11px] rounded bg-accent/20 text-accent px-2 py-1 whitespace-nowrap hover:bg-accent/30"
             >
               Open real console
             </a>
           )}
           <Link
             href={`/systems/${systemId}`}
-            className="text-xs rounded bg-panel-2 hover:bg-border transition-colors px-3 py-2 whitespace-nowrap shrink-0"
+            className="text-[11px] rounded bg-panel-2 hover:bg-border transition-colors px-2 py-1 whitespace-nowrap"
           >
             Inspect details
           </Link>
-        </div>
+        </span>
       </div>
     </div>
   );

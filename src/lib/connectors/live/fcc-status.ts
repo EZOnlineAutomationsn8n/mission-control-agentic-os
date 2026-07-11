@@ -24,7 +24,7 @@ const SERVER_FILE_PATH = "/opt/vireon/workfloor/fcc/free-claude-code/server.py";
 
 const KNOWN_SERVICE = "free-claude-code";
 const KNOWN_PROVIDER = "openrouter";
-const KNOWN_MODEL_ROUTE = "OwlAlpha / free OpenRouter";
+const KNOWN_MODEL_ROUTE = "operator-ordered free-route chain (10 routes, #1 OwlAlpha)";
 
 async function serverFileExists(): Promise<boolean> {
   try {

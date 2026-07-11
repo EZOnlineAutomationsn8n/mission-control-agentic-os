@@ -241,6 +241,9 @@ export interface AgentSystemState {
     endpoint: string;
     /** False for a fixed no-input trigger (e.g. a workflow test run) rather than a free-text prompt. Defaults true. */
     requiresInput?: boolean;
+    /** Present only when the action fans out over a fallback route chain —
+        drives the route-progress banner. Absent = single-endpoint action. */
+    fallbackChain?: { routeCount: number; serverBudgetS: number };
   } | null;
   /** Declared capability surface — UI renders/enables only entries with available:true. */
   capabilities: CapabilityEntry[];

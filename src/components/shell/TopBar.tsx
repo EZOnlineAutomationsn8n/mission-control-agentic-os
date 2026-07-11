@@ -55,7 +55,7 @@ export function TopBar() {
       </div>
 
       <div className="text-xs text-muted">
-        Pending approvals{" "}
+        Demo approvals{" "}
         <span className={`font-medium mono ${approvals > 0 ? "text-warn" : "text-foreground"}`}>
           {approvals}
         </span>

@@ -21,6 +21,8 @@ export async function POST(request: Request) {
         transportModelAlias: "open_router/openrouter/owl-alpha",
         actualRuntimeModel: null,
         attempts: [],
+        routeCount: 10,
+        skippedRouteNumbers: [],
         timestamp,
       },
       { status: 400 }

@@ -8,12 +8,19 @@ export type FccActionStatus = "completed" | "action_required" | "failed" | "time
 export type FccAttemptOutcome = "completed" | "upstream_provider_failed" | "failed" | "timeout";
 
 export interface FccModelAttempt {
-  /** The Claude-style/gateway model string sent for this attempt. */
+  /** Position of this route in the OPERATOR-DEFINED order (1-based, stable). */
+  routeNumber: number;
+  /** The transport route string sent for this attempt (operator-controlled list). */
   transportModelAlias: string;
   /** The real backing model FCC reported it used for this attempt, if any. */
   actualRuntimeModel: string | null;
   outcome: FccAttemptOutcome;
   error: string | null;
+  /** Wall-clock duration of this attempt in milliseconds. */
+  latencyMs: number;
+  /** True when this attempt was tried first because it answered last time
+      (an optimization only — the operator order itself is never changed). */
+  lastKnownGood?: boolean;
 }
 
 export interface FccAskResult {
@@ -24,7 +31,11 @@ export interface FccAskResult {
   transportModelAlias: string;
   /** The real backing model that ultimately produced `text`, when available. */
   actualRuntimeModel: string | null;
-  /** Every model route attempted, in order, with its individual outcome. */
+  /** Every route attempted, in the order tried, each stamped with its operator route number. */
   attempts: FccModelAttempt[];
+  /** Total number of routes in the operator-defined list. */
+  routeCount: number;
+  /** Operator route numbers that were NOT attempted because the chain budget ran out. */
+  skippedRouteNumbers: number[];
   timestamp: string;
 }

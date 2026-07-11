@@ -30,7 +30,7 @@ import type { FccLiveStatus } from "../live/fcc-status-types";
 
 const descriptor: ConnectorDescriptor = {
   id: "claude-fcc",
-  name: "FCC / OwlAlpha",
+  name: "Free Claude Code (FCC proxy)",
   type: "agent",
   category: "AI Agents",
   connectionModes: ["cli", "api"],
@@ -105,7 +105,9 @@ function toStatusDetail(live: FccLiveStatus): Record<string, string> {
     "health reachable": live.healthReachable ? "yes" : "no",
     "http status": live.httpStatus !== null ? String(live.httpStatus) : "n/a",
     provider: live.provider,
+    "default route": "#1 OwlAlpha (operator ordered)",
     "model route": live.modelRoute,
+    "agent bridge": "none — raw model completion, no Claude Code agent session wired",
     "command execution": "controlled prompt available (text only, no tools)",
     source: live.source,
     "last checked": new Date(live.lastCheckedAt).toLocaleTimeString(),
@@ -170,7 +172,7 @@ export const claudeFccAdapter: AgentSystemAdapter = {
       // general command channel, just one reviewed, single-purpose action.
       controlledAction: {
         id: "fcc-ask",
-        label: "Ask FCC / OwlAlpha",
+        label: "Ask Free Claude Code (raw model)",
         endpoint: "/api/connectors/fcc/actions/ask",
       },
       capabilities: [
