@@ -174,6 +174,7 @@ export const claudeFccAdapter: AgentSystemAdapter = {
         id: "fcc-ask",
         label: "Ask Free Claude Code (raw model)",
         endpoint: "/api/connectors/fcc/actions/ask",
+        fallbackChain: { routeCount: 10, serverBudgetS: 60 },
       },
       capabilities: [
         { kind: "status", available: true },

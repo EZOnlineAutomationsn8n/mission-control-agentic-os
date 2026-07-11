@@ -71,8 +71,8 @@ export function AgentWindow({ systemId, accent = "cyan" }: { systemId: string; a
   // BLOCKED / CONNECTED / NOT WIRED — derived from real adapter state.
   function paneLabel(): { text: string; cls: string } {
     if (!state || state.outputKind === "mock-stream") return { text: "NOT WIRED", cls: "text-warn bg-warn/10" };
-    if (state.controlledAction) return { text: "READY TO USE", cls: "text-ok bg-ok/10" };
     if (state.status === "disconnected") return { text: "OFFLINE", cls: "text-danger bg-danger/10" };
+    if (state.controlledAction) return { text: "READY TO USE", cls: "text-ok bg-ok/10" };
     if (state.runState === "blocked" || state.runState === "waiting-approval")
       return { text: "BLOCKED", cls: "text-warn bg-warn/10" };
     if (state.capabilities.some((c) => c.kind === "blocked" || !c.available))

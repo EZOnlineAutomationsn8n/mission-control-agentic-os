@@ -59,6 +59,9 @@ const FALLBACK_MODEL_ROUTES: readonly string[] = [
   "open_router/openrouter/free",
 ];
 
+/** Exported so callers (e.g. the route handler's own error paths) never hardcode this number. */
+export const FCC_ROUTE_COUNT = FALLBACK_MODEL_ROUTES.length;
+
 // Last route that produced a real answer (module-scope; survives across
 // requests within one server process). Optimization only — see contract.
 let lastGoodRoute: string | null = null;

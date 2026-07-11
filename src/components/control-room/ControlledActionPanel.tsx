@@ -71,7 +71,13 @@ export function ControlledActionPanel({
   action,
 }: {
   systemId: string;
-  action: { id: string; label: string; endpoint: string; requiresInput?: boolean };
+  action: {
+    id: string;
+    label: string;
+    endpoint: string;
+    requiresInput?: boolean;
+    fallbackChain?: { routeCount: number; serverBudgetS: number };
+  };
 }) {
   const requiresInput = action.requiresInput ?? true;
   const [prompt, setPrompt] = useState("");
@@ -94,6 +100,7 @@ export function ControlledActionPanel({
   }, []);
 
   function startTicker() {
+    if (tickerRef.current) clearInterval(tickerRef.current); // defensive: never leak a prior interval
     setElapsedS(0);
     const t0 = Date.now();
     tickerRef.current = setInterval(() => setElapsedS(Math.round((Date.now() - t0) / 1000)), 1000);
@@ -135,6 +142,7 @@ export function ControlledActionPanel({
     setTransportAlias(null);
     setAttempts([]);
     setSkippedRoutes([]);
+    setRouteCount(action.fallbackChain?.routeCount ?? null);
     startTicker();
 
     const controller = new AbortController();
@@ -222,13 +230,14 @@ export function ControlledActionPanel({
         </button>
       )}
 
-      {phase === "running" && (
+      {phase === "running" && action.fallbackChain && (
         <div className="text-[11px] text-warn">
-          Trying routes in operator order (1..{routeCount ?? 10}) — up to 60s server budget, {Math.round(CLIENT_TIMEOUT_MS / 1000)}s client cutoff.
+          Trying routes in operator order (1..{routeCount ?? action.fallbackChain.routeCount}) — up to{" "}
+          {action.fallbackChain.serverBudgetS}s server budget, {Math.round(CLIENT_TIMEOUT_MS / 1000)}s client cutoff.
         </div>
       )}
 
-      {winning && (
+      {winning && action.fallbackChain && (
         <div className="text-[11px] text-ok">
           answered by route #{winning.routeNumber ?? "?"}/{routeCount ?? attempts.length}:{" "}
           <span className="mono">{winning.transportModelAlias}</span>
@@ -252,9 +261,11 @@ export function ControlledActionPanel({
 
       {answer && (
         <div className="rounded bg-panel-2 p-2 text-xs space-y-1">
-          <div className="text-[10px] uppercase tracking-wide text-muted">
-            raw model output — {runtimeModel ?? "unknown model"} (not a Claude Code agent)
-          </div>
+          {runtimeModel && (
+            <div className="text-[10px] uppercase tracking-wide text-muted">
+              raw model output — {runtimeModel} (not a Claude Code agent)
+            </div>
+          )}
           <div className="mono whitespace-pre-wrap break-words">{answer}</div>
         </div>
       )}
