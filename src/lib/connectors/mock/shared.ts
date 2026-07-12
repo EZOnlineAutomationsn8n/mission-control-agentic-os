@@ -35,6 +35,15 @@ export interface MockAdapterConfig {
   writeActions: string[];
 }
 
+interface PersistedApprovalDecision {
+  approvalId: string;
+  connectorId: string;
+  status: "approved" | "rejected";
+  reason: string;
+  decidedAt: string;
+  actor: "operator";
+}
+
 /**
  * Generic mock-backed implementation of AgentSystemAdapter. Every
  * "connector" in v1 is created by calling this factory with system-specific
@@ -62,9 +71,9 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
     createdAt: nowISO(),
   }));
 
-  const approvals: ApprovalRequest[] = (config.seedApprovals ?? []).map((a) => ({
+  const approvals: ApprovalRequest[] = (config.seedApprovals ?? []).map((a, index) => ({
     ...a,
-    id: nextId("appr"),
+    id: `${id}-approval-${index + 1}`,
     requestedAt: nowISO(),
     auditTrail: [
       { at: nowISO(), actor: "system", action: "requested" },
@@ -72,6 +81,59 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
   }));
 
   const subscribers = new Set<(e: OutputEvent) => void>();
+
+  function applyDecision(decision: PersistedApprovalDecision) {
+    const approval = approvals.find((candidate) => candidate.id === decision.approvalId);
+    if (!approval) return;
+    approval.status = decision.status;
+    if (!approval.auditTrail.some((event) => event.at === decision.decidedAt && event.action === decision.status)) {
+      approval.auditTrail.push({
+        at: decision.decidedAt,
+        actor: decision.actor,
+        action: decision.status,
+        reason: decision.reason,
+      });
+    }
+  }
+
+  async function syncApprovalDecisions() {
+    if (typeof window === "undefined" || approvals.length === 0) return;
+    const response = await fetch(`/api/approvals?connectorId=${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`approval sync failed (${response.status})`);
+    const data = (await response.json()) as { decisions: PersistedApprovalDecision[] };
+    data.decisions.forEach(applyDecision);
+  }
+
+  async function persistDecision(
+    approval: ApprovalRequest,
+    status: "approved" | "rejected",
+    reason: string
+  ): Promise<PersistedApprovalDecision> {
+    if (typeof window === "undefined") throw new Error("approval decisions require the operator UI");
+    const response = await fetch("/api/approvals", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        approvalId: approval.id,
+        connectorId: id,
+        requestedCapability: approval.requestedCapability,
+        context: approval.context,
+        riskLevel: approval.riskLevel,
+        requestedAt: approval.requestedAt,
+        status,
+        reason,
+      }),
+    });
+    const data = (await response.json()) as {
+      ok: boolean;
+      decision?: PersistedApprovalDecision;
+      error?: string;
+    };
+    if (!response.ok || !data.ok || !data.decision) {
+      throw new Error(data.error ?? `approval persistence failed (${response.status})`);
+    }
+    return data.decision;
+  }
 
   function pushLog(level: LogLevel, message: string) {
     logs.unshift({
@@ -117,6 +179,7 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
     },
 
     async getState(): Promise<AgentSystemState> {
+      await syncApprovalDecisions();
       return {
         id,
         name: config.descriptor.name,
@@ -186,9 +249,10 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
 
     async approve(approvalId, reason) {
       const a = approvals.find((x) => x.id === approvalId);
-      if (!a) return;
-      a.status = "approved";
-      a.auditTrail.push({ at: nowISO(), actor: "operator", action: "approved", reason });
+      if (!a || a.status !== "pending") return;
+      const decision = await persistDecision(a, "approved", reason?.trim() || "approved by operator");
+      applyDecision(decision);
+      if (decision.status !== "approved") return;
       pushLog("info", `approval ${approvalId} approved`);
       if (runState === "waiting-approval") runState = "running";
       const write = await vaultEngine.appendToNote(
@@ -198,31 +262,34 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
         }\n`
       );
       recordAction({
-        timestamp: nowISO(),
+        timestamp: decision.decidedAt,
         connectorId: id,
         actionType: `approval:${a.requestedCapability}`,
-        status: write.ok ? "approved" : "brain-write-failed",
-        resultSummary: reason ? `approved — ${reason}` : "approved",
-      });
+        status: "approved",
+        resultSummary: write.ok ? `approved — ${decision.reason}` : `approved — ${decision.reason}; Brain write failed`,
+      }, { persist: false });
     },
     async reject(approvalId, reason) {
       const a = approvals.find((x) => x.id === approvalId);
-      if (!a) return;
-      a.status = "rejected";
-      a.auditTrail.push({ at: nowISO(), actor: "operator", action: "rejected", reason });
-      pushLog("warn", `approval ${approvalId} rejected: ${reason}`);
+      const trimmedReason = reason.trim();
+      if (!a || a.status !== "pending") return;
+      if (!trimmedReason) throw new Error("rejection reason is required");
+      const decision = await persistDecision(a, "rejected", trimmedReason);
+      applyDecision(decision);
+      if (decision.status !== "rejected") return;
+      pushLog("warn", `approval ${approvalId} rejected: ${decision.reason}`);
       if (runState === "waiting-approval") runState = "blocked";
       const write = await vaultEngine.appendToNote(
         "Governance/approvals-log.md",
-        `- ${nowISO()} — **REJECTED** ${a.requestedCapability} for ${config.descriptor.name} (${approvalId}) — reason: ${reason}\n`
+        `- ${decision.decidedAt} — **REJECTED** ${a.requestedCapability} for ${config.descriptor.name} (${approvalId}) — reason: ${decision.reason}\n`
       );
       recordAction({
-        timestamp: nowISO(),
+        timestamp: decision.decidedAt,
         connectorId: id,
         actionType: `approval:${a.requestedCapability}`,
-        status: write.ok ? "rejected" : "brain-write-failed",
-        resultSummary: `rejected — ${reason}`,
-      });
+        status: "rejected",
+        resultSummary: write.ok ? `rejected — ${decision.reason}` : `rejected — ${decision.reason}; Brain write failed`,
+      }, { persist: false });
     },
 
     async listReports() {

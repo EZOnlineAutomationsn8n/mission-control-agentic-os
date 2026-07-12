@@ -192,7 +192,9 @@ export function ControlRoom({ systemId }: { systemId: string }) {
                         className="flex gap-1 flex-1"
                         onSubmit={async (e) => {
                           e.preventDefault();
-                          await run(() => adapter.reject(a.id, rejectReason || "no reason given"));
+                          const reason = rejectReason.trim();
+                          if (!reason) return;
+                          await run(() => adapter.reject(a.id, reason));
                           setRejectReasonFor(null);
                           setRejectReason("");
                         }}
@@ -202,9 +204,14 @@ export function ControlRoom({ systemId }: { systemId: string }) {
                           value={rejectReason}
                           onChange={(e) => setRejectReason(e.target.value)}
                           placeholder="reason…"
+                          required
                           className="flex-1 bg-panel rounded px-2 py-1 outline-none focus:ring-1 focus:ring-danger"
                         />
-                        <button type="submit" className="rounded bg-danger/20 text-danger px-2 py-1 hover:bg-danger/30">
+                        <button
+                          type="submit"
+                          disabled={!rejectReason.trim()}
+                          className="rounded bg-danger/20 text-danger px-2 py-1 hover:bg-danger/30 disabled:opacity-40"
+                        >
                           Confirm
                         </button>
                       </form>

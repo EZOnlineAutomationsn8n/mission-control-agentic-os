@@ -21,11 +21,11 @@ export interface ActionLogEntry {
 const log: ActionLogEntry[] = [];
 const listeners = new Set<() => void>();
 
-export function recordAction(entry: ActionLogEntry) {
+export function recordAction(entry: ActionLogEntry, options: { persist?: boolean } = {}) {
   log.unshift(entry);
   if (log.length > 200) log.length = 200;
   listeners.forEach((l) => l());
-  void persistAuditEvent(entry);
+  if (options.persist !== false) void persistAuditEvent(entry);
 }
 
 async function persistAuditEvent(entry: ActionLogEntry): Promise<void> {

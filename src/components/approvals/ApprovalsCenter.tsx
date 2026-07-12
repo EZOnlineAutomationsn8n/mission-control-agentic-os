@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { connectorRegistry } from "@/lib/connectors/registry";
 import type { ApprovalRequest } from "@/lib/connectors/types";
+import type { PersistedApprovalDecision } from "@/lib/approval-decision-store";
 import { riskColor, timeAgo } from "@/lib/ui-helpers";
 
 interface Row extends ApprovalRequest {
@@ -16,19 +17,32 @@ export function ApprovalsCenter() {
   const [filter, setFilter] = useState<"pending" | "all">("pending");
 
   async function refresh() {
-    const all = await Promise.all(
-      connectorRegistry.list().map(async (a) => {
+    const [all, decisionResponse] = await Promise.all([
+      Promise.all(connectorRegistry.list().map(async (a) => {
         const state = await a.getState();
         return state.pendingApprovals.map((ap) => ({ ...ap, agentName: a.descriptor().name }));
-      })
-    );
+      })),
+      fetch("/api/approvals", { cache: "no-store" }),
+    ]);
+    if (!decisionResponse.ok) throw new Error(`approval history fetch failed (${decisionResponse.status})`);
+    const { decisions } = (await decisionResponse.json()) as { decisions: PersistedApprovalDecision[] };
     const pending = all.flat();
-    setRows((prev) => {
-      const decided = prev.filter((r) => r.status !== "pending");
-      const decidedIds = new Set(decided.map((r) => r.id));
-      const freshPending = pending.filter((r) => !decidedIds.has(r.id));
-      return [...decided, ...freshPending];
-    });
+    const decided: Row[] = decisions.map((decision) => ({
+      id: decision.approvalId,
+      agentId: decision.connectorId,
+      agentName: connectorRegistry.get(decision.connectorId)?.descriptor().name ?? decision.connectorId,
+      requestedCapability: decision.requestedCapability,
+      context: decision.context,
+      riskLevel: decision.riskLevel,
+      requestedAt: decision.requestedAt,
+      status: decision.status,
+      auditTrail: [
+        { at: decision.requestedAt, actor: "system", action: "requested" },
+        { at: decision.decidedAt, actor: decision.actor, action: decision.status, reason: decision.reason },
+      ],
+    }));
+    const decidedIds = new Set(decided.map((row) => row.id));
+    setRows([...decided, ...pending.filter((row) => !decidedIds.has(row.id))]);
   }
 
   useEffect(() => {
@@ -40,27 +54,13 @@ export function ApprovalsCenter() {
 
   async function approve(row: Row) {
     await connectorRegistry.get(row.agentId)?.approve(row.id, "approved from Approvals Center");
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === row.id
-          ? { ...r, status: "approved", auditTrail: [...r.auditTrail, { at: new Date().toISOString(), actor: "operator", action: "approved" }] }
-          : r
-      )
-    );
+    await refresh();
   }
   async function reject(row: Row) {
-    await connectorRegistry.get(row.agentId)?.reject(row.id, reason || "no reason given");
-    setRows((prev) =>
-      prev.map((r) =>
-        r.id === row.id
-          ? {
-              ...r,
-              status: "rejected",
-              auditTrail: [...r.auditTrail, { at: new Date().toISOString(), actor: "operator", action: "rejected", reason }],
-            }
-          : r
-      )
-    );
+    const rejectionReason = reason.trim();
+    if (!rejectionReason) return;
+    await connectorRegistry.get(row.agentId)?.reject(row.id, rejectionReason);
+    await refresh();
     setRejecting(null);
     setReason("");
   }
@@ -137,9 +137,14 @@ export function ApprovalsCenter() {
                       value={reason}
                       onChange={(e) => setReason(e.target.value)}
                       placeholder="reason for rejection…"
+                      required
                       className="flex-1 bg-panel-2 rounded px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-danger"
                     />
-                    <button type="submit" className="text-xs rounded bg-danger/20 text-danger px-3 py-1.5 hover:bg-danger/30">
+                    <button
+                      type="submit"
+                      disabled={!reason.trim()}
+                      className="text-xs rounded bg-danger/20 text-danger px-3 py-1.5 hover:bg-danger/30 disabled:opacity-40"
+                    >
                       Confirm reject
                     </button>
                   </form>
