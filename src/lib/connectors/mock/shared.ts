@@ -22,6 +22,81 @@ export function nowISO(): string {
   return new Date().toISOString();
 }
 
+// ─── Persisted approval decisions ────────────────────────────────────────
+// Approval ids are regenerated on every module init, so a page refresh
+// used to resurrect decided approvals as "pending". Decisions are now
+// persisted server-side (data/approval-decisions.jsonl via
+// /api/approvals/decisions) under the STABLE key
+// `${agentId}::${requestedCapability}`, loaded once per tab, and applied
+// to the in-memory approvals on every getState() — a decided approval
+// stays decided across reloads.
+
+interface PersistedDecision {
+  decision: "approved" | "rejected";
+  reason: string;
+  at: string;
+}
+
+let decisionsCache: Record<string, PersistedDecision> | null = null;
+let decisionsFetch: Promise<void> | null = null;
+
+async function ensureDecisionsLoaded(): Promise<void> {
+  if (typeof window === "undefined") return; // never fetch during SSR
+  if (decisionsCache) return;
+  if (!decisionsFetch) {
+    decisionsFetch = (async () => {
+      try {
+        const res = await fetch("/api/approvals/decisions", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = (await res.json()) as { decisions?: Record<string, PersistedDecision> };
+        decisionsCache = data.decisions ?? {};
+      } catch (e) {
+        console.error("approval decisions load failed (will retry on next poll):", e);
+        decisionsFetch = null; // allow retry — do NOT fake an empty decided set permanently
+      }
+    })();
+  }
+  await decisionsFetch;
+}
+
+function decisionKey(agentId: string, requestedCapability: string): string {
+  return `${agentId}::${requestedCapability}`;
+}
+
+/** Apply persisted decisions to still-pending in-memory approvals (idempotent). */
+function applyPersistedDecisions(approvals: ApprovalRequest[]): void {
+  if (!decisionsCache) return;
+  for (const a of approvals) {
+    if (a.status !== "pending") continue;
+    const rec = decisionsCache[decisionKey(a.agentId, a.requestedCapability)];
+    if (!rec) continue;
+    a.status = rec.decision;
+    a.auditTrail.push({
+      at: rec.at,
+      actor: "operator",
+      action: `${rec.decision} (persisted decision restored after reload)`,
+      reason: rec.reason || undefined,
+    });
+  }
+}
+
+/** Persist a fresh operator decision; best-effort, failure logged, never faked. */
+function persistDecision(agentId: string, requestedCapability: string, decision: "approved" | "rejected", reason: string, at: string): void {
+  if (decisionsCache) {
+    decisionsCache[decisionKey(agentId, requestedCapability)] = { decision, reason, at };
+  }
+  if (typeof window === "undefined") return;
+  void fetch("/api/approvals/decisions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ agentId, requestedCapability, decision, reason, at }),
+  })
+    .then((res) => {
+      if (!res.ok) console.error("approval decision persistence failed: HTTP", res.status);
+    })
+    .catch((e) => console.error("approval decision persistence request failed:", e));
+}
+
 export interface MockAdapterConfig {
   descriptor: ConnectorDescriptor;
   modelOrService: string;
@@ -117,6 +192,10 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
     },
 
     async getState(): Promise<AgentSystemState> {
+      // Reconcile persisted operator decisions before reporting pending
+      // approvals — a decision must survive a page refresh.
+      await ensureDecisionsLoaded();
+      applyPersistedDecisions(approvals);
       return {
         id,
         name: config.descriptor.name,
@@ -187,8 +266,10 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
     async approve(approvalId, reason) {
       const a = approvals.find((x) => x.id === approvalId);
       if (!a) return;
+      const decidedAt = nowISO();
       a.status = "approved";
-      a.auditTrail.push({ at: nowISO(), actor: "operator", action: "approved", reason });
+      a.auditTrail.push({ at: decidedAt, actor: "operator", action: "approved", reason });
+      persistDecision(a.agentId, a.requestedCapability, "approved", reason ?? "", decidedAt);
       pushLog("info", `approval ${approvalId} approved`);
       if (runState === "waiting-approval") runState = "running";
       const write = await vaultEngine.appendToNote(
@@ -208,8 +289,10 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
     async reject(approvalId, reason) {
       const a = approvals.find((x) => x.id === approvalId);
       if (!a) return;
+      const decidedAt = nowISO();
       a.status = "rejected";
-      a.auditTrail.push({ at: nowISO(), actor: "operator", action: "rejected", reason });
+      a.auditTrail.push({ at: decidedAt, actor: "operator", action: "rejected", reason });
+      persistDecision(a.agentId, a.requestedCapability, "rejected", reason, decidedAt);
       pushLog("warn", `approval ${approvalId} rejected: ${reason}`);
       if (runState === "waiting-approval") runState = "blocked";
       const write = await vaultEngine.appendToNote(
