@@ -45,7 +45,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "rejection reason is required" }, { status: 400 });
   }
 
-  const existing = (await readApprovalDecisions()).find((decision) => decision.approvalId === body.approvalId);
+  const existing = (await readApprovalDecisions()).find(
+    (decision) =>
+      decision.approvalId === body.approvalId ||
+      (decision.connectorId === body.connectorId && decision.requestedCapability === body.requestedCapability)
+  );
   if (existing) {
     return NextResponse.json({ ok: true, decision: existing, alreadyDecided: true });
   }
