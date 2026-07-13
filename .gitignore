@@ -61,3 +61,4 @@ logs/
 # runtime-generated local audit log (project-local persistence, not source)
 /data/audit-log.jsonl
 /data/approval-decisions.jsonl
+/data/agent-conversations.jsonl

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { sendFccControlledPrompt, FCC_ROUTE_COUNT } from "@/lib/connectors/live/fcc-actions";
+import { executeConversationRequest } from "@/lib/agent-conversations/service";
+import { isValidConversationKey } from "@/lib/agent-conversations/store";
 
 // Controlled-action endpoint for FCC / OwlAlpha only. Only ever invoked by
 // an explicit POST from the operator's UI form submission — nothing polls
@@ -29,7 +31,19 @@ export async function POST(request: Request) {
     );
   }
 
-  const prompt = (body as { prompt?: unknown } | null)?.prompt;
-  const result = await sendFccControlledPrompt(prompt);
-  return NextResponse.json(result);
+  const prompt = (body as { prompt?: unknown; sessionId?: unknown } | null)?.prompt;
+  const sessionId = (body as { sessionId?: unknown } | null)?.sessionId ?? "default";
+  if (typeof prompt !== "string" || !prompt.trim()) {
+    return NextResponse.json({ status: "failed", text: null, error: "prompt must be non-empty text" }, { status: 400 });
+  }
+  if (typeof sessionId !== "string" || !isValidConversationKey(sessionId)) {
+    return NextResponse.json({ status: "failed", text: null, error: "invalid session identifier" }, { status: 400 });
+  }
+  const persisted = await executeConversationRequest({
+    agentId: "claude-fcc", sessionId, prompt: prompt.trim(), actionType: "fcc-ask",
+    run: () => sendFccControlledPrompt(prompt),
+  });
+  return NextResponse.json({ ...persisted.entry, auditRecorded: persisted.auditRecorded, auditError: persisted.auditError }, {
+    status: persisted.auditRecorded ? 200 : 500,
+  });
 }
