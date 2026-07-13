@@ -38,6 +38,7 @@ export interface MockAdapterConfig {
 interface PersistedApprovalDecision {
   approvalId: string;
   connectorId: string;
+  requestedCapability: string;
   status: "approved" | "rejected";
   reason: string;
   decidedAt: string;
@@ -83,7 +84,10 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
   const subscribers = new Set<(e: OutputEvent) => void>();
 
   function applyDecision(decision: PersistedApprovalDecision) {
-    const approval = approvals.find((candidate) => candidate.id === decision.approvalId);
+    const approval = approvals.find(
+      (candidate) =>
+        candidate.id === decision.approvalId || candidate.requestedCapability === decision.requestedCapability
+    );
     if (!approval) return;
     approval.status = decision.status;
     if (!approval.auditTrail.some((event) => event.at === decision.decidedAt && event.action === decision.status)) {

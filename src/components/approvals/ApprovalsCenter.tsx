@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { connectorRegistry } from "@/lib/connectors/registry";
-import type { ApprovalRequest } from "@/lib/connectors/types";
+import type { ApprovalRequest, RiskLevel } from "@/lib/connectors/types";
 import type { PersistedApprovalDecision } from "@/lib/approval-decision-store";
 import { riskColor, timeAgo } from "@/lib/ui-helpers";
 
-interface Row extends ApprovalRequest {
+interface Row extends Omit<ApprovalRequest, "riskLevel"> {
   agentName: string;
+  riskLevel: RiskLevel | null;
 }
 
 export function ApprovalsCenter() {
@@ -32,17 +33,22 @@ export function ApprovalsCenter() {
       agentId: decision.connectorId,
       agentName: connectorRegistry.get(decision.connectorId)?.descriptor().name ?? decision.connectorId,
       requestedCapability: decision.requestedCapability,
-      context: decision.context,
+      context: decision.context ?? "Migrated decision from the previous approval store; original request context was not persisted.",
       riskLevel: decision.riskLevel,
-      requestedAt: decision.requestedAt,
+      requestedAt: decision.requestedAt ?? decision.decidedAt,
       status: decision.status,
       auditTrail: [
-        { at: decision.requestedAt, actor: "system", action: "requested" },
+        ...(decision.requestedAt
+          ? [{ at: decision.requestedAt, actor: "system", action: "requested" }]
+          : []),
         { at: decision.decidedAt, actor: decision.actor, action: decision.status, reason: decision.reason },
       ],
     }));
-    const decidedIds = new Set(decided.map((row) => row.id));
-    setRows([...decided, ...pending.filter((row) => !decidedIds.has(row.id))]);
+    const decidedKeys = new Set(decided.map((row) => `${row.agentId}::${row.requestedCapability}`));
+    setRows([
+      ...decided,
+      ...pending.filter((row) => !decidedKeys.has(`${row.agentId}::${row.requestedCapability}`)),
+    ]);
   }
 
   useEffect(() => {
@@ -106,12 +112,18 @@ export function ApprovalsCenter() {
                 <span className="text-muted">·</span>
                 <span>{row.requestedCapability}</span>
               </div>
-              <span
-                className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono"
-                style={{ color: riskColor(row.riskLevel), backgroundColor: `${riskColor(row.riskLevel)}22` }}
-              >
-                {row.riskLevel}
-              </span>
+              {row.riskLevel ? (
+                <span
+                  className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono"
+                  style={{ color: riskColor(row.riskLevel), backgroundColor: `${riskColor(row.riskLevel)}22` }}
+                >
+                  {row.riskLevel}
+                </span>
+              ) : (
+                <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono text-muted bg-panel-2">
+                  legacy risk unknown
+                </span>
+              )}
             </div>
             <div className="text-muted text-xs">{row.context}</div>
             <div className="text-[11px] text-muted">requested {timeAgo(row.requestedAt)}</div>
