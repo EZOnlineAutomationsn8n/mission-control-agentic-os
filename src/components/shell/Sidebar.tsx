@@ -90,12 +90,12 @@ export function Sidebar() {
         {live ? (
           <span className="status-dot shrink-0" style={dotGlowStyle(statusColor(live.status))} title={live.status} />
         ) : item.ready ? (
-          <span className="status-dot shrink-0" style={{ backgroundColor: "var(--ok)" }} title="ready to use" />
+          <span className="status-dot shrink-0" style={{ backgroundColor: "var(--accent)" }} title="agent room configured; runtime verified inside room" />
         ) : (
           <span className="w-2 shrink-0" />
         )}
         <span className="flex-1 truncate">{item.label}</span>
-        {item.ready && <span className="text-[9px] uppercase tracking-wide text-ok shrink-0">ready</span>}
+        {item.ready && <span className="text-[9px] uppercase tracking-wide text-accent shrink-0">room</span>}
         {live && live.pendingApprovals.length > 0 && (
           <span className="text-[10px] rounded-full bg-warn/20 text-warn px-1.5 py-0.5 mono shrink-0">
             {live.pendingApprovals.length}

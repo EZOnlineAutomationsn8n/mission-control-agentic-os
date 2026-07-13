@@ -7,6 +7,7 @@ import { connectorRegistry } from "@/lib/connectors/registry";
 import type { AgentSystemState, OutputEvent } from "@/lib/connectors/types";
 import { runStateColor, statusColor, dotGlowStyle, type PanelAccent } from "@/lib/ui-helpers";
 import { ControlledActionPanel } from "./ControlledActionPanel";
+import { AgentConversationPanel } from "./AgentConversationPanel";
 
 // Cockpit pane — the same component renders every system. It only talks to
 // the AgentSystemAdapter interface; no per-agent branching.
@@ -127,7 +128,15 @@ export function AgentWindow({ systemId, accent = "cyan" }: { systemId: string; a
         {state?.controlledAction ? (
           <>
             {/* PRIMARY: the real work form — input → Send → output/history in-pane. */}
-            <ControlledActionPanel systemId={systemId} action={state.controlledAction} />
+            {state.controlledAction.id === "fcc-ask" ? (
+              <AgentConversationPanel
+                agentId={systemId}
+                endpoint={state.controlledAction.endpoint}
+                label={state.controlledAction.label}
+              />
+            ) : (
+              <ControlledActionPanel systemId={systemId} action={state.controlledAction} />
+            )}
             {statusDetailBlock && (
               <details className="text-xs">
                 <summary className="cursor-pointer text-muted hover:text-foreground select-none">

@@ -6,6 +6,7 @@ import { connectorRegistry } from "@/lib/connectors/registry";
 import type { AgentSystemState, OutputEvent } from "@/lib/connectors/types";
 import { riskColor, runStateColor, statusColor, timeAgo, dotGlowStyle } from "@/lib/ui-helpers";
 import { ControlledActionPanel } from "./ControlledActionPanel";
+import { AgentConversationPanel } from "./AgentConversationPanel";
 
 // Generic control room — the SAME component renders every registered
 // system. It knows nothing about Claude/Hermes/OpenClaw/etc. specifically;
@@ -79,9 +80,14 @@ export function ControlRoom({ systemId }: { systemId: string }) {
               needs integration
             </span>
           )}
-          {state.controlledAction && (
+          {state.controlledAction && state.status === "connected" && (
             <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono ml-1 text-ok bg-ok/10">
-              ready to use
+              live route available
+            </span>
+          )}
+          {state.controlledAction && state.status !== "connected" && (
+            <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono ml-1 text-warn bg-warn/10">
+              connector unavailable
             </span>
           )}
         </div>
@@ -137,7 +143,15 @@ export function ControlRoom({ systemId }: { systemId: string }) {
           )}
 
           {state.controlledAction && (
-            <ControlledActionPanel systemId={systemId} action={state.controlledAction} />
+            state.controlledAction.id === "fcc-ask" ? (
+              <AgentConversationPanel
+                agentId={systemId}
+                endpoint={state.controlledAction.endpoint}
+                label={state.controlledAction.label}
+              />
+            ) : (
+              <ControlledActionPanel systemId={systemId} action={state.controlledAction} />
+            )
           )}
 
           {!commandsEnabled && !state.controlledAction && (

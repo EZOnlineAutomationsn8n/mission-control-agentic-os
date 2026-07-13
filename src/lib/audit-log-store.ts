@@ -10,9 +10,15 @@ import path from "path";
 // this file is what makes an audit event survive a full page reload.
 // ─────────────────────────────────────────────────────────────────────────
 
-const AUDIT_DIR = path.join(process.cwd(), "data");
-const AUDIT_FILE = path.join(AUDIT_DIR, "audit-log.jsonl");
 const MAX_READ = 500;
+
+function auditDirectory(): string {
+  return process.env.AUDIT_DATA_DIR || path.join(process.cwd(), "data");
+}
+
+function auditFile(): string {
+  return path.join(auditDirectory(), "audit-log.jsonl");
+}
 
 export interface PersistedAuditEvent {
   timestamp: string;
@@ -26,8 +32,8 @@ export async function appendAuditEvent(
   e: PersistedAuditEvent
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await fs.mkdir(AUDIT_DIR, { recursive: true });
-    await fs.appendFile(AUDIT_FILE, `${JSON.stringify(e)}\n`, "utf8");
+    await fs.mkdir(auditDirectory(), { recursive: true });
+    await fs.appendFile(auditFile(), `${JSON.stringify(e)}\n`, "utf8");
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "append failed" };
@@ -37,7 +43,7 @@ export async function appendAuditEvent(
 export async function readAuditEvents(limit = MAX_READ): Promise<PersistedAuditEvent[]> {
   let raw: string;
   try {
-    raw = await fs.readFile(AUDIT_FILE, "utf8");
+    raw = await fs.readFile(auditFile(), "utf8");
   } catch {
     return [];
   }
