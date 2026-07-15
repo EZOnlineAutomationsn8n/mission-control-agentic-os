@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import { request } from "node:http";
 import type { PaperclipLiveStatus } from "./paperclip-status-types";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -31,28 +32,35 @@ async function fetchHealth(): Promise<
   | { reachable: true; httpStatus: number; body: unknown }
   | { reachable: false; httpStatus: number | null; error: string }
 > {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
-  try {
-    const res = await fetch(HEALTH_URL, {
-      signal: controller.signal,
-      cache: "no-store",
-      headers: process.env.PAPERCLIP_HOST_HEADER ? { host: process.env.PAPERCLIP_HOST_HEADER } : undefined,
-    });
-    const httpStatus = res.status;
-    let body: unknown = null;
-    try {
-      body = await res.json();
-    } catch {
-      // non-JSON body — still reachable, just can't parse it
-    }
-    return { reachable: true, httpStatus, body };
-  } catch (e) {
-    const message = e instanceof Error ? e.message : "unreachable";
-    return { reachable: false, httpStatus: null, error: message };
-  } finally {
-    clearTimeout(timer);
-  }
+  return new Promise((resolve) => {
+    const req = request(
+      HEALTH_URL,
+      {
+        method: "GET",
+        headers: process.env.PAPERCLIP_HOST_HEADER ? { host: process.env.PAPERCLIP_HOST_HEADER } : undefined,
+        timeout: HEALTH_TIMEOUT_MS,
+      },
+      (res) => {
+        let raw = "";
+        res.setEncoding("utf8");
+        res.on("data", (chunk: string) => {
+          raw += chunk;
+        });
+        res.on("end", () => {
+          let body: unknown = null;
+          try {
+            body = raw ? JSON.parse(raw) : null;
+          } catch {
+            // A non-JSON response still proves reachability.
+          }
+          resolve({ reachable: true, httpStatus: res.statusCode ?? 0, body });
+        });
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("Paperclip health request timed out")));
+    req.on("error", (error) => resolve({ reachable: false, httpStatus: null, error: error.message }));
+    req.end();
+  });
 }
 
 /**
