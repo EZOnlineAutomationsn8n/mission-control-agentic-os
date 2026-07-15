@@ -20,6 +20,15 @@ This blueprint becomes canonical only after explicit operator acceptance. Until
 then it is the single working proposal and must not be copied into competing
 declarations.
 
+### 1.1 Read without scrolling through the complete blueprint
+
+- Operator overview: sections 2, 5, 6, 18, and 19.
+- Assigned worker: sections 1–4, its assigned parent loop, sections 15–17, and
+  the exact ledger record.
+- Verifier: assigned parent loop, its acceptance evidence, and the closeout.
+- Nobody needs to paste this complete file into chat. Agents read it from the
+  repository and write results to the declared delivery path.
+
 ## 2. Product outcome
 
 Mission Control is an operator cockpit from which Dennis can:
@@ -503,8 +512,21 @@ backed up, restorable, and never dependent on chat memory alone.
 | `MC_ORCH.P5.W2` | Reconcile multiple accepted sections on a clean integration branch. | Combined regression suite and conflict report. |
 | `MC_ORCH.P5.W3` | Reject incomplete output back to the same assignment rather than creating new truth. | Rework history remains one lineage. |
 
+### MC_ORCH.P6 — Pulse, heartbeat, and scheduled workers (`OPEN`)
+
+Purpose: use a pulse as a lightweight wake-up signal, never as a repeated full
+conversation or endlessly reissued assignment.
+
+| Work package | Result | Acceptance evidence |
+| --- | --- | --- |
+| `MC_ORCH.P6.W1` | Store scheduled work and instructions in the durable assignment ledger; heartbeat carries only a job ID and idempotency key. | Repeated pulse resolves to one assignment and one execution lineage. |
+| `MC_ORCH.P6.W2` | Define `NO_WORK`, `CLAIMED`, `RUNNING`, `OUTPUT_READY`, `BLOCKED`, and `PAUSED` pulse outcomes. | Worker does not manufacture a conversational answer when no work exists. |
+| `MC_ORCH.P6.W3` | Add unchanged-pulse detection, bounded retries, backoff, and one escalation event. | Repeating the same pulse cannot produce an endless warning/reply loop. |
+| `MC_ORCH.P6.W4` | Keep interactive reasoning agents separate from routine scheduled workers while allowing both to use the same assignment contract. | UI and receipts identify trigger mode, worker mode, session, and output target. |
+
 Gate for MC_ORCH: work survives model, provider, worker, or orchestrator handoff
-without changing intent, duplicating assignments, or losing proof.
+without changing intent, duplicating assignments, losing proof, or trapping an
+agent in a repeated heartbeat conversation.
 
 ## 14. MC_OPS — VPS staging, release, and runtime operations
 

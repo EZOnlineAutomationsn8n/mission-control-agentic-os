@@ -74,6 +74,7 @@ worker:
   agent:
   role: builder | researcher | reviewer | verifier | integrator | background-worker
   runtime_mode: interactive | on-demand-cli | persistent-worker | scheduled-worker
+  trigger_mode: manual | event | schedule | heartbeat
   model_route: unknown-until-runtime-proof
   provider_route: unknown-until-runtime-proof
 
@@ -111,6 +112,9 @@ capacity:
   context_budget: bounded | standard | extended
   stop_condition:
   fallback_trigger:
+  heartbeat_job_id: null
+  heartbeat_idempotency_key: null
+  max_unchanged_pulses: null
 
 state:
   status: PROPOSED
