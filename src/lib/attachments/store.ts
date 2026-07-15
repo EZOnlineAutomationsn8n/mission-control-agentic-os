@@ -13,7 +13,7 @@ const ALLOWED_EXTENSIONS = new Set([
 ]);
 
 function rootDirectory(): string {
-  return process.env.ATTACHMENT_DATA_DIR || path.join(process.cwd(), "data", "attachments");
+  return process.env.ATTACHMENT_DATA_DIR || path.resolve("data", "attachments");
 }
 
 function metadataFile(): string {
