@@ -10,7 +10,7 @@ import type { CliAgentSession } from "./session-store";
 const execFileAsync = promisify(execFile);
 const AGY_BINARY = process.env.AGY_AGENT_BINARY || "/root/.local/bin/agy";
 const AGY_RUNTIME = "Antigravity CLI 1.1.1";
-const AGY_PROJECT_ID = process.env.AGY_AGENT_PROJECT_ID || "d05562cc-1039-47b1-a562-109f98779234";
+const AGY_PROJECT_ID = process.env.AGY_AGENT_PROJECT_ID || null;
 const IDENTITY_CONTEXT =
   "Your product name and agent identity is Antigravity. " +
   "You are an Agentic AI coding assistant. " +
@@ -28,12 +28,15 @@ Operator request:
 ${options.prompt}`;
   const args = [
     "--sandbox",
-    "--project", AGY_PROJECT_ID,
+    "--add-dir", options.session.workspace,
     "--print", agentPrompt,
     "--print-timeout", process.env.AGY_AGENT_PRINT_TIMEOUT || "10m",
     "--log-file", logFile,
   ];
-  if (!options.create) {
+  if (options.create) {
+    if (AGY_PROJECT_ID) args.push("--project", AGY_PROJECT_ID);
+    else args.push("--new-project");
+  } else {
     if (!options.session.runtimeSessionId) throw new Error("AGY conversation ID is missing");
     args.push("--conversation", options.session.runtimeSessionId);
   }
