@@ -145,7 +145,7 @@ export function TerminalWorkspace() {
   }
 
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-4 gap-3">
+    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
       {slots.map((systemId, slotIndex) => {
         const target = TERMINAL_TARGETS.find((entry) => entry.id === systemId) ?? TERMINAL_TARGETS[0];
         const adapter = connectorRegistry.get(systemId);
@@ -154,7 +154,7 @@ export function TerminalWorkspace() {
           <section
             key={slotIndex}
             onMouseDown={() => setActiveSlot(slotIndex)}
-            className={'rounded-xl border overflow-hidden h-[calc(100dvh-13rem)] min-h-[42rem] max-h-[64rem] flex flex-col bg-panel ' + (activeSlot === slotIndex ? "border-accent shadow-[0_0_20px_rgba(0,229,255,0.12)]" : "border-border")}
+            className={'rounded-xl border overflow-hidden h-[calc(100dvh-12rem)] min-h-[48rem] max-h-[72rem] flex flex-col bg-panel ' + (activeSlot === slotIndex ? "border-accent shadow-[0_0_20px_rgba(0,229,255,0.12)]" : "border-border")}
           >
             <header className="h-11 px-3 border-b border-border bg-panel-2 flex items-center gap-3 shrink-0">
               <span className="text-[10px] text-muted mono">TERMINAL {slotIndex + 1}</span>
