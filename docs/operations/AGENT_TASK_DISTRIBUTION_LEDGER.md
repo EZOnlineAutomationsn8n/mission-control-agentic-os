@@ -1,7 +1,7 @@
 # Agent Task Distribution Ledger
 
-Date activated: 2026-07-15  
-Status: CANONICAL_ACTIVE_REGISTER  
+Date activated: 2026-07-15
+Status: CANONICAL_ACTIVE_REGISTER
 Protocol: `docs/agentic-work-protocol/AGENTIC_WORK_PROTOCOL.md`
 
 ## Purpose
