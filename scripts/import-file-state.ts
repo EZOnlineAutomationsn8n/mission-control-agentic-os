@@ -60,7 +60,7 @@ for (const file of files) {
          VALUES ($1, $2, $3, $4::jsonb, NOW())
          ON CONFLICT (session_kind, agent_id, session_key)
          DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
-         WHERE COALESCE(agent_sessions.payload->>'updatedAt', '') <= COALESCE(EXCLUDED.payload->>'updatedAt', '')`,
+         WHERE COALESCE(agent_sessions.payload->>'updatedAt', '') < COALESCE(EXCLUDED.payload->>'updatedAt', '')`,
         [sessionKind, agentId, sessionKey, JSON.stringify(payload)]
       );
       counts.sessions += result.rowCount ?? 0;
