@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { createHash } from "crypto";
 import { databaseEnabled, databaseQuery } from "@/lib/persistence/database";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -34,9 +35,12 @@ export async function appendAuditEvent(
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     if (databaseEnabled()) {
+      const payload = JSON.stringify(e);
       await databaseQuery(
-        "INSERT INTO audit_events (payload, event_at) VALUES ($1::jsonb, $2::timestamptz)",
-        [JSON.stringify(e), e.timestamp]
+        `INSERT INTO audit_events (payload, event_at, event_hash)
+         VALUES ($1::jsonb, $2::timestamptz, $3)
+         ON CONFLICT (event_hash) WHERE event_hash IS NOT NULL DO NOTHING`,
+        [payload, e.timestamp, createHash("sha256").update(payload).digest("hex")]
       );
       return { ok: true };
     }

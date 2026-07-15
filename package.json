@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "tsx scripts/migrate-database.ts",
+    "db:import-file-state": "tsx scripts/import-file-state.ts",
     "test:agent-conversations": "tsx --test scripts/test-agent-conversations.ts",
     "test:claude-code-session": "tsx --test scripts/test-claude-code-session.ts",
     "test:cli-agent-sessions": "tsx --test scripts/test-cli-agent-sessions.ts",
