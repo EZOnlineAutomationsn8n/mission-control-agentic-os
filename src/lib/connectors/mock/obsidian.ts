@@ -106,7 +106,7 @@ function toStatusDetail(live: ObsidianLiveStatus): Record<string, string> {
     "link count": live.linkCount !== null ? String(live.linkCount) : "unknown",
     "orphan count": live.orphanCount !== null ? String(live.orphanCount) : "unknown",
     "top linked notes": live.topLinkedNotes.length > 0 ? live.topLinkedNotes.join(", ") : "none",
-    "mcp bridge detected": live.mcpBridgeDetected ? "yes" : "no",
+    "mcp bridge detected": live.mcpBridgeDetected === null ? "not visible across container boundary" : live.mcpBridgeDetected ? "yes" : "no",
     "command execution": "not commandable — no safe command endpoint wired",
     source: live.source,
     "graph snapshot at": new Date(live.lastCheckedAt).toLocaleTimeString(),

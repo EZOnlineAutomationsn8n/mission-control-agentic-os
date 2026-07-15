@@ -9,7 +9,7 @@ export interface ObsidianLiveStatus {
   systemId: "obsidian";
   label: "Obsidian — Shared Brain / Graphlink";
   status: ObsidianConnectorStatus;
-  mode: "local-fs-status";
+  mode: "local-fs-status" | "mounted-readonly-status";
   source: string;
   vaultPathExists: boolean;
   vaultMarkerFound: boolean;
@@ -22,7 +22,7 @@ export interface ObsidianLiveStatus {
   /** Top linked note titles with their inbound link count, e.g. "Overview (7)". Titles only, no body content. */
   topLinkedNotes: string[];
   /** Read-only workfloor MCP bridge process detected via /proc scan (no MCP calls made). */
-  mcpBridgeDetected: boolean;
+  mcpBridgeDetected: boolean | null;
   commandExecution: false;
   outputKind: "live-status";
   lastCheckedAt: string;

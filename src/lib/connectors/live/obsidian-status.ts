@@ -19,8 +19,9 @@ import type { ObsidianLiveStatus } from "./obsidian-status-types";
 //     presence is only detected via a pure /proc/<pid>/cmdline scan
 // ─────────────────────────────────────────────────────────────────────────
 
-const VAULT_PATH = "/opt/vireon/workfloor/obsidian/vault";
+const VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH || "/opt/vireon/workfloor/obsidian/vault";
 const VAULT_MARKER_PATH = path.join(VAULT_PATH, ".obsidian");
+const REQUIRE_LOCAL_MCP_PROCESS = process.env.OBSIDIAN_REQUIRE_LOCAL_MCP_PROCESS !== "0";
 const MAX_FILES_SCANNED = 5000;
 const MCP_BRIDGE_CMDLINE_MARKERS = ["workfloor-readonly-mcp"];
 const WIKILINK_RE = /\[\[([^\]|#]+)/g;
@@ -160,14 +161,14 @@ export async function readObsidianLiveStatus(): Promise<ObsidianLiveStatus> {
     errors.push("vault path exists but graph metadata could not be read");
   }
 
-  const mcpBridgePid = await findMcpBridgePid();
-  const mcpBridgeDetected = mcpBridgePid !== null;
-  if (!mcpBridgeDetected) {
+  const mcpBridgePid = REQUIRE_LOCAL_MCP_PROCESS ? await findMcpBridgePid() : null;
+  const mcpBridgeDetected = REQUIRE_LOCAL_MCP_PROCESS ? mcpBridgePid !== null : null;
+  if (REQUIRE_LOCAL_MCP_PROCESS && !mcpBridgeDetected) {
     errors.push("read-only workfloor MCP bridge process not detected");
   }
 
   let status: ObsidianLiveStatus["status"];
-  if (vaultPathExists && vaultMarkerFound && mcpBridgeDetected) {
+  if (vaultPathExists && vaultMarkerFound && (mcpBridgeDetected || !REQUIRE_LOCAL_MCP_PROCESS)) {
     status = "connected";
   } else if (vaultPathExists) {
     status = "degraded";
@@ -179,7 +180,7 @@ export async function readObsidianLiveStatus(): Promise<ObsidianLiveStatus> {
     systemId: "obsidian",
     label: "Obsidian — Shared Brain / Graphlink",
     status,
-    mode: "local-fs-status",
+    mode: REQUIRE_LOCAL_MCP_PROCESS ? "local-fs-status" : "mounted-readonly-status",
     source: VAULT_PATH,
     vaultPathExists,
     vaultMarkerFound,
