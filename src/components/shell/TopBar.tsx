@@ -55,16 +55,16 @@ export function TopBar() {
       </div>
 
       <div className="text-xs text-muted">
-        Demo approvals{" "}
+        Pending approvals{" "}
         <span className={`font-medium mono ${approvals > 0 ? "text-warn" : "text-foreground"}`}>
           {approvals}
         </span>
       </div>
 
       <div className="text-xs text-muted">
-        Brain writeback{" "}
+        Brain registry{" "}
         <span className="text-accent font-medium">
-          {brainStatus?.runState === "running" ? "live" : "idle"}
+          {brainStatus?.status === "connected" ? "connected" : brainStatus?.status ?? "loading"}
         </span>
       </div>
 

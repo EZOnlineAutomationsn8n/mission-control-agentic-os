@@ -60,19 +60,20 @@ export function createMockAdapter(config: MockAdapterConfig): AgentSystemAdapter
   let lastOutput: OutputEvent | null = null;
   const health: AgentSystemState["health"] = "ok";
 
-  const logs: LogEntry[] = (config.seedLogs ?? []).map((l) => ({
+  const demoDataEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_DATA === "1";
+  const logs: LogEntry[] = (demoDataEnabled ? config.seedLogs ?? [] : []).map((l) => ({
     ...l,
     id: nextId("log"),
     timestamp: nowISO(),
   }));
 
-  const reports: ReportRef[] = (config.seedReports ?? []).map((r) => ({
+  const reports: ReportRef[] = (demoDataEnabled ? config.seedReports ?? [] : []).map((r) => ({
     ...r,
     id: nextId("report"),
     createdAt: nowISO(),
   }));
 
-  const approvals: ApprovalRequest[] = (config.seedApprovals ?? []).map((a, index) => ({
+  const approvals: ApprovalRequest[] = (demoDataEnabled ? config.seedApprovals ?? [] : []).map((a, index) => ({
     ...a,
     id: `${id}-approval-${index + 1}`,
     requestedAt: nowISO(),

@@ -16,10 +16,6 @@ const TERMINAL_TARGETS = [
   { id: "openclaw", label: "OpenClaw" },
   { id: "gemini", label: "Gemini" },
   { id: "codex", label: "Codex" },
-  { id: "paperclip", label: "Paperclip" },
-  { id: "n8n", label: "n8n" },
-  { id: "obsidian", label: "Obsidian" },
-  { id: "browser-agents", label: "Browser Agents" },
 ] as const;
 
 function blockerText(state: AgentSystemState): string {
@@ -103,7 +99,11 @@ export function TerminalWorkspace() {
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          if (Array.isArray(parsed) && parsed.length === 4 && parsed.every((value) => typeof value === "string")) nextSlots = parsed;
+          if (
+            Array.isArray(parsed) &&
+            parsed.length === 4 &&
+            parsed.every((value) => typeof value === "string" && TERMINAL_TARGETS.some((target) => target.id === value))
+          ) nextSlots = parsed;
         } catch {
           // Ignore invalid local operator layout and keep safe defaults.
         }
