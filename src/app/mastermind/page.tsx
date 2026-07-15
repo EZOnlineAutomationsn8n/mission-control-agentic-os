@@ -1,124 +1,137 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
-import { AGENT_PAGES } from "@/lib/agent-pages";
 
-// AI Agent Mastermind — shared room concept: one input, visible agent
-// chips, @tagging. Multi-agent dispatch is NOT wired yet, and this page
-// does not fake it: submitting shows exactly which route is missing per
-// tagged agent. The component boundaries (composer → dispatch → per-agent
-// responses) are kept clean so a real POST /api/mastermind/dispatch can
-// attach later without a rewrite.
+const AGENTS = [
+  { id: "claude-code", label: "Claude Code", ready: true },
+  { id: "hermes", label: "Hermes", ready: true },
+  { id: "agy", label: "Antigravity", ready: true },
+  { id: "openclaw", label: "OpenClaw", ready: true },
+  { id: "codex", label: "Codex", ready: true },
+  { id: "gemini", label: "Gemini", ready: false },
+] as const;
 
-const ROOM_AGENT_IDS = ["claude", "hermes", "gemini", "codex", "openclaw", "free-claude-code"] as const;
-
-interface RoomEntry {
-  at: string;
-  kind: "user" | "system";
-  text: string;
-  tags: string[];
+interface DispatchResult {
+  target: string;
+  status: string;
+  text?: string | null;
+  error?: string | null;
+  agentIdentity?: string | null;
+  agentRuntime?: string | null;
+  agentSessionId?: string | null;
+  actualRuntimeModel?: string | null;
 }
 
-function parseTags(text: string): string[] {
-  const tags = new Set<string>();
-  const re = /@([a-z0-9-]+)/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text))) tags.add(m[1].toLowerCase());
-  return Array.from(tags);
+interface RoomEntry {
+  id: string;
+  at: string;
+  message: string;
+  status: string;
+  durationMs: number;
+  results: DispatchResult[];
 }
 
 export default function MastermindPage() {
-  const agents = ROOM_AGENT_IDS.map((id) => AGENT_PAGES.find((a) => a.id === id)!).filter(Boolean);
   const [input, setInput] = useState("");
-  const [log, setLog] = useState<RoomEntry[]>([]);
+  const [selected, setSelected] = useState<string[]>(AGENTS.filter((agent) => agent.ready).map((agent) => agent.id));
+  const [entries, setEntries] = useState<RoomEntry[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  function submit(e: React.FormEvent) {
-    e.preventDefault();
-    const text = input.trim();
-    if (!text) return;
-    const tags = parseTags(text);
-    const tagged = tags.length > 0 ? agents.filter((a) => tags.includes(a.id) || tags.includes(a.id.replace(/-/g, ""))) : agents;
+  function toggle(agentId: string) {
+    setSelected((current) => current.includes(agentId) ? current.filter((id) => id !== agentId) : [...current, agentId]);
+  }
 
-    const missingLines = tagged.map((a) =>
-      a.missing
-        ? `@${a.id}: ${a.missing}`
-        : `@${a.id}: route exists (POST /api/connectors/fcc/actions/ask) but Mastermind dispatch is not wired to it yet — use its own page for now.`
-    );
-
-    setLog((prev) => [
-      ...prev,
-      { at: new Date().toISOString(), kind: "user", text, tags },
-      {
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    const message = input.trim();
+    if (!message || selected.length === 0 || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/mastermind/dispatch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ message, targets: selected, sessionId: "mastermind-operator" }),
+      });
+      const payload = await response.json() as {
+        error?: string;
+        status?: string;
+        durationMs?: number;
+        results?: DispatchResult[];
+      };
+      if (!response.ok || !payload.results) throw new Error(payload.error || `dispatch returned HTTP ${response.status}`);
+      const results = payload.results;
+      setEntries((current) => [...current, {
+        id: crypto.randomUUID(),
         at: new Date().toISOString(),
-        kind: "system",
-        text:
-          "ACTION REQUIRED — multi-agent dispatch is not wired. Missing route: POST /api/mastermind/dispatch (fan-out to per-agent endpoints). Per-agent state:\n" +
-          missingLines.join("\n"),
-        tags: [],
-      },
-    ]);
-    setInput("");
+        message,
+        status: payload.status || "unknown",
+        durationMs: payload.durationMs || 0,
+        results,
+      }]);
+      setInput("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "dispatch failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
-    <div className="p-6 space-y-4 max-w-4xl">
+    <div className="p-6 space-y-4 max-w-6xl">
       <div>
         <h1 className="text-lg font-semibold">AI Agent Mastermind</h1>
-        <p className="text-sm text-muted mt-1">
-          Shared room for the agent team. Tag agents with @claude, @hermes, @codex… One input, one room.
-        </p>
+        <p className="text-sm text-muted mt-1">One operator message, real parallel turns, one persistent room.</p>
       </div>
 
       <div className="flex flex-wrap gap-2">
-        {agents.map((a) => (
-          <Link
-            key={a.id}
-            href={`/agents/${a.id}`}
-            className={`flex items-center gap-1.5 text-xs rounded-full px-3 py-1.5 transition-colors ${
-              a.missing ? "bg-panel-2 text-muted hover:text-foreground" : "bg-ok/15 text-ok hover:bg-ok/25"
-            }`}
-          >
-            <span className="status-dot" style={{ backgroundColor: a.missing ? "var(--warn)" : "var(--ok)" }} />
-            @{a.id}
-            {!a.missing && <span className="text-[10px] uppercase">ready</span>}
-          </Link>
-        ))}
+        {AGENTS.map((agent) => {
+          const active = selected.includes(agent.id);
+          return (
+            <button key={agent.id} type="button" onClick={() => toggle(agent.id)} className={`rounded-full border px-3 py-1.5 text-xs ${active ? "border-accent bg-accent/15 text-accent" : "border-border bg-panel-2 text-muted"}`}>
+              <span className="status-dot mr-1.5" style={{ backgroundColor: agent.ready ? "var(--ok)" : "var(--warn)" }} />
+              {agent.label}{!agent.ready ? " · login required" : ""}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="rounded-lg border border-warn/40 bg-warn/10 p-3 text-xs space-y-1">
-        <div className="uppercase tracking-wide font-semibold text-warn">Action required</div>
-        <div className="text-foreground/90">
-          Multi-agent dispatch route not wired — needs <span className="mono">POST /api/mastermind/dispatch</span>{" "}
-          fanning out to per-agent endpoints. Only Free Claude Code has a working endpoint today (usable on{" "}
-          <Link href="/agents/free-claude-code" className="text-accent hover:underline">
-            its own page
-          </Link>
-          ).
-        </div>
+      <div className="rounded-lg border border-ok/40 bg-ok/10 p-3 text-xs">
+        <span className="font-semibold text-ok uppercase tracking-wide">Real dispatch connected</span>
+        <span className="ml-2">Claude Code, Hermes, Antigravity, OpenClaw and Codex are available. Gemini remains selectable and returns its exact login blocker.</span>
       </div>
 
-      <div className="rounded-lg border border-border bg-panel p-3 min-h-48 max-h-[50vh] overflow-y-auto space-y-2 text-sm">
-        {log.length === 0 && <div className="text-muted text-xs">Room is empty — type below to address the team.</div>}
-        {log.map((e, i) => (
-          <div key={i} className={e.kind === "user" ? "" : "rounded bg-warn/10 p-2"}>
-            <div className="text-[10px] text-muted mono">
-              {new Date(e.at).toLocaleTimeString()} · {e.kind === "user" ? "you" : "room"}
+      {error && <div className="rounded border border-danger/40 bg-danger/10 p-3 text-xs text-danger">{error}</div>}
+
+      <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+        {entries.length === 0 && <div className="rounded-lg border border-border bg-panel p-4 text-xs text-muted">No dispatches yet.</div>}
+        {entries.map((entry) => (
+          <div key={entry.id} className="rounded-lg border border-border bg-panel p-4 space-y-3">
+            <div className="flex justify-between gap-3 text-xs">
+              <span className="font-medium">You: {entry.message}</span>
+              <span className="mono text-muted">{entry.status} · {entry.durationMs} ms</span>
             </div>
-            <div className="whitespace-pre-wrap text-xs">{e.text}</div>
+            <div className="grid gap-3 md:grid-cols-2">
+              {entry.results.map((result) => (
+                <div key={result.target} className={`rounded border p-3 text-xs ${result.status === "completed" ? "border-ok/30 bg-ok/5" : "border-danger/30 bg-danger/5"}`}>
+                  <div className="flex justify-between gap-2 mb-2">
+                    <span className="font-semibold">{result.agentIdentity || result.target}</span>
+                    <span className="mono text-muted">{result.status}</span>
+                  </div>
+                  <div className="whitespace-pre-wrap break-words">{result.text || result.error || "No response text"}</div>
+                  <div className="mt-2 text-[10px] text-muted mono">{result.agentRuntime || "runtime unavailable"} · session {result.agentSessionId || "unavailable"}{result.actualRuntimeModel ? ` · ${result.actualRuntimeModel}` : ""}</div>
+                </div>
+              ))}
+            </div>
           </div>
         ))}
       </div>
 
       <form onSubmit={submit} className="flex gap-2">
-        <input
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Message the room… e.g. @claude @codex plan the next release"
-          className="flex-1 bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
-        />
-        <button type="submit" className="text-xs rounded bg-accent/20 text-accent px-4 py-2 hover:bg-accent/30">
-          Send
+        <textarea value={input} onChange={(event) => setInput(event.target.value)} rows={3} placeholder="Give the selected agents one concrete assignment…" className="flex-1 resize-none rounded bg-panel-2 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent" />
+        <button disabled={busy || !input.trim() || selected.length === 0} type="submit" className="self-stretch rounded bg-accent/20 px-5 text-xs text-accent enabled:hover:bg-accent/30 disabled:opacity-40">
+          {busy ? "Running…" : `Dispatch ${selected.length}`}
         </button>
       </form>
     </div>

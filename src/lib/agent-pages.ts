@@ -41,7 +41,7 @@ export const AGENT_PAGES: AgentPageDef[] = [
     connectorId: "agy",
     missing: null,
     plannedTabs: ["Chat", "Sessions", "Workspace", "Control Room"],
-    detected: "Antigravity Agentic AI coding assistant CLI 1.0.12 is bound to /opt/vireon/workfloor with a persistent sandbox conversation, stored history and audit.",
+    detected: "Antigravity Agentic AI coding assistant CLI 1.1.1 is bound to the isolated Mission Control workspace with a persistent conversation, stored history and audit.",
   },
   {
     id: "gemini",
@@ -57,7 +57,7 @@ export const AGENT_PAGES: AgentPageDef[] = [
     connectorId: "codex",
     missing: null,
     plannedTabs: ["Chat", "Sessions", "Workspace", "Goal Mode"],
-    detected: "Codex CLI 0.144.3 is installed with a persistent Mission Control session route. Its own VPS authentication is required before the first turn.",
+    detected: "Codex CLI 0.144.3 is authenticated through ChatGPT and has a persistent Mission Control session route with stored history and audit.",
   },
   {
     id: "kimi-code",
