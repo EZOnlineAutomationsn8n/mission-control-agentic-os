@@ -18,7 +18,7 @@ import type { FccLiveStatus } from "./fcc-status-types";
 // here is a coding-first OpenRouter free-model lane, not Anthropic Sonnet.
 // ─────────────────────────────────────────────────────────────────────────
 
-const HEALTH_URL = "http://127.0.0.1:8082/health";
+const HEALTH_URL = process.env.FCC_HEALTH_URL || "http://127.0.0.1:8082/health";
 const HEALTH_TIMEOUT_MS = 2000;
 const SERVER_FILE_PATH = "/opt/vireon/workfloor/fcc/free-claude-code/server.py";
 
@@ -95,7 +95,7 @@ export async function readFccLiveStatus(): Promise<FccLiveStatus> {
     label: "FCC Model Gateway",
     status,
     mode: "local-http-health",
-    source: "127.0.0.1:8082/health",
+    source: HEALTH_URL,
     healthReachable: health.reachable,
     httpStatus,
     service: KNOWN_SERVICE,

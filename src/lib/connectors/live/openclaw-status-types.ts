@@ -9,12 +9,12 @@ export interface OpenClawLiveStatus {
   systemId: "openclaw";
   label: "OpenClaw";
   status: OpenClawConnectorStatus;
-  mode: "local-gateway-status";
+  mode: "local-gateway-status" | "remote-gateway-status";
   source: string;
   service: string;
   gatewayReachable: boolean;
   httpStatus: number | null;
-  pidAlive: boolean;
+  pidAlive: boolean | null;
   commandExecution: false;
   outputKind: "live-status";
   /** Static declarative field — this reader never inspects or reactivates the heartbeat loop. */

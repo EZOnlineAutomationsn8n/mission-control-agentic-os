@@ -20,8 +20,9 @@ import type { OpenClawLiveStatus } from "./openclaw-status-types";
 //     same fs+fetch-only pattern used by the Hermes and FCC readers.
 // ─────────────────────────────────────────────────────────────────────────
 
-const HEALTH_URL = "http://127.0.0.1:18789/health";
+const HEALTH_URL = process.env.OPENCLAW_HEALTH_URL || "http://127.0.0.1:18789/health";
 const HEALTH_TIMEOUT_MS = 2000;
+const REQUIRE_LOCAL_PROCESS = process.env.OPENCLAW_REQUIRE_LOCAL_PROCESS !== "0";
 
 const KNOWN_SERVICE = "openclaw-gateway.service";
 const EXPECTED_CMDLINE_MARKERS = ["openclaw", "gateway", "18789"];
@@ -85,8 +86,8 @@ export async function readOpenClawLiveStatus(): Promise<OpenClawLiveStatus> {
   const errors: string[] = [];
 
   const health = await fetchHealth();
-  const pid = await findGatewayPid();
-  const pidAlive = pid !== null;
+  const pid = REQUIRE_LOCAL_PROCESS ? await findGatewayPid() : null;
+  const pidAlive = REQUIRE_LOCAL_PROCESS ? pid !== null : null;
 
   let httpStatus: number | null = null;
   let gatewayReachable = false;
@@ -106,12 +107,12 @@ export async function readOpenClawLiveStatus(): Promise<OpenClawLiveStatus> {
     }
   }
 
-  if (!pidAlive) {
+  if (REQUIRE_LOCAL_PROCESS && !pidAlive) {
     errors.push("no process matching the expected OpenClaw gateway command shape was found");
   }
 
   let status: OpenClawLiveStatus["status"];
-  if (gatewayReachable && pidAlive) {
+  if (gatewayReachable && (pidAlive || !REQUIRE_LOCAL_PROCESS)) {
     status = "connected";
   } else if (pidAlive || gatewayReachable) {
     status = "degraded";
@@ -123,8 +124,8 @@ export async function readOpenClawLiveStatus(): Promise<OpenClawLiveStatus> {
     systemId: "openclaw",
     label: "OpenClaw",
     status,
-    mode: "local-gateway-status",
-    source: "127.0.0.1:18789",
+    mode: REQUIRE_LOCAL_PROCESS ? "local-gateway-status" : "remote-gateway-status",
+    source: HEALTH_URL,
     service: KNOWN_SERVICE,
     gatewayReachable,
     httpStatus,

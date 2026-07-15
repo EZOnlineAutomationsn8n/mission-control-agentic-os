@@ -2,7 +2,7 @@ import type { N8nLiveStatus } from "./n8n-status-types";
 
 // SERVER-ONLY. GET-only health check against n8n's own /healthz endpoint.
 // No workflow trigger, no credential read, no shell/file/service action.
-const HEALTH_URL = "http://127.0.0.1:5678/healthz";
+const HEALTH_URL = process.env.N8N_HEALTH_URL || "http://127.0.0.1:5678/healthz";
 const HEALTH_TIMEOUT_MS = 2000;
 
 export async function readN8nLiveStatus(): Promise<N8nLiveStatus> {
@@ -43,7 +43,7 @@ export async function readN8nLiveStatus(): Promise<N8nLiveStatus> {
     label: "n8n",
     status,
     mode: "local-http-health",
-    source: "127.0.0.1:5678/healthz",
+    source: HEALTH_URL,
     healthReachable,
     httpStatus,
     commandExecution: false,

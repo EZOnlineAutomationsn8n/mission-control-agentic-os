@@ -9,13 +9,13 @@ export interface PaperclipLiveStatus {
   systemId: "paperclip";
   label: "Paperclip";
   status: PaperclipConnectorStatus;
-  mode: "local-http-health";
+  mode: "local-http-health" | "remote-http-health";
   source: string;
   healthReachable: boolean;
   httpStatus: number | null;
   bootstrapStatus: string | null;
   deploymentMode: string | null;
-  pidAlive: boolean;
+  pidAlive: boolean | null;
   commandExecution: false;
   outputKind: "live-status";
   lastCheckedAt: string;

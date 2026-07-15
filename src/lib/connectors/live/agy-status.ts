@@ -5,8 +5,8 @@ import type { AgyLiveStatus } from "./agy-status-types";
 // fleet registry snapshot ({service, status, registry, agents_total,
 // pending, time}) — no secrets, no job dispatch. No task routing, no
 // shell/file/service action anywhere in this module.
-const HEALTH_URL = "http://127.0.0.1:8090/health";
-const STATUS_URL = "http://127.0.0.1:8090/status";
+const HEALTH_URL = process.env.AGY_HEALTH_URL || "http://127.0.0.1:8090/health";
+const STATUS_URL = process.env.AGY_STATUS_URL || "http://127.0.0.1:8090/status";
 const REQUEST_TIMEOUT_MS = 2000;
 
 async function getJson(url: string): Promise<{ ok: boolean; httpStatus: number | null; body: unknown; error?: string }> {
@@ -62,7 +62,7 @@ export async function readAgyLiveStatus(): Promise<AgyLiveStatus> {
     label: "Antigravity",
     status,
     mode: "local-http-health",
-    source: "127.0.0.1:8090/health",
+    source: HEALTH_URL,
     healthReachable,
     httpStatus,
     service,

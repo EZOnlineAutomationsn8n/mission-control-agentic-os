@@ -92,7 +92,7 @@ function toStatusDetail(live: PaperclipLiveStatus): Record<string, string> {
     "http status": live.httpStatus !== null ? String(live.httpStatus) : "n/a",
     "bootstrap status": live.bootstrapStatus ?? "unknown",
     "deployment mode": live.deploymentMode ?? "unknown",
-    "pid alive": live.pidAlive ? "yes" : "no",
+    "pid alive": live.pidAlive === null ? "not visible across container boundary" : live.pidAlive ? "yes" : "no",
     "command execution": "not commandable — no safe command endpoint wired",
     source: live.source,
     "last checked": new Date(live.lastCheckedAt).toLocaleTimeString(),

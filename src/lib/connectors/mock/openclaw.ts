@@ -93,7 +93,7 @@ function toStatusDetail(live: OpenClawLiveStatus): Record<string, string> {
     service: live.service,
     "gateway reachable": live.gatewayReachable ? "yes" : "no",
     "http status": live.httpStatus !== null ? String(live.httpStatus) : "n/a",
-    "pid alive": live.pidAlive ? "yes" : "no",
+    "pid alive": live.pidAlive === null ? "not visible across container boundary" : live.pidAlive ? "yes" : "no",
     "command execution": "not commandable — no safe command endpoint wired",
     heartbeat: live.heartbeat,
     "old main session": live.oldMainSession,

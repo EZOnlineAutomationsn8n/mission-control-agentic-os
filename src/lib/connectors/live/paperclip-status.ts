@@ -22,9 +22,10 @@ import type { PaperclipLiveStatus } from "./paperclip-status-types";
 // only (no user/document content).
 // ─────────────────────────────────────────────────────────────────────────
 
-const HEALTH_URL = "http://127.0.0.1:3100/api/health";
+const HEALTH_URL = process.env.PAPERCLIP_HEALTH_URL || "http://127.0.0.1:3100/api/health";
 const HEALTH_TIMEOUT_MS = 2000;
 const EXPECTED_CMDLINE_MARKERS = ["paperclipai", "--instance"];
+const REQUIRE_LOCAL_PROCESS = process.env.PAPERCLIP_REQUIRE_LOCAL_PROCESS !== "0";
 
 async function fetchHealth(): Promise<
   | { reachable: true; httpStatus: number; body: unknown }
@@ -33,7 +34,11 @@ async function fetchHealth(): Promise<
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
   try {
-    const res = await fetch(HEALTH_URL, { signal: controller.signal, cache: "no-store" });
+    const res = await fetch(HEALTH_URL, {
+      signal: controller.signal,
+      cache: "no-store",
+      headers: process.env.PAPERCLIP_HOST_HEADER ? { host: process.env.PAPERCLIP_HOST_HEADER } : undefined,
+    });
     const httpStatus = res.status;
     let body: unknown = null;
     try {
@@ -82,9 +87,9 @@ export async function readPaperclipLiveStatus(): Promise<PaperclipLiveStatus> {
   const errors: string[] = [];
 
   const health = await fetchHealth();
-  const pid = await findPaperclipPid();
-  const pidAlive = pid !== null;
-  if (!pidAlive) {
+  const pid = REQUIRE_LOCAL_PROCESS ? await findPaperclipPid() : null;
+  const pidAlive = REQUIRE_LOCAL_PROCESS ? pid !== null : null;
+  if (REQUIRE_LOCAL_PROCESS && !pidAlive) {
     errors.push("no process matching the expected Paperclip runtime command shape was found");
   }
 
@@ -104,7 +109,7 @@ export async function readPaperclipLiveStatus(): Promise<PaperclipLiveStatus> {
     deploymentMode = body && typeof body.deploymentMode === "string" ? body.deploymentMode : null;
 
     const httpOk = health.httpStatus >= 200 && health.httpStatus < 300;
-    if (httpOk && bodyStatus === "ok" && pidAlive) {
+    if (httpOk && bodyStatus === "ok" && (pidAlive || !REQUIRE_LOCAL_PROCESS)) {
       status = "connected";
     } else if (httpOk || pidAlive) {
       status = "degraded";
@@ -119,8 +124,8 @@ export async function readPaperclipLiveStatus(): Promise<PaperclipLiveStatus> {
     systemId: "paperclip",
     label: "Paperclip",
     status,
-    mode: "local-http-health",
-    source: "127.0.0.1:3100/api/health",
+    mode: REQUIRE_LOCAL_PROCESS ? "local-http-health" : "remote-http-health",
+    source: HEALTH_URL,
     healthReachable: health.reachable,
     httpStatus,
     bootstrapStatus,
