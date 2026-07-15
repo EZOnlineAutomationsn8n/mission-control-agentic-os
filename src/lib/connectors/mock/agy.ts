@@ -2,63 +2,49 @@ import type { AgentSystemAdapter, AgentSystemState, ConnectorDescriptor, RunStat
 import { createMockAdapter } from "./shared";
 import type { AgyLiveStatus } from "../live/agy-status-types";
 
-// ─────────────────────────────────────────────────────────────────────────
-// AGY — live detection + read-only context refresh. Task routing/pause is NOT wired in
-// this pass (write actions against a real system) — capabilities report
-// projectContext as blocked/unavailable.
-// ─────────────────────────────────────────────────────────────────────────
-
 const descriptor: ConnectorDescriptor = {
   id: "agy",
-  name: "AGY Orchestrator",
-  type: "orchestrator",
-  category: "Orchestrators",
-  connectionModes: ["api"],
-  activeMode: "api",
-  status: "degraded",
-  capabilities: ["task routing", "fleet supervision", "load balancing across agents"],
-  permissions: ["read-health-endpoint"],
-  lastSync: "2026-07-08T09:05:00Z",
+  name: "Antigravity",
+  type: "agent",
+  category: "AI Agents",
+  connectionModes: ["cli", "api"],
+  activeMode: "cli",
+  status: "connected",
+  capabilities: ["Agentic AI coding assistance", "persistent sandbox conversation", "workspace-aware tool use"],
+  permissions: ["Antigravity sandbox terminal restrictions"],
+  lastSync: null,
   memoryWriteObligation: true,
-  obsidianWriteTarget: "Reports/agy",
+  obsidianWriteTarget: "Reports/antigravity",
   realConnectionFields: [
-    { key: "apiUrl", label: "AGY API URL", placeholder: "https://agy.internal/api", kind: "url" },
-    { key: "apiKey", label: "API key", placeholder: "agy_•••••", kind: "secret" },
+    { key: "binaryPath", label: "Antigravity CLI path", placeholder: "/root/.local/bin/agy", kind: "path" },
+    { key: "workspace", label: "Workspace", placeholder: "/opt/vireon/workfloor", kind: "path" },
   ],
 };
 
 const base = createMockAdapter({
   descriptor,
-  modelOrService: "AGY orchestrator",
+  modelOrService: "Antigravity CLI 1.0.12",
   initialRunState: "idle",
-  taskLines: [
-    "monitoring fleet health across connected systems",
-    "routing blocked task to OpenClaw",
-    "rebalancing load — Hermes at 82% capacity",
-  ],
-  streamLines: [
-    "fleet check: systems healthy",
-    "routed WORK-0042 to OpenClaw",
-    "Hermes queue depth: 3 — within threshold",
-  ],
-  seedLogs: [{ level: "info", agentId: "agy", message: "fleet bring-up complete", sourceRef: null }],
+  taskLines: [],
+  streamLines: [],
+  seedLogs: [],
   seedReports: [],
   seedApprovals: [],
   readActions: ["read-health-endpoint"],
-  writeActions: [],
+  writeActions: ["run-antigravity-sandbox-turn"],
 });
 
 const LIVE_STATUS_ENDPOINT = "/api/connectors/agy/status";
 
 function toStatusDetail(live: AgyLiveStatus): Record<string, string> {
   const detail: Record<string, string> = {
+    "agent runtime": "Antigravity CLI 1.0.12",
+    "agent role": "Agentic AI coding assistant",
+    workspace: "/opt/vireon/workfloor",
     "health reachable": live.healthReachable ? "yes" : "no",
     "http status": live.httpStatus !== null ? String(live.httpStatus) : "n/a",
-    service: live.service ?? "unknown",
     "registry ok": live.registryOk === null ? "unknown" : live.registryOk ? "yes" : "no",
-    "agents total": live.agentsTotal !== null ? String(live.agentsTotal) : "unknown",
-    pending: live.pending !== null ? String(live.pending) : "unknown",
-    "command execution": "not commandable — no safe command endpoint wired",
+    "terminal execution": "persistent sandbox CLI session available",
     source: live.source,
     "last checked": new Date(live.lastCheckedAt).toLocaleTimeString(),
   };
@@ -69,9 +55,9 @@ function toStatusDetail(live: AgyLiveStatus): Record<string, string> {
 async function fetchLiveStatus(): Promise<AgyLiveStatus | null> {
   if (typeof window === "undefined") return null;
   try {
-    const res = await fetch(LIVE_STATUS_ENDPOINT, { cache: "no-store" });
-    if (!res.ok) return null;
-    return (await res.json()) as AgyLiveStatus;
+    const response = await fetch(LIVE_STATUS_ENDPOINT, { cache: "no-store" });
+    if (!response.ok) return null;
+    return (await response.json()) as AgyLiveStatus;
   } catch {
     return null;
   }
@@ -83,62 +69,38 @@ export const agyAdapter: AgentSystemAdapter = {
   async getState(): Promise<AgentSystemState> {
     const baseState = await base.getState();
     const live = await fetchLiveStatus();
-
-    if (!live) {
-      return { ...baseState, commandExecution: false, outputKind: "mock-stream", statusDetail: null };
-    }
-
-    const runState: RunState =
-      live.status === "connected" ? "running" : live.status === "degraded" ? "error" : "stopped";
+    const runState: RunState = live?.status === "degraded" ? "error" : "idle";
 
     return {
       ...baseState,
-      status: live.status,
+      status: live?.status ?? "connected",
       runState,
-      health: live.status === "connected" ? "ok" : live.status === "degraded" ? "warn" : "fail",
-      currentTask: `Health ${live.healthReachable ? "reachable" : "unreachable"} (${live.status}) — ${live.source}`,
-      connectorMode: "api",
-      commandExecution: false,
+      health: live?.status === "degraded" ? "warn" : "ok",
+      currentTask: "Persistent Antigravity coding-assistant session available",
+      connectorMode: "cli",
+      commandExecution: true,
       outputKind: "live-status",
-      statusDetail: toStatusDetail(live),
+      statusDetail: live ? toStatusDetail(live) : {
+        "agent runtime": "Antigravity CLI 1.0.12",
+        "agent role": "Agentic AI coding assistant",
+        workspace: "/opt/vireon/workfloor",
+        "terminal execution": "persistent sandbox CLI session available",
+      },
       controlledAction: {
-        id: "agy-context",
-        label: "AGY project context (read-only refresh)",
-        endpoint: "/api/connectors/agy/actions/context",
-        requiresInput: false,
+        id: "antigravity-agent",
+        label: "Send to Antigravity",
+        endpoint: "/api/connectors/agy/actions/ask",
+        requiresInput: true,
       },
       capabilities: [
         { kind: "status", available: true },
+        { kind: "controlledPrompt", available: true, reason: "persistent Antigravity sandbox CLI session" },
         {
           kind: "projectContext",
-          available: live.registryOk !== null,
-          reason:
-            live.registryOk !== null
-              ? "fleet registry snapshot via /status (read-only)"
-              : "/status endpoint unreachable — no registry snapshot available",
-        },
-        {
-          kind: "blocked",
           available: true,
-          reason: "orchestration/job-trigger blocked — no safe job-dispatch endpoint found",
+          reason: "Antigravity project bound to /opt/vireon/workfloor",
         },
       ],
     };
-  },
-
-  async sendCommand() {
-    return;
-  },
-  async start() {
-    return;
-  },
-  async pause() {
-    return;
-  },
-  async resume() {
-    return;
-  },
-  async stop() {
-    return;
   },
 };

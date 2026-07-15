@@ -17,16 +17,15 @@ This order is sourced from the live FCC `/v1/models` fact-lock and applied in:
 
 Fallback order:
 
-1. `open_router/openrouter/owl-alpha`
+1. `open_router/poolside/laguna-m.1:free`
 2. `open_router/qwen/qwen3-coder:free`
-3. `open_router/poolside/laguna-m.1:free`
-4. `open_router/cohere/north-mini-code:free`
-5. `open_router/qwen/qwen3-next-80b-a3b-instruct:free`
-6. `open_router/openai/gpt-oss-120b:free`
-7. `open_router/nvidia/nemotron-3-ultra-550b-a55b:free`
-8. `open_router/google/gemma-4-31b-it:free`
-9. `open_router/openai/gpt-oss-20b:free`
-10. `open_router/openrouter/free`
+3. `open_router/cohere/north-mini-code:free`
+4. `open_router/qwen/qwen3-next-80b-a3b-instruct:free`
+5. `open_router/openai/gpt-oss-120b:free`
+6. `open_router/nvidia/nemotron-3-ultra-550b-a55b:free`
+7. `open_router/google/gemma-4-31b-it:free`
+8. `open_router/openai/gpt-oss-20b:free`
+9. `open_router/openrouter/free`
 
 ---
 
@@ -61,7 +60,7 @@ Required behavior:
 
 Runtime proof on 2026-07-10:
 
-- `open_router/openrouter/owl-alpha` failed as upstream provider failure.
+- The unavailable former primary route was removed from active routing on 2026-07-13; historical runtime evidence remains preserved.
 - `open_router/qwen/qwen3-coder:free` failed as provider rate-limit.
 - several FREE routes timed out.
 - `open_router/google/gemma-4-31b-it:free` failed as provider rate-limit.

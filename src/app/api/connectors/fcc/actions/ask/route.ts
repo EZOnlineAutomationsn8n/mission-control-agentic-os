@@ -3,7 +3,7 @@ import { sendFccControlledPrompt, FCC_ROUTE_COUNT } from "@/lib/connectors/live/
 import { executeConversationRequest } from "@/lib/agent-conversations/service";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 
-// Controlled-action endpoint for FCC / OwlAlpha only. Only ever invoked by
+// Controlled-action endpoint for FCC raw-model gateway only. Only ever invoked by
 // an explicit POST from the operator's UI form submission — nothing polls
 // or schedules calls to this route. No shell execution, no filesystem
 // writes, no service mutation happen here or in the reader it calls.
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
         status: "failed",
         text: null,
         error: "invalid JSON body",
-        transportModelAlias: "open_router/openrouter/owl-alpha",
+        transportModelAlias: "open_router/poolside/laguna-m.1:free",
         actualRuntimeModel: null,
         attempts: [],
         routeCount: FCC_ROUTE_COUNT,

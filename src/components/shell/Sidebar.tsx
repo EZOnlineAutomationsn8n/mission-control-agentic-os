@@ -30,7 +30,7 @@ const WORKSPACE: NavItem[] = [
 ];
 
 const AGENTS: NavItem[] = AGENT_PAGES.map((a) => ({
-  href: `/agents/${a.id}`,
+  href: a.connectorId ? `/?agent=${a.connectorId}` : `/agents/${a.id}`,
   label: a.name,
   connectorId: a.connectorId ?? undefined,
   ready: a.missing === null,
@@ -77,12 +77,17 @@ export function Sidebar() {
   }, []);
 
   function renderItem(item: NavItem) {
-    const active = pathname === item.href;
+    const active = item.href.startsWith("/?agent=") ? pathname === "/" : pathname === item.href;
     const live = item.connectorId ? states[item.connectorId] : undefined;
     return (
       <Link
         key={item.href}
         href={item.href}
+        onClick={() => {
+          if (item.connectorId && typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("mission-control:select-agent", { detail: item.connectorId }));
+          }
+        }}
         className={`flex items-center gap-2 rounded px-3 py-1.5 text-sm mb-0.5 transition-colors min-w-0 ${
           active ? "bg-panel-2 text-accent" : "text-foreground/80 hover:bg-panel-2 hover:text-foreground"
         }`}
@@ -90,7 +95,7 @@ export function Sidebar() {
         {live ? (
           <span className="status-dot shrink-0" style={dotGlowStyle(statusColor(live.status))} title={live.status} />
         ) : item.ready ? (
-          <span className="status-dot shrink-0" style={{ backgroundColor: "var(--accent)" }} title="agent room configured; runtime verified inside room" />
+          <span className="status-dot shrink-0" style={{ backgroundColor: "var(--accent)" }} title="agent terminal route configured; runtime state is shown inside the room" />
         ) : (
           <span className="w-2 shrink-0" />
         )}

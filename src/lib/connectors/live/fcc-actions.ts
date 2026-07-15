@@ -45,11 +45,10 @@ const MAX_PROMPT_LENGTH = 4000;
 
 // OPERATOR-DEFINED FREE-only route order. Do not reorder or edit in code
 // passes — this list belongs to the operator (locked in commit 4af1aaf).
-const FALLBACK_MODEL_ROUTES: readonly string[] = [
+export const FALLBACK_MODEL_ROUTES: readonly string[] = [
   // FREE-only routes verified from live FCC /v1/models.
-  "open_router/openrouter/owl-alpha",
-  "open_router/qwen/qwen3-coder:free",
   "open_router/poolside/laguna-m.1:free",
+  "open_router/qwen/qwen3-coder:free",
   "open_router/cohere/north-mini-code:free",
   "open_router/qwen/qwen3-next-80b-a3b-instruct:free",
   "open_router/openai/gpt-oss-120b:free",

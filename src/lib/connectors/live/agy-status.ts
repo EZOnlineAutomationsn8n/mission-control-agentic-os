@@ -59,7 +59,7 @@ export async function readAgyLiveStatus(): Promise<AgyLiveStatus> {
 
   return {
     systemId: "agy",
-    label: "AGY Orchestrator",
+    label: "Antigravity",
     status,
     mode: "local-http-health",
     source: "127.0.0.1:8090/health",

@@ -19,8 +19,9 @@ Rules:
 - no service restarts unless explicitly requested.
 
 First implementation target:
-FCC / OwlAlpha on Home as a real work pane:
-one input → Send → output/history.
+Claude Code Agent on Home as a real agent terminal:
+Start Claude Code -> persistent Claude Code session -> input -> Send -> agent output/history.
+FCC is only the underlying model gateway; a raw FCC completion is diagnostic only.
 
 ---
 

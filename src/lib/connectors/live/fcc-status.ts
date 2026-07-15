@@ -15,7 +15,7 @@ import type { FccLiveStatus } from "./fcc-status-types";
 //
 // Important correction carried through this module: FCC is NOT "Sonnet".
 // free-claude-code is a provider-agnostic proxy — its real runtime lane
-// here is OwlAlpha via the OpenRouter free lane, not Anthropic Sonnet.
+// here is a coding-first OpenRouter free-model lane, not Anthropic Sonnet.
 // ─────────────────────────────────────────────────────────────────────────
 
 const HEALTH_URL = "http://127.0.0.1:8082/health";
@@ -24,7 +24,7 @@ const SERVER_FILE_PATH = "/opt/vireon/workfloor/fcc/free-claude-code/server.py";
 
 const KNOWN_SERVICE = "free-claude-code";
 const KNOWN_PROVIDER = "openrouter";
-const KNOWN_MODEL_ROUTE = "operator-ordered free-route chain (10 routes, #1 OwlAlpha)";
+const KNOWN_MODEL_ROUTE = "coding-first free-route chain (9 routes, #1 Laguna M.1)";
 
 async function serverFileExists(): Promise<boolean> {
   try {
@@ -92,7 +92,7 @@ export async function readFccLiveStatus(): Promise<FccLiveStatus> {
 
   return {
     systemId: "claude-fcc",
-    label: "FCC / OwlAlpha",
+    label: "FCC Model Gateway",
     status,
     mode: "local-http-health",
     source: "127.0.0.1:8082/health",

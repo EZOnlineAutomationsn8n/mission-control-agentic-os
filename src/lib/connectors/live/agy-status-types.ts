@@ -2,7 +2,7 @@ export type AgyConnectorStatus = "connected" | "degraded" | "disconnected";
 
 export interface AgyLiveStatus {
   systemId: "agy";
-  label: "AGY Orchestrator";
+  label: "Antigravity";
   status: AgyConnectorStatus;
   mode: "local-http-health";
   source: string;

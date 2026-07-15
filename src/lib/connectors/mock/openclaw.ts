@@ -61,7 +61,7 @@ const base = createMockAdapter({
   initialRunState: "waiting-approval",
   taskLines: [
     "implementing retry backoff on webhook adapter",
-    "reviewing handover from FCC / OwlAlpha",
+    "reviewing handover from FCC Model Gateway",
     "waiting on operator approval for infra change",
   ],
   streamLines: [
@@ -77,7 +77,7 @@ const base = createMockAdapter({
     {
       agentId: "openclaw",
       requestedCapability: "manage-webhooks: modify production webhook retry policy",
-      context: "Implementing retry/backoff handover from FCC / OwlAlpha session SESSION-0002.",
+      context: "Implementing retry/backoff handover from FCC Model Gateway session SESSION-0002.",
       riskLevel: "high",
       status: "pending",
     },

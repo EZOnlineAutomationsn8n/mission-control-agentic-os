@@ -145,7 +145,7 @@ export const paperclipAdapter: AgentSystemAdapter = {
       commandExecution: false,
       outputKind: "live-status",
       statusDetail: toStatusDetail(live),
-      externalUrl: "http://127.0.0.1:3100",
+      externalUrl: "http://72.61.91.176:3100/VIR/dashboard",
       capabilities: [
         { kind: "status", available: true },
         { kind: "readOnlyData", available: true, reason: "bootstrap/deployment metadata via /api/health" },

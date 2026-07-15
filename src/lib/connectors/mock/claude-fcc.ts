@@ -6,7 +6,7 @@ import type { FccLiveStatus } from "../live/fcc-status-types";
 // FCC — second real (partial) connector: live detection wired; command channel pending integration.
 //
 // Important correction: FCC is NOT "Sonnet". free-claude-code is a
-// provider-agnostic proxy; its runtime lane here is OwlAlpha via the
+// provider-agnostic proxy; its runtime lane here is the coding-first model route via the
 // OpenRouter free lane. Claude Code/Sonnet may be the tool editing this
 // repo, but it is not the FCC runtime target — never label FCC as Sonnet.
 //
@@ -30,7 +30,7 @@ import type { FccLiveStatus } from "../live/fcc-status-types";
 
 const descriptor: ConnectorDescriptor = {
   id: "claude-fcc",
-  name: "Free Claude Code (FCC proxy)",
+  name: "Claude Code Agent",
   type: "agent",
   category: "AI Agents",
   connectionModes: ["cli", "api"],
@@ -41,9 +41,9 @@ const descriptor: ConnectorDescriptor = {
   // overridden every poll by the live/fallback logic in getState() below.
   status: "degraded",
   capabilities: [
-    "live health status (read-only)",
-    "local HTTP health check",
-    "no direct command channel (integration pending)",
+    "real Claude Code CLI session lifecycle",
+    "persistent resumable Claude Code session",
+    "FCC Model Gateway health and transport evidence",
   ],
   permissions: ["read-health-endpoint", "read-file-presence"],
   lastSync: "2026-07-08T09:00:00Z",
@@ -57,7 +57,7 @@ const descriptor: ConnectorDescriptor = {
 
 const base = createMockAdapter({
   descriptor,
-  modelOrService: "FCC / OwlAlpha (OpenRouter free lane)",
+  modelOrService: "FCC Model Gateway (OpenRouter free lane)",
   initialRunState: "running",
   taskLines: [
     "refactoring connector registry pattern",
@@ -105,10 +105,10 @@ function toStatusDetail(live: FccLiveStatus): Record<string, string> {
     "health reachable": live.healthReachable ? "yes" : "no",
     "http status": live.httpStatus !== null ? String(live.httpStatus) : "n/a",
     provider: live.provider,
-    "default route": "#1 OwlAlpha (operator ordered)",
+    "default route": "#1 Laguna M.1 (coding-first order)",
     "model route": live.modelRoute,
     "agent bridge": "none — raw model completion, no Claude Code agent session wired",
-    "command execution": "controlled prompt available (text only, no tools)",
+    "agent execution": "explicit start! CLI turn! persistent resume",
     source: live.source,
     "last checked": new Date(live.lastCheckedAt).toLocaleTimeString(),
   };
@@ -171,10 +171,9 @@ export const claudeFccAdapter: AgentSystemAdapter = {
       // commandExecution/sendCommand, which stay disabled — this is not a
       // general command channel, just one reviewed, single-purpose action.
       controlledAction: {
-        id: "fcc-ask",
-        label: "Ask Free Claude Code (raw model)",
-        endpoint: "/api/connectors/fcc/actions/ask",
-        fallbackChain: { routeCount: 10, serverBudgetS: 60 },
+        id: "claude-code-agent",
+        label: "Claude Code Agent Terminal",
+        endpoint: "/api/connectors/claude-code/actions/ask",
       },
       capabilities: [
         { kind: "status", available: true },

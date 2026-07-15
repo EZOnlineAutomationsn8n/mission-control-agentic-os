@@ -143,9 +143,9 @@ export function ControlRoom({ systemId }: { systemId: string }) {
           )}
 
           {state.controlledAction && (
-            state.controlledAction.id === "fcc-ask" ? (
+            state.controlledAction.id === "claude-code-agent" ? (
               <AgentConversationPanel
-                agentId={systemId}
+                agentId="claude-code"
                 endpoint={state.controlledAction.endpoint}
                 label={state.controlledAction.label}
               />

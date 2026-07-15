@@ -62,3 +62,5 @@ logs/
 /data/audit-log.jsonl
 /data/approval-decisions.jsonl
 /data/agent-conversations.jsonl
+/data/claude-code-sessions.json
+/data/cli-agent-sessions.json

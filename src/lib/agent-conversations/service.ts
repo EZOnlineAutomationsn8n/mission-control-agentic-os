@@ -12,6 +12,13 @@ export interface ConnectorConversationResult {
   attempts?: AgentConversationEntry["attempts"];
   routeCount?: number;
   skippedRouteNumbers?: number[];
+  agentIdentity?: string | null;
+  agentRuntime?: string | null;
+  agentSessionId?: string | null;
+  workspace?: string | null;
+  sessionState?: string | null;
+  executionMode?: string | null;
+  permissionMode?: string | null;
 }
 
 export async function executeConversationRequest(options: {
@@ -50,12 +57,21 @@ export async function executeConversationRequest(options: {
     durationMs: Date.now() - started,
     createdAt,
     completedAt: new Date().toISOString(),
+    agentIdentity: connectorResult.agentIdentity ?? null,
+    agentRuntime: connectorResult.agentRuntime ?? null,
+    agentSessionId: connectorResult.agentSessionId ?? null,
+    workspace: connectorResult.workspace ?? null,
+    sessionState: connectorResult.sessionState ?? null,
+    executionMode: connectorResult.executionMode ?? null,
+    permissionMode: connectorResult.permissionMode ?? null,
   };
   await appendConversationEntry(entry);
 
   const summary = entry.status === "completed"
-    ? `${entry.durationMs}ms · route ${entry.attempts.find((attempt) => attempt.outcome === "completed")?.routeNumber ?? "unknown"} · ${entry.actualRuntimeModel ?? entry.transportModelAlias ?? "model unknown"}`
-    : `${entry.durationMs}ms · ${entry.error ?? "request did not complete"}`;
+    ? entry.agentSessionId
+      ? `${entry.durationMs}ms  ${entry.agentIdentity ?? "agent"}  session ${entry.agentSessionId}  ${entry.transportModelAlias ?? "gateway model unknown"}`
+      : `${entry.durationMs}ms  route ${entry.attempts.find((attempt) => attempt.outcome === "completed")?.routeNumber ?? "unknown"}  ${entry.actualRuntimeModel ?? entry.transportModelAlias ?? "model unknown"}`
+    : `${entry.durationMs}ms  ${entry.error ?? "request did not complete"}`;
   const audit = await appendAuditEvent({
     timestamp: entry.completedAt,
     connectorId: entry.agentId,

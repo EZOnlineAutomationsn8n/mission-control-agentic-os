@@ -26,6 +26,13 @@ export interface AgentConversationEntry {
   durationMs: number;
   createdAt: string;
   completedAt: string;
+  agentIdentity?: string | null;
+  agentRuntime?: string | null;
+  agentSessionId?: string | null;
+  workspace?: string | null;
+  sessionState?: string | null;
+  executionMode?: string | null;
+  permissionMode?: string | null;
 }
 
 export interface AgentConversationResult {

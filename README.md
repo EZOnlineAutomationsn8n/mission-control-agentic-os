@@ -10,7 +10,7 @@ Primary target:
 Home becomes the cockpit.
 
 First functional line:
-FCC / OwlAlpha must work directly from Home:
+Claude Code via the FCC Model Gateway must work directly from Home:
 input → Send → output/history.
 
 Do not use obsolete reports in `reports/obsolete/` as build guidance.

@@ -48,26 +48,25 @@ If no real safe action exists:
 
 ## Current connector maturity
 
-### FCC / OwlAlpha
+### Claude Code Agent via FCC Model Gateway
 
 Target: first ready-to-use agent work pane.
 
-Known route:
-Agentic OS browser UI
-→ `/api/connectors/fcc/actions/ask`
-→ `sendFccControlledPrompt`
-→ local FCC endpoint `127.0.0.1:8082/v1/messages`
-→ FCC/OpenRouter model route
-→ answer returned to UI.
+Canonical boundary:
+- FCC Model Gateway is the model router on VPS port 8082.
+- FCC Route Tester is diagnostic raw-model infrastructure only.
+- Claude Code Agent is the actual CLI agent with workspace, instructions, tools, and a resumable session.
+- A raw FCC response must never be reported as Claude Code agent success.
 
 Required end state:
-- one FCC pane on Home;
-- one input;
-- one Send button;
-- output/history in the same pane;
-- Evidence event on submit;
-- no duplicate task box;
-- no hidden “controlled task” wording in the user-facing cockpit.
+- one Claude Code Agent Terminal on Home;
+- explicit Start Claude Code action;
+- persistent Claude Code session ID;
+- correct Mission Control worktree and project instructions;
+- input  Send to Claude Code! agent output/history;
+- agent identity shown separately from FCC gateway and backing-model evidence;
+- stop and resume lifecycle;
+- Evidence event on start, turn, stop, and failure.
 
 ### Hermes
 

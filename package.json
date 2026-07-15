@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:agent-conversations": "tsx --test scripts/test-agent-conversations.ts"
+    "test:agent-conversations": "tsx --test scripts/test-agent-conversations.ts",
+    "test:claude-code-session": "tsx --test scripts/test-claude-code-session.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

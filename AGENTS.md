@@ -10,4 +10,4 @@ Agent panes must be honest:
 The user-facing product target is a functional cockpit, not a monitoring baseline.
 
 First priority:
-FCC / OwlAlpha must be usable directly from Home.
+The Claude Code Agent must be usable directly from Home. FCC is only its model gateway and raw FCC completions are diagnostic, not agent execution.

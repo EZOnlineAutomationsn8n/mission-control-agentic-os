@@ -128,9 +128,9 @@ export function AgentWindow({ systemId, accent = "cyan" }: { systemId: string; a
         {state?.controlledAction ? (
           <>
             {/* PRIMARY: the real work form — input → Send → output/history in-pane. */}
-            {state.controlledAction.id === "fcc-ask" ? (
+            {state.controlledAction.id === "claude-code-agent" ? (
               <AgentConversationPanel
-                agentId={systemId}
+                agentId="claude-code"
                 endpoint={state.controlledAction.endpoint}
                 label={state.controlledAction.label}
               />

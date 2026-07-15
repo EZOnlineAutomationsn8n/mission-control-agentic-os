@@ -7,7 +7,7 @@ export type FccConnectorStatus = "connected" | "degraded" | "disconnected";
 
 export interface FccLiveStatus {
   systemId: "claude-fcc";
-  label: "FCC / OwlAlpha";
+  label: "FCC Model Gateway";
   status: FccConnectorStatus;
   mode: "local-http-health";
   source: string;
