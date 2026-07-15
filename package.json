@@ -14,6 +14,7 @@
     "test:claude-code-session": "tsx --test scripts/test-claude-code-session.ts",
     "test:cli-agent-sessions": "tsx --test scripts/test-cli-agent-sessions.ts",
     "test:postgres-persistence": "tsx --test scripts/test-postgres-persistence.ts",
+    "test:operator-work": "tsx --test scripts/test-operator-work.ts",
     "test:attachments": "tsx --test scripts/test-attachments.ts"
   },
   "dependencies": {

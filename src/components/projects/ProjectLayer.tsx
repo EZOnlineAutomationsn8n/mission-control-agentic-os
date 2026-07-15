@@ -1,113 +1,93 @@
 "use client";
 
-import { useState } from "react";
-import { portMontageProject, type LeadStatus } from "@/mocks/portmontage";
-import { obsidianAdapter } from "@/lib/connectors/registry";
-import type { VaultNote } from "@/lib/connectors/types";
-import { dotGlowStyle } from "@/lib/ui-helpers";
-
-const LANES: LeadStatus[] = ["raw", "verified", "contact-ready", "rejected"];
-
-const laneColor: Record<LeadStatus, string> = {
-  raw: "#6b7a8a",
-  verified: "#5aa6ff",
-  "contact-ready": "#35e0c2",
-  rejected: "#f2554b",
-};
+import { useCallback, useEffect, useState } from "react";
+import type { OperatorProject } from "@/lib/operator-work";
 
 export function ProjectLayer() {
-  const [selectedProof, setSelectedProof] = useState<VaultNote | null>(null);
+  const [projects, setProjects] = useState<OperatorProject[]>([]);
+  const [name, setName] = useState("");
+  const [summary, setSummary] = useState("");
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  async function openProof(path: string) {
-    const note = await obsidianAdapter.readNote(path);
-    setSelectedProof(note);
+  const refresh = useCallback(async () => {
+    const response = await fetch("/api/projects", { cache: "no-store" });
+    const body = await response.json() as { projects?: OperatorProject[]; error?: string };
+    if (!response.ok) throw new Error(body.error || `Project read failed (${response.status})`);
+    setProjects(body.projects ?? []);
+  }, []);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial read from the persistent projects API
+    refresh().catch((cause) => setError(cause instanceof Error ? cause.message : "Project read failed"));
+  }, [refresh]);
+
+  async function createProject(event: React.FormEvent) {
+    event.preventDefault();
+    if (!name.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name, summary, workspacePath }),
+      });
+      const body = await response.json() as { error?: string };
+      if (!response.ok) throw new Error(body.error || `Project create failed (${response.status})`);
+      setName("");
+      setSummary("");
+      setWorkspacePath("");
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Project create failed");
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
     <div className="p-6 space-y-6">
       <div>
-        <h1 className="text-lg font-semibold">Project Layer — {portMontageProject.name}</h1>
-        <p className="text-sm text-muted mt-1">{portMontageProject.summary}</p>
+        <h1 className="text-lg font-semibold">Projects</h1>
+        <p className="text-sm text-muted mt-1">
+          Persistent operator projects. Nothing is seeded: only projects created here are shown.
+        </p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="rounded-lg border border-border bg-panel p-4">
-          <div className="text-xs text-muted mb-2">Countries</div>
-          <div className="flex flex-wrap gap-1.5">
-            {portMontageProject.countries.map((c) => (
-              <span key={c} className="text-xs rounded bg-panel-2 px-2 py-1">
-                {c}
-              </span>
-            ))}
-          </div>
+      <form onSubmit={createProject} className="rounded-lg border border-border bg-panel p-4 space-y-3 max-w-3xl">
+        <div className="text-sm font-medium">Create project</div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" required className="bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent" />
+          <input value={workspacePath} onChange={(event) => setWorkspacePath(event.target.value)} placeholder="Workspace path (optional)" className="bg-panel-2 rounded px-3 py-2 text-sm mono outline-none focus:ring-1 focus:ring-accent" />
         </div>
-        <div className="rounded-lg border border-border bg-panel p-4">
-          <div className="text-xs text-muted mb-2">Sectors</div>
-          <div className="flex flex-wrap gap-1.5">
-            {portMontageProject.sectors.map((s) => (
-              <span key={s} className="text-xs rounded bg-panel-2 px-2 py-1">
-                {s}
-              </span>
-            ))}
-          </div>
-        </div>
-      </div>
+        <textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="Purpose and current objective" rows={2} className="w-full resize-none bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent" />
+        <button type="submit" disabled={saving || !name.trim()} className="text-xs rounded bg-accent/20 text-accent px-4 py-2 hover:bg-accent/30 disabled:opacity-40">
+          {saving ? "Creating…" : "Create project"}
+        </button>
+      </form>
 
-      <div>
-        <div className="text-sm font-medium mb-3">Lead status pipeline</div>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {LANES.map((lane) => (
-            <div key={lane} className="rounded-lg border border-border bg-panel p-3 space-y-2">
-              <div className="flex items-center gap-2 text-xs uppercase tracking-wide">
-                <span className="status-dot" style={dotGlowStyle(laneColor[lane])} />
-                {lane}
-                <span className="ml-auto mono text-muted">
-                  {portMontageProject.companies.filter((c) => c.leadStatus === lane).length}
-                </span>
-              </div>
-              {portMontageProject.companies
-                .filter((c) => c.leadStatus === lane)
-                .map((c) => (
-                  <div key={c.id} className="rounded border border-border bg-panel-2 p-2 text-xs space-y-1">
-                    <div className="font-medium">{c.name}</div>
-                    <div className="text-muted">{c.country} · {c.sector}</div>
-                    <div className="text-muted">{c.workforceNeed}</div>
-                    {c.contact && <div className="mono">{c.contact}</div>}
-                    {c.sourceProofPath && (
-                      <button
-                        onClick={() => openProof(c.sourceProofPath!)}
-                        className="text-accent hover:underline"
-                      >
-                        view source proof
-                      </button>
-                    )}
-                  </div>
-                ))}
+      {error && <div className="rounded border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{error}</div>}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+        {projects.map((project) => (
+          <div key={project.id} className="rounded-lg border border-border bg-panel p-4 space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="font-medium">{project.name}</h2>
+              <span className="rounded bg-ok/15 px-2 py-0.5 text-[10px] uppercase text-ok">{project.status}</span>
             </div>
-          ))}
-        </div>
-      </div>
-
-      {selectedProof && (
-        <div
-          className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-6"
-          onClick={() => setSelectedProof(null)}
-        >
-          <div
-            className="bg-panel border border-border rounded-lg max-w-xl w-full p-5"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-semibold">{selectedProof.title}</h2>
-              <button onClick={() => setSelectedProof(null)} className="text-xs text-muted hover:text-foreground">
-                close
-              </button>
-            </div>
-            <div className="text-xs text-muted mono mb-3">{selectedProof.path}</div>
-            <pre className="text-xs whitespace-pre-wrap mono bg-panel-2 rounded p-3">{selectedProof.body}</pre>
+            <p className="text-sm text-muted">{project.summary || "No summary recorded."}</p>
+            {project.workspacePath && <div className="text-xs mono text-accent break-all">{project.workspacePath}</div>}
+            <div className="text-[10px] text-muted mono">{project.id}</div>
           </div>
-        </div>
-      )}
+        ))}
+        {projects.length === 0 && (
+          <div className="rounded-lg border border-border bg-panel p-8 text-center text-sm text-muted">
+            No operator projects recorded yet.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
