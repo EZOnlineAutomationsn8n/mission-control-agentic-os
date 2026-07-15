@@ -65,8 +65,8 @@ export function RegistryTable() {
       <div>
         <h1 className="text-lg font-semibold">System Registry</h1>
         <p className="text-sm text-muted mt-1">
-          Every connector attached to the Agentic OS — active and future. Real connection fields are disabled in v1
-          — this is where a new integration attaches.{" "}
+          Runtime inventory of connectors that are actually registered. Future ideas remain outside the operator UI
+          until an adapter exists.{" "}
           <span className="mono text-foreground/80">
             {counts.active} active · {counts.pending} pending · {counts.total} total
           </span>
@@ -234,21 +234,14 @@ export function RegistryTable() {
                           </div>
 
                           <div>
-                            <div className="text-xs text-muted mb-2">
-                              Real connector attachment point (disabled in v1)
-                            </div>
-                            <div className="space-y-2">
-                              {fullDescriptor.realConnectionFields.map((f) => (
-                                <div key={f.key}>
-                                  <label className="text-[11px] text-muted block mb-0.5">{f.label}</label>
-                                  <input
-                                    disabled
-                                    placeholder={f.placeholder}
-                                    type={f.kind === "secret" ? "password" : "text"}
-                                    className="w-full bg-panel border border-border rounded px-2 py-1.5 text-xs mono opacity-50 cursor-not-allowed"
-                                  />
+                            <div className="text-xs text-muted mb-2">Runtime configuration boundary</div>
+                            <div className="rounded border border-border bg-panel p-3 text-xs text-foreground/80">
+                              Configuration is managed server-side. The cockpit never displays or edits credentials.
+                              {fullDescriptor.realConnectionFields.length > 0 && (
+                                <div className="mt-2 text-muted">
+                                  Required settings: {fullDescriptor.realConnectionFields.map((field) => field.label).join(", ")}.
                                 </div>
-                              ))}
+                              )}
                             </div>
                           </div>
                         </div>

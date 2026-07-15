@@ -29,7 +29,7 @@ const WORKSPACE: NavItem[] = [
   { href: "/mastermind", label: "AI Agent Mastermind" },
 ];
 
-const AGENTS: NavItem[] = AGENT_PAGES.map((a) => ({
+const AGENTS: NavItem[] = AGENT_PAGES.filter((a) => a.connectorId).map((a) => ({
   href: a.connectorId ? `/?agent=${a.connectorId}` : `/agents/${a.id}`,
   label: a.name,
   connectorId: a.connectorId ?? undefined,
@@ -38,13 +38,6 @@ const AGENTS: NavItem[] = AGENT_PAGES.map((a) => ({
 
 const SELF: NavItem[] = [
   { href: "/pipeline", label: "Pipeline" },
-  { href: "/self/goals", label: "Goals" },
-  { href: "/self/seo", label: "SEO" },
-  { href: "/self/video", label: "Video" },
-  { href: "/self/music", label: "Music" },
-  { href: "/self/game-studio", label: "Game Studio" },
-  { href: "/self/thumbnails", label: "Thumbnails" },
-  { href: "/self/notebook", label: "Notebook" },
   { href: "/queue", label: "Kanban" },
   { href: "/brain", label: "Memory", connectorId: "obsidian" },
 ];

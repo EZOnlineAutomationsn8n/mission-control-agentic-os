@@ -1,14 +1,11 @@
 import { connectorRegistry } from "./registry";
-import { futureConnectors } from "@/mocks/future-connectors";
 import type { ConnectorCategory, ConnectorSummary } from "./types";
 
 // ─────────────────────────────────────────────────────────────────────────
 // CONNECTOR DIRECTORY
-// Merges the 8 active adapters (from ConnectorRegistry) with the future/
-// pending connector catalog (from mocks/future-connectors.ts) into one
-// flat, render-only list. This is the single data source the Sidebar and
-// System Registry page use for grouping/search — neither component ever
-// branches on a specific connector id, active or future.
+// Operator-facing inventory of adapters that are actually registered in the
+// running system. Future ideas stay in engineering documentation; they do not
+// appear as product objects before a connector exists.
 // ─────────────────────────────────────────────────────────────────────────
 
 export const CATEGORY_ORDER: ConnectorCategory[] = [
@@ -43,19 +40,7 @@ export function getConnectorDirectory(): ConnectorSummary[] {
     };
   });
 
-  const pending: ConnectorSummary[] = futureConnectors.map((f) => ({
-    id: f.id,
-    name: f.name,
-    category: f.category,
-    type: f.type,
-    status: f.status,
-    isActive: false,
-    connectionModes: f.plannedConnectionModes,
-    capabilities: f.capabilities,
-    notes: f.notes,
-  }));
-
-  return [...active, ...pending];
+  return active;
 }
 
 export function groupByCategory(summaries: ConnectorSummary[]): Map<ConnectorCategory, ConnectorSummary[]> {
