@@ -15,13 +15,14 @@ const idFlag = args.indexOf("--session-id");
 const resumeFlag = args.indexOf("--resume");
 const sessionId = args[idFlag >= 0 ? idFlag + 1 : resumeFlag + 1];
 const providerFailure = args.at(-1) === "force provider failure";
+const bootstrapFailure = process.env.TEST_CLAUDE_BOOTSTRAP_FAILURE === "1" && args.at(-1).startsWith("Initialize this Mission Control");
 const model = args[args.indexOf("--model") + 1];
 const firstRouteFailure = args.at(-1) === "fallback after provider failure" && model.includes("laguna-m.1");
 console.log(JSON.stringify({
   type: "result",
   subtype: "success",
-  is_error: providerFailure || firstRouteFailure,
-  result: providerFailure || firstRouteFailure ? "Provider API request failed. (request_id=test)" : "FAKE_CLAUDE_CODE cwd=" + process.cwd() + " bare=" + process.env.CLAUDE_BARE + " model=" + model,
+  is_error: providerFailure || firstRouteFailure || bootstrapFailure,
+  result: providerFailure || firstRouteFailure || bootstrapFailure ? "Provider API request failed. (request_id=test)" : "FAKE_CLAUDE_CODE cwd=" + process.cwd() + " bare=" + process.env.CLAUDE_BARE + " model=" + model,
   session_id: sessionId,
   modelUsage: { "fcc-gateway-alias": {} },
   permission_denials: []
@@ -121,4 +122,18 @@ test("real-agent bridge lifecycle is explicit, persisted, and audited", async ()
   assert.equal(audits.some((event) => event.actionType === "claude-code-session-start"), true);
   assert.equal(audits.some((event) => event.actionType === "claude-code-agent-turn"), true);
   assert.equal(audits.some((event) => event.actionType === "claude-code-session-stop"), true);
+
+  process.env.TEST_CLAUDE_BOOTSTRAP_FAILURE = "1";
+  const failedStartUrl = "http://local/api/connectors/claude-code/session?sessionId=failed-bootstrap";
+  const failedStartResponse = await sessionRoute.POST(new Request(failedStartUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "start" }),
+  }));
+  delete process.env.TEST_CLAUDE_BOOTSTRAP_FAILURE;
+  assert.equal(failedStartResponse.status, 502);
+  const failedStart = await failedStartResponse.json();
+  assert.equal(failedStart.session.active, false);
+  assert.equal(failedStart.session.status, "error");
+  assert.match(failedStart.error, /all available Claude Code agent routes failed/);
 });

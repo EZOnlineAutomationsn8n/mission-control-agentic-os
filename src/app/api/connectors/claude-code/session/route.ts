@@ -43,6 +43,9 @@ export async function POST(request: Request) {
       create: true,
       prompt: "Initialize this Mission Control Claude Code session. Read CLAUDE.md and AGENTS.md from the current repository. Report your agent identity, exact working directory, and repository first priority. Do not edit files.",
     });
+    if (bootstrap.status !== "completed" || !bootstrap.text || !bootstrap.agentSessionId) {
+      throw new Error(bootstrap.error || "Claude Code bootstrap did not complete");
+    }
     const ready = await updateClaudeCodeSession(sessionId, { status: "idle", active: true, lastError: null });
     const audit = await appendAuditEvent({
       timestamp: new Date().toISOString(), connectorId: "claude-code", actionType: "claude-code-session-start",
