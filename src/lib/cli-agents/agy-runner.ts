@@ -9,7 +9,7 @@ import type { CliAgentSession } from "./session-store";
 
 const execFileAsync = promisify(execFile);
 const AGY_BINARY = process.env.AGY_AGENT_BINARY || "/root/.local/bin/agy";
-const AGY_RUNTIME = "Antigravity CLI 1.0.12";
+const AGY_RUNTIME = "Antigravity CLI 1.1.1";
 const AGY_PROJECT_ID = process.env.AGY_AGENT_PROJECT_ID || "d05562cc-1039-47b1-a562-109f98779234";
 const IDENTITY_CONTEXT =
   "Your product name and agent identity is Antigravity. " +

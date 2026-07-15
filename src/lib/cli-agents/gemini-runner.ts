@@ -45,7 +45,7 @@ export async function runGeminiTurn(options: {
   if (!options.session.runtimeSessionId) throw new Error("Gemini runtime session ID is missing");
   const args = [
     "--skip-trust",
-    "--sandbox",
+    ...(process.env.GEMINI_AGENT_OUTER_SANDBOX === "1" ? [] : ["--sandbox"]),
     "--approval-mode", "yolo",
     "--output-format", "stream-json",
     ...(options.create ? ["--session-id", options.session.runtimeSessionId] : ["--resume", options.session.runtimeSessionId]),
