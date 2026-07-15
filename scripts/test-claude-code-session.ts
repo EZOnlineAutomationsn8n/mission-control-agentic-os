@@ -1,10 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 
-const root = await mkdtemp(path.join(tmpdir(), "claude-code-session-"));
+const root = await mkdtemp(path.join(process.cwd(), ".test-claude-code-session-"));
 const workspace = path.join(root, "workspace");
 const launcher = path.join(root, "fake-claude-code.mjs");
 await mkdir(workspace, { recursive: true });
