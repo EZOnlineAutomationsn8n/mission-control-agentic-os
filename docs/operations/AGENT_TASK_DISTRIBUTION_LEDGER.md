@@ -41,7 +41,10 @@ Exception states:
 
 | Assignment ID | Project | Objective | Orchestrator | Worker | Role | Execution host / workspace | Write target | Verifier | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| — | — | No active assignment recorded | — | — | — | — | — | — | — |
+| MC-SRC-001 | Mission Control / Agentic OS | Repository baseline evidence | Codex | Hermes | researcher | VPS sandbox `/workspace/projects/mission-control` | `reports/looplines/MC_SRC/MC-SRC-001_HERMES_REPOSITORY_BASELINE.md` | Codex | ASSIGNED |
+| MC-SRC-002 | Mission Control / Agentic OS | Continuity source classification evidence | Codex | OpenClaw | researcher | VPS sandbox `/workspace/projects/mission-control` | `reports/looplines/MC_SRC/MC-SRC-002_OPENCLAW_CONTINUITY_SOURCES.md` | Codex | ASSIGNED |
+| MC-SRC-003 | Mission Control / Agentic OS | Active source consumer trace | Codex | Claude Code | researcher | VPS sandbox `/workspace/projects/mission-control` | `reports/looplines/MC_SRC/MC-SRC-003_CLAUDE_SOURCE_CONSUMER_TRACE.md` | Codex | ASSIGNED |
+| MC-SRC-004 | Mission Control / Agentic OS | MC_SRC declaration dependency review | Codex | Antigravity | reviewer | VPS sandbox `/workspace/projects/mission-control` | `reports/looplines/MC_SRC/MC-SRC-004_ANTIGRAVITY_DECLARATION_REVIEW.md` | Codex | ASSIGNED |
 
 ## Completed assignments
 
