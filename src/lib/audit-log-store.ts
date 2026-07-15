@@ -1,5 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
+import { databaseEnabled, databaseQuery } from "@/lib/persistence/database";
 
 // ─────────────────────────────────────────────────────────────────────────
 // SERVER-ONLY. Append-only local audit persistence, inside the project
@@ -32,6 +33,13 @@ export async function appendAuditEvent(
   e: PersistedAuditEvent
 ): Promise<{ ok: boolean; error?: string }> {
   try {
+    if (databaseEnabled()) {
+      await databaseQuery(
+        "INSERT INTO audit_events (payload, event_at) VALUES ($1::jsonb, $2::timestamptz)",
+        [JSON.stringify(e), e.timestamp]
+      );
+      return { ok: true };
+    }
     await fs.mkdir(auditDirectory(), { recursive: true });
     await fs.appendFile(auditFile(), `${JSON.stringify(e)}\n`, "utf8");
     return { ok: true };
@@ -41,6 +49,13 @@ export async function appendAuditEvent(
 }
 
 export async function readAuditEvents(limit = MAX_READ): Promise<PersistedAuditEvent[]> {
+  if (databaseEnabled()) {
+    const result = await databaseQuery<{ payload: PersistedAuditEvent }>(
+      "SELECT payload FROM audit_events ORDER BY sequence DESC LIMIT $1",
+      [limit]
+    );
+    return result.rows.map((row) => row.payload);
+  }
   let raw: string;
   try {
     raw = await fs.readFile(auditFile(), "utf8");

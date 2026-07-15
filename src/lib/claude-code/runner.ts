@@ -47,6 +47,12 @@ export async function runClaudeCodeTurn(options: {
   create: boolean;
 }): Promise<ClaudeCodeTurnResult> {
   const launcher = process.env.CLAUDE_CODE_LAUNCHER || DEFAULT_LAUNCHER;
+  const launcherPrefix = process.env.CLAUDE_CODE_LAUNCHER_ARGS_JSON
+    ? JSON.parse(process.env.CLAUDE_CODE_LAUNCHER_ARGS_JSON) as unknown
+    : [];
+  if (!Array.isArray(launcherPrefix) || launcherPrefix.some((value) => typeof value !== "string")) {
+    throw new Error("CLAUDE_CODE_LAUNCHER_ARGS_JSON must be a JSON array of strings");
+  }
   const routeReadiness = process.env.CLAUDE_CODE_SKIP_ROUTE_PREFLIGHT === "1"
     ? {
         status: "completed" as const,
@@ -122,7 +128,7 @@ export async function runClaudeCodeTurn(options: {
 
     let payload: ClaudeCliPayload;
     try {
-      const { stdout } = await execFileAsync(launcher, args, {
+      const { stdout } = await execFileAsync(launcher, [...launcherPrefix, ...args], {
         cwd: options.session.workspace,
         env: {
           ...process.env,

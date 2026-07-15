@@ -3,6 +3,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import type { AttachmentReference } from "./types";
+import { databaseEnabled, databaseQuery, withDatabaseTransaction } from "@/lib/persistence/database";
 
 const MAX_FILES = 5;
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
@@ -64,8 +65,25 @@ export async function storeAttachments(options: {
     });
   }
 
-  await fs.mkdir(rootDirectory(), { recursive: true });
-  await fs.appendFile(metadataFile(), records.map((record) => JSON.stringify(record)).join("\n") + "\n", "utf8");
+  try {
+    if (databaseEnabled()) {
+      await withDatabaseTransaction(async (client) => {
+        for (const record of records) {
+          await client.query(
+            `INSERT INTO attachment_records (id, agent_id, session_id, payload, created_at)
+             VALUES ($1, $2, $3, $4::jsonb, $5::timestamptz)`,
+            [record.id, record.agentId, record.sessionId, JSON.stringify(record), record.createdAt]
+          );
+        }
+      });
+    } else {
+      await fs.mkdir(rootDirectory(), { recursive: true });
+      await fs.appendFile(metadataFile(), records.map((record) => JSON.stringify(record)).join("\n") + "\n", "utf8");
+    }
+  } catch (error) {
+    await Promise.all(records.map((record) => fs.rm(path.dirname(record.storagePath), { recursive: true, force: true })));
+    throw error;
+  }
   return records;
 }
 
@@ -92,9 +110,16 @@ export async function resolveAttachments(options: {
     throw new Error("attachments must be an array of at most five attachment IDs");
   }
   const requested = new Set(options.ids as string[]);
-  const records = (await readMetadata()).filter(
-    (record) => requested.has(record.id) && record.agentId === options.agentId && record.sessionId === options.sessionId
-  );
+  const records = databaseEnabled()
+    ? (await databaseQuery<{ payload: AttachmentReference }>(
+        `SELECT payload
+           FROM attachment_records
+          WHERE agent_id = $1 AND session_id = $2 AND id = ANY($3::text[])`,
+        [options.agentId, options.sessionId, [...requested]]
+      )).rows.map((row) => row.payload)
+    : (await readMetadata()).filter(
+        (record) => requested.has(record.id) && record.agentId === options.agentId && record.sessionId === options.sessionId
+      );
   if (records.length !== requested.size) throw new Error("one or more attachments are missing or outside this agent session");
   await Promise.all(records.map((record) => fs.access(record.storagePath)));
   return records;
@@ -107,4 +132,3 @@ export function promptWithAttachments(prompt: string, attachments: AttachmentRef
   );
   return `${prompt}\n\nMission Control supplied these operator-approved attachment paths:\n${lines.join("\n")}\nRead only the files needed for this request.`;
 }
-

@@ -29,7 +29,8 @@ console.log(JSON.stringify({
 `, "utf8");
 await chmod(launcher, 0o755);
 
-process.env.CLAUDE_CODE_LAUNCHER = launcher;
+process.env.CLAUDE_CODE_LAUNCHER = process.execPath;
+process.env.CLAUDE_CODE_LAUNCHER_ARGS_JSON = JSON.stringify([launcher]);
 process.env.CLAUDE_CODE_SKIP_ROUTE_PREFLIGHT = "1";
 process.env.CLAUDE_CODE_WORKSPACE = workspace;
 process.env.CLAUDE_CODE_SESSION_DATA_DIR = root;

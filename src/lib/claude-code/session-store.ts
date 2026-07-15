@@ -1,6 +1,8 @@
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import { databaseEnabled } from "@/lib/persistence/database";
+import { patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
 
 export type ClaudeCodeSessionStatus = "starting" | "idle" | "running" | "stopped" | "error";
 
@@ -48,11 +50,12 @@ async function writeSessions(sessions: Record<string, ClaudeCodeSession>): Promi
 }
 
 export async function readClaudeCodeSession(sessionKey: string): Promise<ClaudeCodeSession | null> {
+  if (databaseEnabled()) return readPersistedSession<ClaudeCodeSession>("claude-code", "claude-code", sessionKey);
   return (await readSessions())[sessionKey] ?? null;
 }
 
 export async function createClaudeCodeSession(sessionKey: string): Promise<ClaudeCodeSession> {
-  const sessions = await readSessions();
+  const sessions = databaseEnabled() ? {} : await readSessions();
   const now = new Date().toISOString();
   const session: ClaudeCodeSession = {
     sessionKey,
@@ -67,6 +70,7 @@ export async function createClaudeCodeSession(sessionKey: string): Promise<Claud
     updatedAt: now,
     lastError: null,
   };
+  if (databaseEnabled()) return upsertPersistedSession("claude-code", "claude-code", sessionKey, session);
   sessions[sessionKey] = session;
   await writeSessions(sessions);
   return session;
@@ -76,6 +80,9 @@ export async function updateClaudeCodeSession(
   sessionKey: string,
   update: Partial<Pick<ClaudeCodeSession, "status" | "active" | "lastError">>
 ): Promise<ClaudeCodeSession> {
+  if (databaseEnabled()) {
+    return patchPersistedSession<ClaudeCodeSession>("claude-code", "claude-code", sessionKey, update);
+  }
   const sessions = await readSessions();
   const current = sessions[sessionKey];
   if (!current) throw new Error("Claude Code session does not exist");

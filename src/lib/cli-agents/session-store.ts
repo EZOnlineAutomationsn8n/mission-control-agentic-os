@@ -1,6 +1,8 @@
 import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
+import { databaseEnabled } from "@/lib/persistence/database";
+import { patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
 
 export type CliAgentId = "hermes" | "openclaw" | "agy" | "gemini" | "codex";
 export type CliAgentSessionStatus = "starting" | "idle" | "running" | "stopped" | "error";
@@ -66,12 +68,13 @@ async function writeSessions(sessions: Record<string, CliAgentSession>): Promise
 }
 
 export async function readCliAgentSession(agentId: CliAgentId, sessionKey: string): Promise<CliAgentSession | null> {
+  if (databaseEnabled()) return readPersistedSession<CliAgentSession>("cli", agentId, sessionKey);
   return (await readSessions())[recordKey(agentId, sessionKey)] ?? null;
 }
 
 export async function createCliAgentSession(agentId: CliAgentId, sessionKey: string): Promise<CliAgentSession> {
-  return mutateSessions(async () => {
-    const sessions = await readSessions();
+  const create = async () => {
+    const sessions = databaseEnabled() ? {} : await readSessions();
     const now = new Date().toISOString();
     const session: CliAgentSession = {
       sessionKey,
@@ -95,10 +98,12 @@ export async function createCliAgentSession(agentId: CliAgentId, sessionKey: str
       updatedAt: now,
       lastError: null,
     };
+    if (databaseEnabled()) return upsertPersistedSession("cli", agentId, sessionKey, session);
     sessions[recordKey(agentId, sessionKey)] = session;
     await writeSessions(sessions);
     return session;
-  });
+  };
+  return databaseEnabled() ? create() : mutateSessions(create);
 }
 
 export async function updateCliAgentSession(
@@ -106,6 +111,9 @@ export async function updateCliAgentSession(
   sessionKey: string,
   update: Partial<Pick<CliAgentSession, "runtimeSessionId" | "status" | "active" | "lastError">>
 ): Promise<CliAgentSession> {
+  if (databaseEnabled()) {
+    return patchPersistedSession<CliAgentSession>("cli", agentId, sessionKey, update);
+  }
   return mutateSessions(async () => {
     const sessions = await readSessions();
     const key = recordKey(agentId, sessionKey);
