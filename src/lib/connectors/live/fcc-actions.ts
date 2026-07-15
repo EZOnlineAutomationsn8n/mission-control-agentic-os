@@ -38,7 +38,7 @@ import type { FccAskResult, FccAttemptOutcome, FccModelAttempt } from "./fcc-act
 // Code agent.
 // ─────────────────────────────────────────────────────────────────────────
 
-const FCC_MESSAGES_URL = "http://127.0.0.1:8082/v1/messages";
+const FCC_MESSAGES_URL = process.env.FCC_MESSAGES_URL || "http://127.0.0.1:8082/v1/messages";
 const PER_ROUTE_TIMEOUT_MS = 8000;
 const TOTAL_BUDGET_MS = 60000;
 const MAX_PROMPT_LENGTH = 4000;

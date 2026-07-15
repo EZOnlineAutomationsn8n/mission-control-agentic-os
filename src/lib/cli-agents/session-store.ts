@@ -32,6 +32,14 @@ function recordKey(agentId: CliAgentId, sessionKey: string): string {
   return `${agentId}:${sessionKey}`;
 }
 
+let mutationQueue: Promise<void> = Promise.resolve();
+
+function mutateSessions<T>(operation: () => Promise<T>): Promise<T> {
+  const result = mutationQueue.then(operation, operation);
+  mutationQueue = result.then(() => undefined, () => undefined);
+  return result;
+}
+
 function workspaceFor(agentId: CliAgentId): string {
   if (agentId === "hermes") return process.env.HERMES_AGENT_WORKSPACE || "/opt/vireon/workfloor";
   if (agentId === "agy") return process.env.AGY_AGENT_WORKSPACE || "/opt/vireon/workfloor";
@@ -62,33 +70,35 @@ export async function readCliAgentSession(agentId: CliAgentId, sessionKey: strin
 }
 
 export async function createCliAgentSession(agentId: CliAgentId, sessionKey: string): Promise<CliAgentSession> {
-  const sessions = await readSessions();
-  const now = new Date().toISOString();
-  const session: CliAgentSession = {
-    sessionKey,
-    agentId,
-    runtimeSessionId: agentId === "openclaw" || agentId === "gemini" ? randomUUID() : "",
-    displayName: `mission-control-${agentId}-${sessionKey}`,
-    workspace: workspaceFor(agentId),
-    permissionMode: agentId === "hermes"
-      ? "Hermes standard approvals"
-      : agentId === "agy"
-        ? "Antigravity sandbox terminal restrictions"
-        : agentId === "gemini"
-          ? "Gemini sandbox with in-sandbox auto approval"
-          : agentId === "codex"
-            ? "Codex workspace-write sandbox"
-        : "OpenClaw exec policy",
-    executionMode: "on-demand-cli",
-    status: "starting",
-    active: true,
-    createdAt: now,
-    updatedAt: now,
-    lastError: null,
-  };
-  sessions[recordKey(agentId, sessionKey)] = session;
-  await writeSessions(sessions);
-  return session;
+  return mutateSessions(async () => {
+    const sessions = await readSessions();
+    const now = new Date().toISOString();
+    const session: CliAgentSession = {
+      sessionKey,
+      agentId,
+      runtimeSessionId: agentId === "openclaw" || agentId === "gemini" ? randomUUID() : "",
+      displayName: `mission-control-${agentId}-${sessionKey}`,
+      workspace: workspaceFor(agentId),
+      permissionMode: agentId === "hermes"
+        ? "Hermes standard approvals"
+        : agentId === "agy"
+          ? "Antigravity sandbox terminal restrictions"
+          : agentId === "gemini"
+            ? "Gemini sandbox with in-sandbox auto approval"
+            : agentId === "codex"
+              ? "Codex workspace-write sandbox"
+          : "OpenClaw exec policy",
+      executionMode: "on-demand-cli",
+      status: "starting",
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+      lastError: null,
+    };
+    sessions[recordKey(agentId, sessionKey)] = session;
+    await writeSessions(sessions);
+    return session;
+  });
 }
 
 export async function updateCliAgentSession(
@@ -96,14 +106,16 @@ export async function updateCliAgentSession(
   sessionKey: string,
   update: Partial<Pick<CliAgentSession, "runtimeSessionId" | "status" | "active" | "lastError">>
 ): Promise<CliAgentSession> {
-  const sessions = await readSessions();
-  const key = recordKey(agentId, sessionKey);
-  const current = sessions[key];
-  if (!current) throw new Error(`${agentId} session does not exist`);
-  const next: CliAgentSession = { ...current, ...update, updatedAt: new Date().toISOString() };
-  sessions[key] = next;
-  await writeSessions(sessions);
-  return next;
+  return mutateSessions(async () => {
+    const sessions = await readSessions();
+    const key = recordKey(agentId, sessionKey);
+    const current = sessions[key];
+    if (!current) throw new Error(`${agentId} session does not exist`);
+    const next: CliAgentSession = { ...current, ...update, updatedAt: new Date().toISOString() };
+    sessions[key] = next;
+    await writeSessions(sessions);
+    return next;
+  });
 }
 
 export async function stopCliAgentSession(agentId: CliAgentId, sessionKey: string): Promise<CliAgentSession | null> {
