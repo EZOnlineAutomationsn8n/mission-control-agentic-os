@@ -20,7 +20,11 @@ Do not start with building. Start with understanding, planning, verification, an
 
 ### Dennis
 
-Product owner and final decision maker for high-impact changes.
+Owner of intent, priorities, scope, and final authority for high-impact changes.
+
+Dennis is not expected to manually orchestrate every worker or translate every
+objective into technical subtasks. The orchestration layer must absorb that
+coordination work and return decisions, exceptions, and proof.
 
 Dennis confirms:
 - what the real goal is
@@ -28,44 +32,48 @@ Dennis confirms:
 - whether a hot-zone change may proceed
 - whether automation is allowed
 
-### Claude Code
+### Antigravity
 
-Lead builder.
+Primary execution orchestrator when its capacity is available.
 
-Claude Code is responsible for:
-- inspecting the repo
-- writing implementation specs
-- proposing safe implementation steps
-- making code changes only after approval when required
-- running verification
-- reporting proof
+Antigravity is responsible for:
+- decomposing approved objectives into bounded assignments
+- selecting workers and execution order
+- tracking dependencies and handoffs
+- collecting worker results and evidence
+- escalating exhaustion or blocked capacity instead of silently stalling
+
+### Paperclip
+
+Fallback orchestrator and durable work control plane.
+
+Paperclip is responsible for:
+- preserving tasks, runs, approvals, goals, artifacts, and assignment state
+- taking over coordination when Antigravity is unavailable or exhausted
+- exposing durable work history independently of one agent session
 
 ### Codex
 
-Reviewer and verifier by default.
+Technical overseer, tactical dispatcher, implementer, reviewer, and integrator
+inside the active collaboration.
 
 Codex is responsible for:
-- reviewing implementation specs
-- finding hidden assumptions
-- checking risk zones
-- verifying that planned changes match repo state
-- acting as backup implementer only when explicitly promoted
+- understanding the cross-project technical state placed in scope
+- splitting independent work across suitable workers
+- choosing what should be built, reviewed, or verified independently
+- integrating completed sections into one coherent result
+- checking evidence and recording exact output locations
+- reducing its own scarce-context consumption by delegating bounded work
 
-### ChatGPT
+Codex can perform tactical orchestration for the current task. It does not
+replace Antigravity or Paperclip as the durable orchestrator layer.
 
-Command filter, continuity layer, and regie.
+### Worker pool
 
-ChatGPT is responsible for:
-- translating agent plans into safe execution blocks
-- checking outputs
-- preparing handovers
-- keeping work aligned with the current project state
-
-### AGY
-
-Future orchestrator.
-
-AGY should coordinate lanes, task state, pending work, and agent handoff once wired into Mission Control.
+Claude Code, Hermes, OpenClaw, Codex sessions, Gemini, and specialized agents
+are selectable workers. A product name does not permanently determine a role:
+the assignment record states whether that instance is builder, researcher,
+reviewer, verifier, or background worker.
 
 ### Browser Agents
 
@@ -84,6 +92,26 @@ ViREON defines policy, approval zones, proof requirements, and runtime governanc
 Memory and proof store.
 
 Obsidian stores durable notes, proof summaries, decisions, gotchas, and project continuity.
+
+---
+
+## Three independent fallback layers
+
+Fallback must be explicit at three different levels. They must never be
+collapsed into one ambiguous "fallback" label.
+
+1. Model fallback — another model serves the same agent runtime.
+2. Provider fallback — another provider transports the model request.
+3. Orchestrator fallback — another control plane takes over task coordination.
+
+Current orchestrator order:
+
+1. Antigravity — primary orchestrator.
+2. Paperclip — durable fallback orchestrator/control plane.
+3. Codex — tactical coordination within the current operator collaboration.
+
+An orchestrator handoff must preserve the assignment ID, objective, write
+target, current status, dependencies, evidence paths, and remaining authority.
 
 ---
 
@@ -335,7 +363,9 @@ Each lane should show:
 
 Browser Agents should become the visual verification layer for UI and browser-based checks.
 
-AGY should eventually orchestrate lane assignment and task state.
+Antigravity owns primary lane assignment and task coordination; Paperclip must
+preserve the same assignment state and take over when the primary orchestrator
+is exhausted or unavailable.
 
 ViREON should enforce governance boundaries and proof requirements.
 
@@ -345,17 +375,17 @@ Obsidian should store durable decisions, handovers, and gotchas.
 
 ## Current project defaults
 
-Default builder:
-- Claude Code
+Default orchestrator:
+- Antigravity
 
-Default reviewer:
+Orchestrator fallback:
+- Paperclip
+
+Tactical dispatcher and integrator:
 - Codex
 
-Default command filter:
-- ChatGPT
-
-Default orchestrator target:
-- AGY
+Builder, researcher, reviewer, and verifier:
+- selected per assignment from the available worker pool
 
 Default visual verifier target:
 - Browser Agents via local CDP
@@ -364,7 +394,10 @@ Default governance layer:
 - ViREON
 
 Default memory/proof layer:
-- Obsidian
+- Shared Brain / Obsidian
+
+Canonical assignment register:
+- `docs/operations/AGENT_TASK_DISTRIBUTION_LEDGER.md`
 
 ---
 
