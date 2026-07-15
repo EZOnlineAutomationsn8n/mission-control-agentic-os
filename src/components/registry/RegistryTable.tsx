@@ -8,7 +8,20 @@ import { statusColor, dotGlowStyle } from "@/lib/ui-helpers";
 import type { AgentSystemState, ConnectorCategory } from "@/lib/connectors/types";
 import { getLastAction } from "@/lib/action-log-store";
 
-function capabilityModeLabel(live: AgentSystemState | undefined): string {
+interface AgentSessionSummary {
+  active: boolean;
+  status: "starting" | "idle" | "running" | "stopped" | "error";
+}
+
+const AGENT_SESSION_ENDPOINTS: Record<string, string> = {
+  "claude-fcc": "/api/connectors/claude-code/session?sessionId=operator-default",
+  hermes: "/api/connectors/hermes/session?sessionId=operator-default",
+  openclaw: "/api/connectors/openclaw/session?sessionId=operator-default",
+  agy: "/api/connectors/agy/session?sessionId=operator-default",
+};
+
+function capabilityModeLabel(live: AgentSystemState | undefined, session: AgentSessionSummary | null | undefined): string {
+  if (session?.active && session.status !== "error") return "READY TO USE (AGENT SESSION)";
   if (!live) return "NOT WIRED";
   if (live.outputKind === "mock-stream") return "NOT WIRED";
   if (live.controlledAction) return "READY TO USE";
@@ -27,6 +40,7 @@ export function RegistryTable() {
   // lets the Status column reflect a real connector's connected/degraded/
   // disconnected reading instead of the static descriptor snapshot.
   const [liveStates, setLiveStates] = useState<Record<string, AgentSystemState>>({});
+  const [agentSessions, setAgentSessions] = useState<Record<string, AgentSessionSummary | null>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +56,26 @@ export function RegistryTable() {
       cancelled = true;
       clearInterval(t);
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSessions() {
+      const entries = await Promise.all(Object.entries(AGENT_SESSION_ENDPOINTS).map(async ([id, endpoint]) => {
+        try {
+          const response = await fetch(endpoint, { cache: "no-store" });
+          if (!response.ok) return [id, null] as const;
+          const body = await response.json() as { session?: AgentSessionSummary | null };
+          return [id, body.session ?? null] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }));
+      if (!cancelled) setAgentSessions(Object.fromEntries(entries));
+    }
+    void loadSessions();
+    const timer = setInterval(() => void loadSessions(), 8_000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
   const directory = useMemo(() => getConnectorDirectory(), []);
@@ -113,7 +147,9 @@ export function RegistryTable() {
               const open = expanded === s.id;
               const fullDescriptor = s.isActive ? connectorRegistry.get(s.id)?.descriptor() : null;
               const live = liveStates[s.id];
-              const displayStatus = s.isActive ? live?.status ?? s.status : s.status;
+              const agentSession = agentSessions[s.id];
+              const usableAgentSession = Boolean(agentSession?.active && agentSession.status !== "error");
+              const displayStatus = usableAgentSession ? "connected" : s.isActive ? live?.status ?? s.status : s.status;
               return (
                 <React.Fragment key={s.id}>
                   <tr className="border-t border-border">
@@ -132,14 +168,14 @@ export function RegistryTable() {
                       <span className="flex items-center gap-1.5">
                         <span className="status-dot" style={dotGlowStyle(statusColor(displayStatus))} />
                         {displayStatus}
-                        {live && live.commandExecution === false && !live.controlledAction && (
+                        {live && !usableAgentSession && live.commandExecution === false && !live.controlledAction && (
                           <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono text-warn bg-warn/10">
                             not commandable
                           </span>
                         )}
                       </span>
                     </td>
-                    <td className="px-4 py-2 mono text-xs">{capabilityModeLabel(live)}</td>
+                    <td className="px-4 py-2 mono text-xs">{capabilityModeLabel(live, agentSession)}</td>
                     <td className="px-4 py-2 mono text-xs">
                       {(() => {
                         const last = getLastAction(s.id);

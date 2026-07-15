@@ -51,7 +51,7 @@ export function TopBar() {
       </div>
 
       <div className="text-xs text-muted">
-        Running <span className="text-foreground font-medium mono">{running}</span>/{states.length}
+        Connected services <span className="text-foreground font-medium mono">{running}</span>/{states.length}
       </div>
 
       <div className="text-xs text-muted">
