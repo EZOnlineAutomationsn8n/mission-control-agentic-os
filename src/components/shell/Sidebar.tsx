@@ -56,9 +56,24 @@ const SYSTEM: NavItem[] = [
   { href: "/projects", label: "Project Layer" },
 ];
 
+const AGENT_SESSION_ENDPOINTS: Record<string, string> = {
+  "claude-fcc": "/api/connectors/claude-code/session?sessionId=operator-default",
+  hermes: "/api/connectors/hermes/session?sessionId=operator-default",
+  agy: "/api/connectors/agy/session?sessionId=operator-default",
+  openclaw: "/api/connectors/openclaw/session?sessionId=operator-default",
+  gemini: "/api/connectors/gemini/session?sessionId=operator-default",
+  codex: "/api/connectors/codex/session?sessionId=operator-default",
+};
+
+interface AgentSessionSummary {
+  active: boolean;
+  status: "starting" | "idle" | "running" | "stopped" | "error";
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [states, setStates] = useState<Record<string, AgentSystemState>>({});
+  const [agentSessions, setAgentSessions] = useState<Record<string, AgentSessionSummary | null>>({});
 
   useEffect(() => {
     let cancelled = false;
@@ -76,9 +91,33 @@ export function Sidebar() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSessions() {
+      const entries = await Promise.all(Object.entries(AGENT_SESSION_ENDPOINTS).map(async ([id, endpoint]) => {
+        try {
+          const response = await fetch(endpoint, { cache: "no-store" });
+          if (!response.ok) return [id, null] as const;
+          const body = await response.json() as { session?: AgentSessionSummary | null };
+          return [id, body.session ?? null] as const;
+        } catch {
+          return [id, null] as const;
+        }
+      }));
+      if (!cancelled) setAgentSessions(Object.fromEntries(entries));
+    }
+    void loadSessions();
+    const timer = setInterval(() => void loadSessions(), 8_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, []);
+
   function renderItem(item: NavItem) {
     const active = item.href.startsWith("/?agent=") ? pathname === "/" : pathname === item.href;
     const live = item.connectorId ? states[item.connectorId] : undefined;
+    const agentSession = item.connectorId ? agentSessions[item.connectorId] : undefined;
+    const agentSessionColor = agentSession?.active
+      ? agentSession.status === "error" ? "var(--danger)" : "var(--ok)"
+      : "var(--accent)";
     return (
       <Link
         key={item.href}
@@ -92,10 +131,14 @@ export function Sidebar() {
           active ? "bg-panel-2 text-accent" : "text-foreground/80 hover:bg-panel-2 hover:text-foreground"
         }`}
       >
-        {live ? (
+        {item.ready ? (
+          <span
+            className="status-dot shrink-0"
+            style={{ backgroundColor: agentSessionColor }}
+            title={agentSession?.active ? `agent session ${agentSession.status}` : "agent terminal route configured; session stopped"}
+          />
+        ) : live ? (
           <span className="status-dot shrink-0" style={dotGlowStyle(statusColor(live.status))} title={live.status} />
-        ) : item.ready ? (
-          <span className="status-dot shrink-0" style={{ backgroundColor: "var(--accent)" }} title="agent terminal route configured; runtime state is shown inside the room" />
         ) : (
           <span className="w-2 shrink-0" />
         )}
