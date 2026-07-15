@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { appendAuditEvent } from "@/lib/audit-log-store";
 import { appendConversationEntry } from "./store";
 import type { AgentConversationEntry, AgentConversationResult, ConversationStatus } from "./types";
+import type { AttachmentReference } from "@/lib/attachments/types";
 
 export interface ConnectorConversationResult {
   status: ConversationStatus;
@@ -25,6 +26,7 @@ export async function executeConversationRequest(options: {
   agentId: string;
   sessionId: string;
   prompt: string;
+  attachments?: AttachmentReference[];
   actionType: string;
   run: () => Promise<ConnectorConversationResult>;
 }): Promise<AgentConversationResult> {
@@ -46,6 +48,7 @@ export async function executeConversationRequest(options: {
     agentId: options.agentId,
     sessionId: options.sessionId,
     prompt: options.prompt,
+    attachments: options.attachments ?? [],
     status: connectorResult.status,
     text: connectorResult.text,
     error: connectorResult.error,
@@ -69,7 +72,7 @@ export async function executeConversationRequest(options: {
 
   const summary = entry.status === "completed"
     ? entry.agentSessionId
-      ? `${entry.durationMs}ms  ${entry.agentIdentity ?? "agent"}  session ${entry.agentSessionId}  ${entry.transportModelAlias ?? "gateway model unknown"}`
+      ? `${entry.durationMs}ms  ${entry.agentIdentity ?? "agent"}  session ${entry.agentSessionId}  ${entry.transportModelAlias ?? "gateway model unknown"}  attachments ${(entry.attachments ?? []).length}`
       : `${entry.durationMs}ms  route ${entry.attempts.find((attempt) => attempt.outcome === "completed")?.routeNumber ?? "unknown"}  ${entry.actualRuntimeModel ?? entry.transportModelAlias ?? "model unknown"}`
     : `${entry.durationMs}ms  ${entry.error ?? "request did not complete"}`;
   const audit = await appendAuditEvent({

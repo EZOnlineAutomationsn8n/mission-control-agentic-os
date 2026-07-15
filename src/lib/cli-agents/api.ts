@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { appendAuditEvent } from "@/lib/audit-log-store";
+import { promptWithAttachments, resolveAttachments } from "@/lib/attachments/store";
 import { executeConversationRequest, type ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { runAgyTurn } from "./agy-runner";
@@ -116,6 +117,17 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
   const key = (body as { sessionId?: unknown } | null)?.sessionId ?? "operator-default";
   if (typeof prompt !== "string" || !prompt.trim()) return NextResponse.json({ error: "prompt must be non-empty text" }, { status: 400 });
   if (typeof key !== "string" || !isValidConversationKey(key)) return NextResponse.json({ error: "invalid session identifier" }, { status: 400 });
+  let attachments;
+  try {
+    attachments = await resolveAttachments({
+      agentId,
+      sessionId: key,
+      ids: (body as { attachments?: unknown } | null)?.attachments,
+    });
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "invalid attachments" }, { status: 400 });
+  }
+  const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
 
   const session = await readCliAgentSession(agentId, key);
   if (!session?.active) return NextResponse.json({ error: `${LABELS[agentId]} session is stopped; start it before sending a prompt` }, { status: 409 });
@@ -128,8 +140,9 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
     agentId,
     sessionId: key,
     prompt: prompt.trim(),
+    attachments,
     actionType: `${agentId}-agent-turn`,
-    run: () => runAgentTurn(agentId, session, prompt.trim(), false),
+    run: () => runAgentTurn(agentId, session, effectivePrompt, false),
   });
   await updateCliAgentSession(agentId, key, {
     runtimeSessionId: persisted.entry.agentSessionId ?? session.runtimeSessionId,

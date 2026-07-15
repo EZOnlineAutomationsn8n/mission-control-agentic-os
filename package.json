@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "test:agent-conversations": "tsx --test scripts/test-agent-conversations.ts",
-    "test:claude-code-session": "tsx --test scripts/test-claude-code-session.ts"
+    "test:claude-code-session": "tsx --test scripts/test-claude-code-session.ts",
+    "test:attachments": "tsx --test scripts/test-attachments.ts"
   },
   "dependencies": {
     "clsx": "^2.1.1",

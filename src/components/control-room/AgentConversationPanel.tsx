@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AgentConversationEntry } from "@/lib/agent-conversations/types";
+import type { AttachmentReference } from "@/lib/attachments/types";
 
 const SESSION_ID = "operator-default";
 const CLIENT_TIMEOUT_MS = 660000;
@@ -60,6 +61,10 @@ export function AgentConversationPanel({
   const [running, setRunning] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [clearConfirm, setClearConfirm] = useState(false);
+  const [attachments, setAttachments] = useState<AttachmentReference[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const cameraInput = useRef<HTMLInputElement>(null);
 
   const historyEndpoint = `/api/agent-conversations/${agentId}/${SESSION_ID}`;
   const sessionEndpoint = `/api/connectors/${agentId}/session?sessionId=${SESSION_ID}`;
@@ -144,13 +149,14 @@ export function AgentConversationPanel({
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ prompt: submittedPrompt, sessionId: SESSION_ID }),
+        body: JSON.stringify({ prompt: submittedPrompt, sessionId: SESSION_ID, attachments: attachments.map((attachment) => attachment.id) }),
         signal: controller.signal,
       });
       const data = (await response.json()) as AgentConversationEntry & { error?: string; auditError?: string };
       if (!data.id) throw new Error(data.auditError ?? data.error ?? `request returned HTTP ${response.status}`);
       setEntries((current) => [...current, data]);
       setPrompt("");
+      setAttachments([]);
       if (!response.ok) setLoadError(data.auditError ?? "request persisted but audit recording failed");
       await loadState();
     } catch (error) {
@@ -162,6 +168,28 @@ export function AgentConversationPanel({
     } finally {
       clearTimeout(timer);
       setRunning(false);
+    }
+  }
+
+  async function uploadFiles(files: FileList | null) {
+    if (!files || files.length === 0 || uploading || busy) return;
+    setUploading(true);
+    setLoadError(null);
+    try {
+      const form = new FormData();
+      form.set("agentId", agentId);
+      form.set("sessionId", SESSION_ID);
+      Array.from(files).slice(0, 5).forEach((file) => form.append("files", file));
+      const response = await fetch("/api/attachments", { method: "POST", body: form });
+      const data = (await response.json()) as { attachments?: AttachmentReference[]; error?: string };
+      if (!response.ok || !data.attachments) throw new Error(data.error ?? `upload returned HTTP ${response.status}`);
+      setAttachments((current) => [...current, ...data.attachments!].slice(0, 5));
+    } catch (error) {
+      setLoadError(error instanceof Error ? error.message : "attachment upload failed");
+    } finally {
+      setUploading(false);
+      if (fileInput.current) fileInput.current.value = "";
+      if (cameraInput.current) cameraInput.current.value = "";
     }
   }
 
@@ -236,6 +264,15 @@ export function AgentConversationPanel({
               <div className="text-[10px] uppercase tracking-wide mb-1">{label} Agent - {entry.status}</div>
               <div className="mono whitespace-pre-wrap break-words">{entry.text ?? entry.error ?? "No output returned."}</div>
             </div>
+            {(entry.attachments ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {(entry.attachments ?? []).map((attachment) => (
+                  <span key={attachment.id} className="rounded bg-panel-2 border border-border px-2 py-1 text-[10px] text-muted">
+                    {attachment.name} · {(attachment.size / 1024).toFixed(1)} KB
+                  </span>
+                ))}
+              </div>
+            )}
             <div className={terminal ? "hidden" : "text-[10px] text-muted mono space-y-0.5"}>
               <div>duration {(entry.durationMs / 1000).toFixed(1)}s - session {entry.agentSessionId ?? "not reported"}</div>
               <div>workspace {entry.workspace ?? "not reported"}</div>
@@ -249,15 +286,41 @@ export function AgentConversationPanel({
       {loadError && <div role="alert" className="rounded bg-danger/10 text-danger p-2 text-xs">{loadError}</div>}
 
       <form onSubmit={submit} className="space-y-2 shrink-0">
+        <input ref={fileInput} type="file" multiple className="hidden"
+          accept=".pdf,.txt,.md,.json,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif,.heic,.svg,.zip"
+          onChange={(event) => void uploadFiles(event.target.files)} />
+        <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden"
+          onChange={(event) => void uploadFiles(event.target.files)} />
+        {attachments.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" aria-label={`${label} pending attachments`}>
+            {attachments.map((attachment) => (
+              <button key={attachment.id} type="button" title="Remove from this prompt"
+                onClick={() => setAttachments((current) => current.filter((entry) => entry.id !== attachment.id))}
+                className="rounded border border-accent/30 bg-accent/10 px-2 py-1 text-[10px] text-accent">
+                {attachment.name} ×
+              </button>
+            ))}
+          </div>
+        )}
         <textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={busy || !active} rows={3}
           placeholder={active ? `Send a prompt to ${label}...` : `Start ${label} before sending a prompt`}
           aria-label={`${label} agent prompt`}
           className="w-full resize-none bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent mono disabled:opacity-50" />
         <div className="flex justify-between gap-2">
-          <button type="button" onClick={() => setClearConfirm(true)} disabled={busy || entries.length === 0}
-            className="text-xs rounded bg-danger/10 text-danger px-3 py-1.5 disabled:opacity-40">Clear history</button>
-          <button type="submit" disabled={busy || !active || !prompt.trim()}
-            className="text-xs rounded bg-accent/20 text-accent px-3 py-1.5 disabled:opacity-40">
+          <div className="flex gap-1.5">
+            <button type="button" onClick={() => fileInput.current?.click()} disabled={busy || uploading || attachments.length >= 5}
+              className="text-xs rounded bg-panel-2 text-foreground px-3 py-1.5 disabled:opacity-40" aria-label={`Attach files for ${label}`}>
+              {uploading ? "Uploading…" : "+ Files"}
+            </button>
+            <button type="button" onClick={() => cameraInput.current?.click()} disabled={busy || uploading || attachments.length >= 5}
+              className="text-xs rounded bg-panel-2 text-foreground px-3 py-1.5 disabled:opacity-40" aria-label={`Use camera for ${label}`}>
+              Camera
+            </button>
+            <button type="button" onClick={() => setClearConfirm(true)} disabled={busy || entries.length === 0}
+              className="text-xs rounded bg-danger/10 text-danger px-3 py-1.5 disabled:opacity-40">Clear</button>
+          </div>
+          <button type="submit" disabled={busy || uploading || !active || !prompt.trim()}
+            className="text-xs rounded bg-accent/20 text-accent px-4 py-1.5 disabled:opacity-40">
             {busy ? `${label} running...` : "Send"}
           </button>
         </div>

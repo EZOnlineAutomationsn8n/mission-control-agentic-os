@@ -1,3 +1,5 @@
+import type { AttachmentReference } from "@/lib/attachments/types";
+
 export type ConversationStatus = "completed" | "action_required" | "failed" | "timeout";
 
 export interface ConversationAttempt {
@@ -15,6 +17,7 @@ export interface AgentConversationEntry {
   agentId: string;
   sessionId: string;
   prompt: string;
+  attachments?: AttachmentReference[];
   status: ConversationStatus;
   text: string | null;
   error: string | null;

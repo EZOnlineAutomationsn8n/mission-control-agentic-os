@@ -64,3 +64,4 @@ logs/
 /data/agent-conversations.jsonl
 /data/claude-code-sessions.json
 /data/cli-agent-sessions.json
+/data/attachments/
