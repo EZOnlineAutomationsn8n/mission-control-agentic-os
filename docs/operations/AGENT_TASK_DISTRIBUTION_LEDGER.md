@@ -61,6 +61,8 @@ project:
 parent_objective:
 objective:
 acceptance_result:
+blueprint_work_package_id:
+depends_on: []
 
 orchestration:
   primary: Antigravity
@@ -84,6 +86,13 @@ execution:
   workspace:
   sandbox_profile:
 
+read_pack:
+  common:
+    - AGENTS.md
+    - docs/looplines/MC_AGENTIC_OS_BUILD_BLUEPRINT.md
+    - docs/acceptance/STAGING_ACCEPTANCE_20260715.md
+  package_specific: []
+
 authority:
   allowed:
   forbidden:
@@ -91,6 +100,7 @@ authority:
 
 delivery:
   write_target:
+  allowed_write_paths: []
   evidence_target:
   required_tests:
   verifier:
