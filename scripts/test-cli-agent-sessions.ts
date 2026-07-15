@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const root = await mkdtemp(path.join(tmpdir(), "cli-agent-sessions-"));
+delete process.env.DATABASE_URL;
 process.env.CLI_AGENT_SESSION_DATA_DIR = root;
 
 const {

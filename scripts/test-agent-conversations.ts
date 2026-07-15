@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const root = await mkdtemp(path.join(tmpdir(), "agent-conversations-"));
+delete process.env.DATABASE_URL;
 process.env.AGENT_CONVERSATION_DATA_DIR = root;
 process.env.AUDIT_DATA_DIR = root;
 

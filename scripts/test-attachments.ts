@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const root = await mkdtemp(path.join(tmpdir(), "mission-control-attachments-"));
+delete process.env.DATABASE_URL;
 process.env.ATTACHMENT_DATA_DIR = root;
 
 const { promptWithAttachments, resolveAttachments, storeAttachments } = await import("../src/lib/attachments/store");
@@ -44,4 +45,3 @@ test("unsupported executable attachments are rejected", async () => {
     /unsupported attachment type/
   );
 });
-

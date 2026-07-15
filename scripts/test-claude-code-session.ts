@@ -4,6 +4,7 @@ import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const root = await mkdtemp(path.join(process.cwd(), ".test-claude-code-session-"));
+delete process.env.DATABASE_URL;
 const workspace = path.join(root, "workspace");
 const launcher = path.join(root, "fake-claude-code.mjs");
 await mkdir(workspace, { recursive: true });
