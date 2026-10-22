@@ -1267,9 +1267,7 @@ export function TeamRoomView() {
     <div className="acf-team-room-page">
       <header className="acf-team-room-hero">
         <div className="acf-team-room-hero-copy">
-          <div className="text-[10px] font-semibold tracking-[0.18em] text-cyan-300">AGENTIC COLLABORATION FABRIC</div>
-          <h1 className="mt-1 text-2xl sm:text-3xl font-semibold">ACF Team Room</h1>
-          <p className="mt-1.5 text-sm text-muted">Visual collaboration topology over ACF&apos;s canonical read/export surface.</p>
+          <h1 className="text-sm font-semibold">Team Room</h1>
 
           <nav className="acf-mode-tabs" aria-label="Team Room modes">
             {TEAM_ROOM_MODES.map((definition) => (
