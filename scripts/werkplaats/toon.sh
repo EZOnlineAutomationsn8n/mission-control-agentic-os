@@ -19,7 +19,7 @@ send_request() {
 }
 send_request status 'mc-preview-status'
 STATUS_RECEIPT="$(find "$RES" -maxdepth 1 -name "werkplaats-$NAME-*$$-status.txt" -print | sort | tail -1)"
-if [[ -n "$STATUS_RECEIPT" ]] && grep -Eiq '(RUNNING|ACTIVE)' "$STATUS_RECEIPT"; then
+if [[ -n "$STATUS_RECEIPT" ]] && grep -Eq '^preview pids/cwd:' "$STATUS_RECEIPT"; then
  echo "FOUT: er draait al een preview. Niet stoppen zonder source-ownercontrole."
  exit 8
 fi
