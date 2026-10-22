@@ -9,6 +9,7 @@ import "./globals.css";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
 import { PanelFocusProvider } from "@/components/shell/PanelFocus";
+import { MissionBackground } from "@/components/shell/MissionBackground";
 
 export const metadata: Metadata = {
   title: "Mission Control — Agentic OS",
@@ -28,6 +29,7 @@ export default function RootLayout({
       <body className="min-h-full text-foreground">
         <PanelFocusProvider>
           <div className="mc-app-shell flex min-h-screen">
+            <MissionBackground />
             <Sidebar />
             <div className="flex-1 flex flex-col min-w-0">
               <TopBar />

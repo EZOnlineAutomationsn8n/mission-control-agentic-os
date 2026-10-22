@@ -3713,3 +3713,35 @@ html[data-mc-panel-focus-id="acf-reading-pane"] .acf-shell-focus-overlay { z-ind
   .mc-clear-history-mobile > summary::-webkit-details-marker { display: none; }
   .mc-clear-history-mobile > button { margin: .3rem; }
 }
+
+
+/* ---------- Mission background / Galaxy loop, stage 2026-10-22 ---------- */
+.mc-background-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: #02040a;
+}
+
+.mc-background-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: 50% 50%;
+}
+
+/* readability veil: the source is already dark, so the veil stays light */
+.mc-background-veil {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(1,4,12,.10), rgba(1,4,12,.22) 55%, rgba(1,4,12,.38));
+}
+
+.mc-app-shell > :not(.mc-background-layer) {
+  position: relative;
+  z-index: 1;
+}
