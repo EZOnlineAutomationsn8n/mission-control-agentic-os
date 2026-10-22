@@ -173,6 +173,26 @@ const defaultRunner: AcfRunner = async (args, timeoutMs) => {
 };
 
 const defaultLister: SessionLister = async () => {
+  // WERKPLAATS with real agents (CSA 2026-10-22): a preview has its own empty session store, so it reads the LIVE
+  // session index named in its ACF routes file, filtered to the routes' session_ref_pattern (^acf-werkplaats-).
+  // Live conversations outside that pattern are never listed, so ACF cannot bind them.
+  if (process.env.MC_PREVIEW === "1") {
+    try {
+      const { readFile } = await import("node:fs/promises");
+      const routes = JSON.parse(await readFile(ACF_TEAM_ROOM_ROUTES, "utf8")) as {
+        session_ref_pattern?: string; session_index?: { base_url?: string; path?: string; timeout_seconds?: number };
+      };
+      const pattern = routes.session_ref_pattern ?? "";
+      const index = routes.session_index;
+      if (pattern.startsWith("^acf-werkplaats-") && index?.base_url && index.path) {
+        const res = await fetch(index.base_url + index.path, { cache: "no-store",
+          signal: AbortSignal.timeout((index.timeout_seconds ?? 15) * 1000) });
+        const body = (await res.json()) as { sessions?: Array<Record<string, unknown>> };
+        const re = new RegExp(pattern);
+        return (body.sessions ?? []).filter(row => re.test(String(row.sessionId ?? "")));
+      }
+    } catch { /* fall back to the preview's own (empty) store */ }
+  }
   const { listCockpitSessions } = await import("@/lib/cockpit/session-registry");
   return (await listCockpitSessions()) as unknown as Array<Record<string, unknown>>;
 };
