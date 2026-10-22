@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 
-export function PreviewIdentity() {
+/** True only in the WERKPLAATS (preview server answers /api/preview-identity with preview:true). */
+export function useIsWerkplaats(): boolean {
   const [preview, setPreview] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
@@ -13,10 +14,10 @@ export function PreviewIdentity() {
       .catch(() => {});
     return () => controller.abort();
   }, []);
-  if (!preview) return null;
-  return (
-    <div role="status" className="mc-preview-identity">
-      WERKPLAATS — testversie · agents staan uit · niks hier is echt
-    </div>
-  );
+  return preview;
+}
+
+/** Dennis 2026-10-22 16:45: no banner. The werkplaats is marked by the sidebar label only (see Sidebar). */
+export function PreviewIdentity() {
+  return null;
 }

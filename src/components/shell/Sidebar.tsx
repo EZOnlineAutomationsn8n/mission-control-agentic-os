@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { useIsWerkplaats } from "@/components/shell/PreviewIdentity";
 import { connectorRegistry } from "@/lib/connectors/registry";
 import { COCKPIT_AGENT_TARGETS, type CockpitAgentId, type CockpitSessionSummary } from "@/lib/cockpit/agent-registry";
 import { getCockpitRoutePresentation } from "@/lib/cockpit-route-presentation";
@@ -83,6 +84,7 @@ function sessionColor(sessions: CockpitSessionSummary[]): string {
 
 export function Sidebar() {
   const pathname = usePathname();
+  const werkplaats = useIsWerkplaats();
   const { focusedPanelId } = usePanelFocus();
   const [railPinned, setRailPinned] = useState(false);
   useEffect(() => {
@@ -150,7 +152,10 @@ export function Sidebar() {
   }
 
   function section(title: string, items: NavItem[]) {
-    return <div className="px-2 pt-3"><div className="mc-sidebar-section-label px-3 pb-1.5">{title}</div>{items.map(renderItem)}</div>;
+    const label = title === "Workspace" && werkplaats
+      ? <div className="mc-sidebar-section-label mc-werkplaats-label px-3 pb-1.5">WERKPLAATS <span className="mc-werkplaats-tag">test</span></div>
+      : <div className="mc-sidebar-section-label px-3 pb-1.5">{title}</div>;
+    return <div className="px-2 pt-3">{label}{items.map(renderItem)}</div>;
   }
 
   function agentPool() {

@@ -3804,3 +3804,12 @@ html[data-mc-panel-focus-id="acf-reading-pane"] .acf-shell-focus-overlay { z-ind
 @media(max-width:600px) {
  .mc-preview-identity { font-size:9px;letter-spacing:0; }
 }
+
+/* WERKPLAATS sidebar label (Dennis 2026-10-22 16:45) */
+.mc-werkplaats-label { color:#fbbf24 !important; font-size:15px !important; font-weight:800 !important; letter-spacing:.08em !important; }
+.mc-werkplaats-tag { margin-left:6px; padding:1px 6px; border-radius:6px; border:1px solid rgba(251,191,36,.6);
+  font-size:10px; font-weight:700; letter-spacing:.04em; color:#fde68a; vertical-align:middle; }
+/* Kruispunt (Dennis): sidebar brand block exactly as tall as the top bar (h-14), so both bottom borders form one
+   straight line, with the logo vertically centred and the same breathing room as the status chips. */
+.mc-sidebar-brand { height: 3.5rem; min-height: 3.5rem; max-height: 3.5rem; display: flex; align-items: center; box-sizing: border-box; }
+.mc-sidebar-brand > .mc-sidebar-brand-row { align-items: center; }
