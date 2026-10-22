@@ -1,173 +1,314 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { connectorRegistry } from "@/lib/connectors/registry";
-import type { AgentSystemState } from "@/lib/connectors/types";
-import { statusColor, dotGlowStyle } from "@/lib/ui-helpers";
+import { useEffect, useMemo, useState } from "react";
+import {
+  COCKPIT_AGENT_TARGETS,
+  getCockpitAgentTarget,
+  type CockpitAgentId,
+  type CockpitAgentTarget,
+  type CockpitSessionSummary,
+} from "@/lib/cockpit/agent-registry";
 import { AgentConversationPanel } from "./AgentConversationPanel";
+import { getCockpitRoutePresentation } from "@/lib/cockpit-route-presentation";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
 
-const STORAGE_KEY = "mission-control-terminal-slots-v2";
+const STORAGE_KEY = "mission-control-pane-bindings-v5";
+const LEGACY_STORAGE_KEY = "mission-control-terminal-slots-v2";
 const ACTIVE_SLOT_KEY = "mission-control-active-terminal-v1";
-const DEFAULT_SLOTS = ["claude-fcc", "hermes", "agy", "openclaw"] as const;
-const TERMINAL_TARGETS = [
-  { id: "claude-fcc", label: "Claude Code" },
-  { id: "hermes", label: "Hermes" },
-  { id: "agy", label: "Antigravity" },
-  { id: "openclaw", label: "OpenClaw" },
-  { id: "gemini", label: "Gemini" },
-  { id: "codex", label: "Codex" },
-] as const;
+const SESSION_KEY_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
-function blockerText(state: AgentSystemState): string {
-  const blocked = state.capabilities.find((capability) => capability.kind === "blocked" || !capability.available);
-  return blocked?.reason ?? "No operator messaging endpoint is wired for this system.";
+interface PaneBinding {
+  targetId: CockpitAgentId;
+  sessionId: string;
 }
 
-function TerminalSurface({ systemId }: { systemId: string }) {
-  const adapter = connectorRegistry.get(systemId);
-  const [state, setState] = useState<AgentSystemState | null>(null);
+const DEFAULT_BINDINGS: PaneBinding[] = [
+  { targetId: "hermes", sessionId: "mission-control-hermes" },
+  { targetId: "claude-code", sessionId: "mission-control-claude-code" },
+  { targetId: "openclaw", sessionId: "mission-control-openclaw" },
+  { targetId: "antigravity", sessionId: "mission-control-antigravity" },
+];
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      if (!adapter) return;
-      const next = await adapter.getState();
-      if (!cancelled) setState(next);
-    }
-    void load();
-    const timer = setInterval(() => void load(), 8000);
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [adapter, systemId]);
+function validSessionId(value: unknown): value is string {
+  return typeof value === "string" && SESSION_KEY_PATTERN.test(value);
+}
 
-  if (systemId === "gemini") {
-    return <AgentConversationPanel agentId="gemini" endpoint="/api/connectors/gemini/actions/ask" label="Gemini" terminal />;
-  }
-  if (systemId === "codex") {
-    return <AgentConversationPanel agentId="codex" endpoint="/api/connectors/codex/actions/ask" label="Codex" terminal />;
-  }
-  if (!adapter) return <div className="h-full p-4 mono text-xs text-danger">Unknown terminal target: {systemId}</div>;
-  if (!state) return <div className="h-full p-4 mono text-xs text-muted">Connecting terminal…</div>;
+function validBinding(value: unknown): value is PaneBinding {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as { targetId?: unknown; sessionId?: unknown };
+  return typeof candidate.targetId === "string" && Boolean(getCockpitAgentTarget(candidate.targetId)) && validSessionId(candidate.sessionId);
+}
 
-  if (state.controlledAction?.id === "claude-code-agent") {
-    return <AgentConversationPanel agentId="claude-code" endpoint={state.controlledAction.endpoint} label="Claude Code" terminal />;
-  }
-  if (systemId === "hermes") {
-    return <AgentConversationPanel agentId="hermes" endpoint="/api/connectors/hermes/actions/ask" label="Hermes" terminal />;
-  }
-  if (systemId === "openclaw") {
-    return <AgentConversationPanel agentId="openclaw" endpoint="/api/connectors/openclaw/actions/ask" label="OpenClaw" terminal />;
-  }
-  if (systemId === "agy") {
-    return <AgentConversationPanel agentId="agy" endpoint="/api/connectors/agy/actions/ask" label="Antigravity" terminal />;
-  }
+function bindingForLegacyTarget(value: string): PaneBinding | null {
+  const target = getCockpitAgentTarget(value);
+  return target ? { targetId: target.id, sessionId: target.defaultSessionId } : null;
+}
 
-  const descriptor = adapter.descriptor();
+function sessionStatusText(session: CockpitSessionSummary | undefined): string {
+  if (!session) return "not started";
+  return session.active ? session.status : `stopped · ${session.status}`;
+}
+
+function sessionDot(session: CockpitSessionSummary | undefined): string {
+  if (session?.status === "error") return "var(--danger)";
+  if (session?.status === "running" || session?.status === "starting") return "var(--info)";
+  return "var(--muted)";
+}
+
+function TerminalSurface({ target, sessionId }: { target: CockpitAgentTarget; sessionId: string }) {
   return (
-    <div className="h-full min-h-0 flex flex-col bg-[#070a0d]">
-      <div className="flex-1 min-h-0 overflow-y-auto p-4 mono text-xs leading-6">
-        <div className="text-muted">[{new Date().toLocaleTimeString()}] {descriptor.name}</div>
-        <div className={state.status === "connected" ? "text-ok" : "text-warn"}>status: {state.status} · {state.runState}</div>
-        <div className="mt-4 text-foreground/90">No messaging bridge available.</div>
-        <div className="text-warn">{blockerText(state)}</div>
-        <div className="mt-4 text-muted">Select another agent for this slot or wire this agent&apos;s real session endpoint.</div>
-      </div>
-      <div className="border-t border-border p-3 text-xs text-muted">Input unavailable until a real agent message route is connected.</div>
-    </div>
+    <AgentConversationPanel
+      key={`${target.id}:${sessionId}`}
+      targetId={target.id}
+      agentId={target.apiAgentId}
+      endpoint={target.actionEndpoint}
+      label={target.label}
+      sessionId={sessionId}
+      terminal
+    />
   );
 }
 
 export function TerminalWorkspace() {
-  const [slots, setSlots] = useState<string[]>([...DEFAULT_SLOTS]);
+  const [bindings, setBindings] = useState<PaneBinding[]>(DEFAULT_BINDINGS);
   const [activeSlot, setActiveSlot] = useState(0);
+  const [sessions, setSessions] = useState<CockpitSessionSummary[]>([]);
+  const [sessionDiscoveryError, setSessionDiscoveryError] = useState<string | null>(null);
+  const [presentationHydrated, setPresentationHydrated] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadSessions() {
+      try {
+        const response = await fetch("/api/cockpit/sessions", { cache: "no-store" });
+        const body = await response.json() as { sessions?: CockpitSessionSummary[]; error?: string };
+        if (!response.ok) throw new Error(body.error ?? `session discovery returned HTTP ${response.status}`);
+        if (!cancelled) {
+          setSessions(body.sessions ?? []);
+          setSessionDiscoveryError(null);
+        }
+      } catch (error) {
+        if (!cancelled) setSessionDiscoveryError(error instanceof Error ? error.message : "session discovery unavailable");
+      }
+    }
+    void loadSessions();
+    const timer = window.setInterval(() => void loadSessions(), 5000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
     queueMicrotask(() => {
       if (cancelled) return;
       let nextActiveSlot = 0;
-      const storedActiveSlot = Number(window.localStorage.getItem(ACTIVE_SLOT_KEY));
-      if (Number.isInteger(storedActiveSlot) && storedActiveSlot >= 0 && storedActiveSlot < 4) {
-        nextActiveSlot = storedActiveSlot;
-        setActiveSlot(storedActiveSlot);
-      }
+    const storedActiveSlot = Number(window.localStorage.getItem(ACTIVE_SLOT_KEY));
+    if (Number.isInteger(storedActiveSlot) && storedActiveSlot >= 0 && storedActiveSlot < 4) {
+      nextActiveSlot = storedActiveSlot;
+      setActiveSlot(storedActiveSlot);
+    }
 
-      let nextSlots: string[] = [...DEFAULT_SLOTS];
-      const stored = window.localStorage.getItem(STORAGE_KEY);
-      if (stored) {
+    let nextBindings = [...DEFAULT_BINDINGS];
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length === 4 && parsed.every(validBinding)) nextBindings = parsed;
+      } catch {
+        // Invalid presentation state is ignored; runtime/session state is never touched.
+      }
+    } else {
+      const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      if (legacy) {
         try {
-          const parsed = JSON.parse(stored);
-          if (
-            Array.isArray(parsed) &&
-            parsed.length === 4 &&
-            parsed.every((value) => typeof value === "string" && TERMINAL_TARGETS.some((target) => target.id === value))
-          ) nextSlots = parsed;
+          const parsed = JSON.parse(legacy);
+          if (Array.isArray(parsed) && parsed.length === 4) {
+            const migrated = parsed.map((value) => typeof value === "string" ? bindingForLegacyTarget(value) : null);
+            if (migrated.every(Boolean)) nextBindings = migrated as PaneBinding[];
+          }
         } catch {
-          // Ignore invalid local operator layout and keep safe defaults.
+          // Keep safe presentation defaults only.
         }
       }
+    }
 
-      const requested = new URLSearchParams(window.location.search).get("agent");
-      if (requested && TERMINAL_TARGETS.some((target) => target.id === requested)) {
-        nextSlots = nextSlots.map((value, index) => index === nextActiveSlot ? requested : value);
-        window.history.replaceState({}, "", window.location.pathname);
-      }
-      setSlots(nextSlots);
+    const query = new URLSearchParams(window.location.search);
+    const requested = query.get("agent");
+    const requestedSession = query.get("session");
+    const target = requested ? getCockpitAgentTarget(requested) : undefined;
+    if (target) {
+      const sessionId = validSessionId(requestedSession) ? requestedSession : target.defaultSessionId;
+      nextBindings = nextBindings.map((binding, index) => index === nextActiveSlot ? { targetId: target.id, sessionId } : binding);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+      setBindings(nextBindings);
+      setPresentationHydrated(true);
     });
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
     function selectAgent(event: Event) {
-      const systemId = (event as CustomEvent<string>).detail;
-      if (!TERMINAL_TARGETS.some((target) => target.id === systemId)) return;
-      setSlots((current) => current.map((value, index) => index === activeSlot ? systemId : value));
+      const requested = (event as CustomEvent<string>).detail;
+      const target = getCockpitAgentTarget(requested);
+      if (!target) return;
+      const existing = sessions.find((session) => session.targetId === target.id && session.active)
+        ?? sessions.find((session) => session.targetId === target.id);
+      setBindings((current) => current.map((binding, index) => index === activeSlot
+        ? { targetId: target.id, sessionId: existing?.sessionId ?? target.defaultSessionId }
+        : binding));
+    }
+    function bindSession(event: Event) {
+      const detail = (event as CustomEvent<{ targetId: string; sessionId: string }>).detail;
+      const target = getCockpitAgentTarget(detail?.targetId);
+      if (!target || !validSessionId(detail?.sessionId)) return;
+      setBindings((current) => current.map((binding, index) => index === activeSlot
+        ? { targetId: target.id, sessionId: detail.sessionId }
+        : binding));
     }
     window.addEventListener("mission-control:select-agent", selectAgent);
-    return () => window.removeEventListener("mission-control:select-agent", selectAgent);
-  }, [activeSlot]);
+    window.addEventListener("mission-control:bind-session", bindSession);
+    return () => {
+      window.removeEventListener("mission-control:select-agent", selectAgent);
+      window.removeEventListener("mission-control:bind-session", bindSession);
+    };
+  }, [activeSlot, sessions]);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(slots));
-  }, [slots]);
+    if (!presentationHydrated) return;
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(bindings));
+  }, [bindings, presentationHydrated]);
 
   useEffect(() => {
+    if (!presentationHydrated) return;
     window.localStorage.setItem(ACTIVE_SLOT_KEY, String(activeSlot));
-  }, [activeSlot]);
+  }, [activeSlot, presentationHydrated]);
 
-  function assign(slotIndex: number, systemId: string) {
-    setSlots((current) => current.map((value, index) => index === slotIndex ? systemId : value));
+  const sessionsByTarget = useMemo(() => {
+    const map = new Map<CockpitAgentId, CockpitSessionSummary[]>();
+    for (const target of COCKPIT_AGENT_TARGETS) map.set(target.id, []);
+    for (const session of sessions) map.get(session.targetId)?.push(session);
+    return map;
+  }, [sessions]);
+
+  function assignTarget(slotIndex: number, targetId: string) {
+    const target = getCockpitAgentTarget(targetId);
+    if (!target) return;
+    const existing = sessionsByTarget.get(target.id)?.find((session) => session.active)
+      ?? sessionsByTarget.get(target.id)?.[0];
+    setBindings((current) => current.map((binding, index) => index === slotIndex
+      ? { targetId: target.id, sessionId: existing?.sessionId ?? target.defaultSessionId }
+      : binding));
     setActiveSlot(slotIndex);
   }
 
+  function assignSession(slotIndex: number, sessionId: string) {
+    if (!validSessionId(sessionId)) return;
+    setBindings((current) => current.map((binding, index) => index === slotIndex ? { ...binding, sessionId } : binding));
+    setActiveSlot(slotIndex);
+  }
+
+  function createSessionBinding(slotIndex: number) {
+    const current = bindings[slotIndex];
+    const target = getCockpitAgentTarget(current.targetId);
+    if (!target) return;
+    const sessionId = `${target.apiAgentId}-session-${Date.now().toString(36)}`.slice(0, 64);
+    assignSession(slotIndex, sessionId);
+  }
+
   return (
-    <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-start">
-      {slots.map((systemId, slotIndex) => {
-        const target = TERMINAL_TARGETS.find((entry) => entry.id === systemId) ?? TERMINAL_TARGETS[0];
-        const adapter = connectorRegistry.get(systemId);
-        const descriptor = adapter?.descriptor();
-        return (
-          <section
-            key={slotIndex}
-            onMouseDown={() => setActiveSlot(slotIndex)}
-            className={'rounded-xl border overflow-hidden h-[calc(100dvh-12rem)] min-h-[48rem] max-h-[72rem] flex flex-col bg-panel ' + (activeSlot === slotIndex ? "border-accent shadow-[0_0_20px_rgba(0,229,255,0.12)]" : "border-border")}
-          >
-            <header className="h-11 px-3 border-b border-border bg-panel-2 flex items-center gap-3 shrink-0">
-              <span className="text-[10px] text-muted mono">TERMINAL {slotIndex + 1}</span>
-              <span className="status-dot shrink-0" style={dotGlowStyle(statusColor(descriptor?.status ?? "disconnected"))} />
-              <select value={target.id} onChange={(event) => assign(slotIndex, event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-medium outline-none" aria-label={'Agent for terminal ' + (slotIndex + 1)}>
-                {TERMINAL_TARGETS.map((entry) => <option key={entry.id} value={entry.id} className="bg-panel text-foreground">{entry.label}</option>)}
-              </select>
-              {activeSlot === slotIndex && <span className="text-[9px] uppercase tracking-wide text-accent">active</span>}
-            </header>
-            <div className="flex-1 min-h-0"><TerminalSurface systemId={systemId} /></div>
-          </section>
-        );
-      })}
+    <div className="space-y-2">
+      {sessionDiscoveryError && (
+        <div role="alert" className="rounded border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-warn">
+          Session registry unavailable: {sessionDiscoveryError}. Existing pane bindings remain intact.
+        </div>
+      )}
+      <div className="mc-mobile-pane-switcher" role="tablist" aria-label="Mission Control panes">
+        {bindings.map((binding, slotIndex) => {
+          const target = getCockpitAgentTarget(binding.targetId) ?? COCKPIT_AGENT_TARGETS[0];
+          return (
+            <button
+              key={slotIndex}
+              type="button"
+              role="tab"
+              aria-selected={activeSlot === slotIndex}
+              onClick={() => setActiveSlot(slotIndex)}
+              className={`mc-mobile-pane-tab ${activeSlot === slotIndex ? "mc-mobile-pane-tab-active" : ""}`}
+            >
+              P{slotIndex + 1}
+              <span>{target.label}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mc-terminal-grid grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
+        {bindings.map((binding, slotIndex) => {
+          const target = getCockpitAgentTarget(binding.targetId) ?? COCKPIT_AGENT_TARGETS[0];
+          const routePresentation = getCockpitRoutePresentation(target);
+          const targetSessions = sessionsByTarget.get(target.id) ?? [];
+          const boundSession = targetSessions.find((session) => session.sessionId === binding.sessionId);
+          const sessionOptions = boundSession || targetSessions.some((session) => session.sessionId === binding.sessionId)
+            ? targetSessions
+            : [{ targetId: target.id, agentId: target.apiAgentId, sessionId: binding.sessionId, displayName: binding.sessionId, active: false, status: "stopped" } as CockpitSessionSummary, ...targetSessions];
+          return (
+            <FocusablePanel
+              key={slotIndex}
+              id={`home-pane-${slotIndex + 1}`}
+              label={`Pane ${slotIndex + 1} · ${target.label}`}
+              className={`mc-terminal-pane-slot ${activeSlot === slotIndex ? "mc-terminal-pane-slot-active" : ""}`}
+              inlineControls
+            >
+            <section
+              data-agent={target.id}
+              onMouseDown={() => setActiveSlot(slotIndex)}
+              onFocusCapture={() => setActiveSlot(slotIndex)}
+              className={'mc-pane overflow-hidden h-[calc(100dvh-9rem)] min-h-[36rem] max-h-[72rem] xl:h-[calc(100dvh-12rem)] xl:min-h-[48rem] flex flex-col ' + (activeSlot === slotIndex ? "mc-pane-selected" : "")}
+            >
+              <header className="mc-pane-header px-2.5 py-2 shrink-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="mc-pane-number">P{slotIndex + 1}</span>
+                  <span className="status-dot shrink-0" style={{ backgroundColor: sessionDot(boundSession) }} title={sessionStatusText(boundSession)} />
+                  <select
+                    value={target.id}
+                    onChange={(event) => assignTarget(slotIndex, event.target.value)}
+                    className="mc-pane-agent-select min-w-[8.5rem] flex-[1_1_10rem] outline-none"
+                    aria-label={`Agent for pane ${slotIndex + 1}`}
+                  >
+                    {COCKPIT_AGENT_TARGETS.map((entry) => {
+                      const route = getCockpitRoutePresentation(entry);
+                      return <option key={entry.id} value={entry.id} className="bg-panel text-foreground">{entry.label} · {route.routeType} · {route.routeStatus}</option>;
+                    })}
+                  </select>
+                  <span className="rounded-full border border-border bg-panel-2 px-2 py-0.5 text-[9px] font-semibold tracking-wide text-foreground shrink-0" title={routePresentation.routeStatusDetail}>
+                    {routePresentation.routeType} · {routePresentation.routeStatus}
+                  </span>
+                  <span className="text-[10px] font-semibold text-muted shrink-0">{sessionStatusText(boundSession)}</span>
+                  {activeSlot === slotIndex && <span className="mc-pane-selected-badge rounded-full px-2 py-0.5 text-[9px] font-semibold">Selected</span>}
+                  <div className="flex min-w-[13rem] flex-[1.4_1_17rem] items-center gap-1.5">
+                    <span className="text-[9px] font-semibold tracking-wide text-muted shrink-0">Session</span>
+                    <select
+                      value={binding.sessionId}
+                      onChange={(event) => assignSession(slotIndex, event.target.value)}
+                      className="mc-pane-session-select mono min-w-0 flex-1 outline-none"
+                      aria-label={`Session for pane ${slotIndex + 1}`}
+                    >
+                      {sessionOptions.map((session) => (
+                        <option key={session.sessionId} value={session.sessionId} className="bg-panel text-foreground">
+                          {session.sessionId} · {session.active ? session.status : "not active"}
+                        </option>
+                      ))}
+                    </select>
+                    <button type="button" onClick={() => createSessionBinding(slotIndex)} className="mc-button mc-button-secondary mc-button-sm" title="Prepare a new independent session key for this pane; no runtime starts until Start is clicked">
+                      New session
+                    </button>
+                  </div>
+                </div>
+              </header>
+              <div className="flex-1 min-h-0"><TerminalSurface target={target} sessionId={binding.sessionId} /></div>
+            </section>
+            </FocusablePanel>
+          );
+        })}
+      </div>
     </div>
   );
 }

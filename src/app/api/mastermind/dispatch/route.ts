@@ -72,6 +72,7 @@ export async function POST(request: Request) {
   const message = (body as { message?: unknown } | null)?.message;
   const requestedTargets = (body as { targets?: unknown } | null)?.targets;
   const sessionId = (body as { sessionId?: unknown } | null)?.sessionId ?? "mastermind-operator";
+  const idempotencyKey = (body as { idempotencyKey?: unknown } | null)?.idempotencyKey;
 
   if (typeof message !== "string" || !message.trim() || message.length > 8_000) {
     return NextResponse.json({ error: "message must contain 1 to 8000 characters" }, { status: 400 });
@@ -81,6 +82,40 @@ export async function POST(request: Request) {
   }
   if (typeof sessionId !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/.test(sessionId)) {
     return NextResponse.json({ error: "invalid session identifier" }, { status: 400 });
+  }
+  if (idempotencyKey !== undefined && (typeof idempotencyKey !== "string" || !/^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/.test(idempotencyKey))) {
+    return NextResponse.json({ error: "idempotencyKey, when provided, must be a plain token up to 128 characters" }, { status: 400 });
+  }
+
+  // REMEDIATION (Block C, work ownership / duplicate dispatch protection):
+  // callers MAY supply idempotencyKey. When they do, a retry with the same
+  // key inside the same UTC minute is rejected with 409 instead of firing a
+  // second real dispatch. This reuses the audit_events.event_hash unique
+  // index (migration 002) that already exists for exactly this purpose; no
+  // new table, no second scheduler. The intent event's timestamp is
+  // deliberately bucketed to the current minute (not wall-clock-exact) so
+  // that byte-identical retries hash identically. Callers that do not send
+  // idempotencyKey get the prior, unprotected behavior unchanged.
+  let correlationId: string | undefined;
+  if (typeof idempotencyKey === "string") {
+    correlationId = idempotencyKey;
+    const minuteBucket = new Date(Math.floor(Date.now() / 60_000) * 60_000).toISOString();
+    const intent = await appendAuditEvent({
+      timestamp: minuteBucket,
+      connectorId: "mastermind",
+      actionType: "mastermind-dispatch-intent",
+      status: "intent",
+      resultSummary: `idempotencyKey=${idempotencyKey} sessionId=${sessionId} targets=${[...new Set(requestedTargets as DispatchTarget[])].sort().join(",")}`,
+      actor: "operator",
+      source: "app/api/mastermind/dispatch/route.ts:POST",
+      correlationId: idempotencyKey,
+    });
+    if (intent.ok && intent.inserted === false) {
+      return NextResponse.json(
+        { error: "duplicate dispatch: an identical idempotencyKey was already dispatched in the current minute window", idempotencyKey },
+        { status: 409 }
+      );
+    }
   }
 
   const targets = [...new Set(requestedTargets as DispatchTarget[])];
@@ -94,6 +129,9 @@ export async function POST(request: Request) {
     actionType: "multi-agent-dispatch",
     status,
     resultSummary: `${completed}/${results.length} agent turns completed for session ${sessionId}`,
+    actor: "operator",
+    source: "app/api/mastermind/dispatch/route.ts:POST",
+    correlationId,
   });
 
   return NextResponse.json({

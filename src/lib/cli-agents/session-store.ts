@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import { databaseEnabled } from "@/lib/persistence/database";
-import { patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
+import { listPersistedSessions, patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
 
 export type CliAgentId = "hermes" | "openclaw" | "agy" | "gemini" | "codex";
 export type CliAgentSessionStatus = "starting" | "idle" | "running" | "stopped" | "error";
@@ -20,6 +20,13 @@ export interface CliAgentSession {
   createdAt: string;
   updatedAt: string;
   lastError: string | null;
+  profileId?: string | null;
+  projectId?: string | null;
+  role?: string | null;
+  assignmentPath?: string | null;
+  agentRuntime?: string | null;
+  transportModelAlias?: string | null;
+  actualRuntimeModel?: string | null;
 }
 
 function dataDirectory(): string {
@@ -43,11 +50,12 @@ function mutateSessions<T>(operation: () => Promise<T>): Promise<T> {
 }
 
 function workspaceFor(agentId: CliAgentId): string {
-  if (agentId === "hermes") return process.env.HERMES_AGENT_WORKSPACE || "/opt/vireon/workfloor";
-  if (agentId === "agy") return process.env.AGY_AGENT_WORKSPACE || "/opt/vireon/workfloor";
-  if (agentId === "gemini") return process.env.GEMINI_AGENT_WORKSPACE || "/opt/vireon/workfloor";
-  if (agentId === "codex") return process.env.CODEX_AGENT_WORKSPACE || "/opt/vrn/mission-control/workfloor/agents/codex";
-  return process.env.OPENCLAW_AGENT_WORKSPACE || "/root/.openclaw/workspace";
+  const projectWorkspace = process.env.MISSION_CONTROL_AGENT_WORKSPACE || process.cwd();
+  if (agentId === "hermes") return process.env.HERMES_AGENT_WORKSPACE || projectWorkspace;
+  if (agentId === "agy") return process.env.AGY_AGENT_WORKSPACE || projectWorkspace;
+  if (agentId === "gemini") return process.env.GEMINI_AGENT_WORKSPACE || projectWorkspace;
+  if (agentId === "codex") return process.env.CODEX_AGENT_WORKSPACE || projectWorkspace;
+  return process.env.OPENCLAW_AGENT_WORKSPACE || projectWorkspace;
 }
 
 async function readSessions(): Promise<Record<string, CliAgentSession>> {
@@ -72,16 +80,41 @@ export async function readCliAgentSession(agentId: CliAgentId, sessionKey: strin
   return (await readSessions())[recordKey(agentId, sessionKey)] ?? null;
 }
 
+export async function listCliAgentSessions(agentId?: CliAgentId): Promise<CliAgentSession[]> {
+  const sessions = databaseEnabled()
+    ? await listPersistedSessions<CliAgentSession>("cli", agentId)
+    : Object.values(await readSessions()).filter((session) => !agentId || session.agentId === agentId);
+  return sessions.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+function profileFor(agentId: CliAgentId): string {
+  if (agentId === "openclaw") return process.env.OPENCLAW_AGENT_ID || "mission-control";
+  return agentId;
+}
+
+function projectFor(workspace: string): string {
+  return path.basename(workspace.replace(/[\\/]+$/, "")) || "unknown";
+}
+
+function roleFor(agentId: CliAgentId): string {
+  if (agentId === "openclaw") return "Mission Control OpenClaw agent";
+  if (agentId === "hermes") return "Mission Control Hermes agent";
+  if (agentId === "agy") return "Mission Control Antigravity agent";
+  if (agentId === "gemini") return "Mission Control Gemini agent";
+  return "Mission Control Codex agent";
+}
+
 export async function createCliAgentSession(agentId: CliAgentId, sessionKey: string): Promise<CliAgentSession> {
   const create = async () => {
     const sessions = databaseEnabled() ? {} : await readSessions();
     const now = new Date().toISOString();
+    const workspace = workspaceFor(agentId);
     const session: CliAgentSession = {
       sessionKey,
       agentId,
       runtimeSessionId: agentId === "openclaw" || agentId === "gemini" ? randomUUID() : "",
       displayName: `mission-control-${agentId}-${sessionKey}`,
-      workspace: workspaceFor(agentId),
+      workspace,
       permissionMode: agentId === "hermes"
         ? "Hermes standard approvals"
         : agentId === "agy"
@@ -97,6 +130,13 @@ export async function createCliAgentSession(agentId: CliAgentId, sessionKey: str
       createdAt: now,
       updatedAt: now,
       lastError: null,
+      profileId: profileFor(agentId),
+      projectId: projectFor(workspace),
+      role: roleFor(agentId),
+      assignmentPath: null,
+      agentRuntime: null,
+      transportModelAlias: null,
+      actualRuntimeModel: null,
     };
     if (databaseEnabled()) return upsertPersistedSession("cli", agentId, sessionKey, session);
     sessions[recordKey(agentId, sessionKey)] = session;
@@ -109,7 +149,10 @@ export async function createCliAgentSession(agentId: CliAgentId, sessionKey: str
 export async function updateCliAgentSession(
   agentId: CliAgentId,
   sessionKey: string,
-  update: Partial<Pick<CliAgentSession, "runtimeSessionId" | "status" | "active" | "lastError">>
+  update: Partial<Pick<CliAgentSession,
+    "runtimeSessionId" | "status" | "active" | "lastError" | "profileId" | "projectId" |
+    "role" | "assignmentPath" | "agentRuntime" | "transportModelAlias" | "actualRuntimeModel"
+  >>
 ): Promise<CliAgentSession> {
   if (databaseEnabled()) {
     return patchPersistedSession<CliAgentSession>("cli", agentId, sessionKey, update);

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { AgentWindow } from "@/components/control-room/AgentWindow";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
 
 // Paperclip workspace — build/assets/work products. The live service is
 // reachable (health + open link via the connector pane below); its
@@ -29,7 +30,8 @@ export default function PaperclipPage() {
         </div>
       </div>
 
-      <div className="max-w-xl">
+      <FocusablePanel id="paperclip-runtime" label="Paperclip · Runtime console">
+      <div>
         <AgentWindow systemId="paperclip" />
         <div className="mt-2 text-xs">
           <Link href="/systems/paperclip" className="text-accent hover:underline">
@@ -37,6 +39,7 @@ export default function PaperclipPage() {
           </Link>
         </div>
       </div>
+      </FocusablePanel>
     </div>
   );
 }

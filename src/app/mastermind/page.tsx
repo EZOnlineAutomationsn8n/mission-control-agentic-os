@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
 
 const AGENTS = [
   { id: "claude-code", label: "Claude Code", ready: true },
@@ -104,6 +105,7 @@ export default function MastermindPage() {
 
       {error && <div className="rounded border border-danger/40 bg-danger/10 p-3 text-xs text-danger">{error}</div>}
 
+      <FocusablePanel id="mastermind-dispatch" label="AI Agent Mastermind · Dispatch" className="min-h-0">
       <div className="space-y-3 max-h-[60vh] overflow-y-auto">
         {entries.length === 0 && <div className="rounded-lg border border-border bg-panel p-4 text-xs text-muted">No dispatches yet.</div>}
         {entries.map((entry) => (
@@ -128,12 +130,13 @@ export default function MastermindPage() {
         ))}
       </div>
 
-      <form onSubmit={submit} className="flex gap-2">
+      <form onSubmit={submit} className="mt-3 flex gap-2">
         <textarea value={input} onChange={(event) => setInput(event.target.value)} rows={3} placeholder="Give the selected agents one concrete assignment…" className="flex-1 resize-none rounded bg-panel-2 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent" />
         <button disabled={busy || !input.trim() || selected.length === 0} type="submit" className="self-stretch rounded bg-accent/20 px-5 text-xs text-accent enabled:hover:bg-accent/30 disabled:opacity-40">
           {busy ? "Running…" : `Dispatch ${selected.length}`}
         </button>
       </form>
+      </FocusablePanel>
     </div>
   );
 }

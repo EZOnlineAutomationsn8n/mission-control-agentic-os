@@ -33,11 +33,11 @@ export function countNotWired(states: AgentSystemState[]): number {
   return states.filter((s) => s.outputKind === "mock-stream").length;
 }
 
-/** Soft neon glow for status dots — subtle, not a toy-UI blinking effect. */
+/** Semantic status dot with a restrained luminance halo; identity colors are handled separately. */
 export function dotGlowStyle(hexColor: string): CSSProperties {
   return {
     backgroundColor: hexColor,
-    boxShadow: `0 0 5px ${hexColor}99, 0 0 1px ${hexColor}`,
+    boxShadow: `0 0 0 1px rgba(255,255,255,0.08), 0 0 8px ${hexColor}44`,
   };
 }
 
@@ -48,64 +48,64 @@ export const PANEL_ACCENT_CYCLE: PanelAccent[] = ["cyan", "magenta", "purple"];
 export function statusColor(status: ConnectorStatus): string {
   switch (status) {
     case "connected":
-      return "#35e0c2";
+      return "#22c55e";
     case "mock":
-      return "#5aa6ff";
+      return "#2563eb";
     case "degraded":
-      return "#f2b84b";
+      return "#f59e0b";
     case "pending-setup":
-      return "#6b7a8a";
+      return "#a1a1a1";
     case "disconnected":
-      return "#f2554b";
+      return "#dc2626";
     default:
-      return "#6b7a8a";
+      return "#a1a1a1";
   }
 }
 
 export function runStateColor(state: RunState): string {
   switch (state) {
     case "running":
-      return "#35e0c2";
+      return "#2563eb";
     case "paused":
-      return "#f2b84b";
+      return "#f59e0b";
     case "waiting-approval":
-      return "#f2b84b";
+      return "#f59e0b";
     case "blocked":
-      return "#f2554b";
+      return "#dc2626";
     case "error":
-      return "#f2554b";
+      return "#dc2626";
     case "stopped":
-      return "#6b7a8a";
+      return "#a1a1a1";
     default:
-      return "#6b7a8a";
+      return "#a1a1a1";
   }
 }
 
 export function riskColor(risk: RiskLevel): string {
   switch (risk) {
     case "low":
-      return "#35e0c2";
+      return "#22c55e";
     case "medium":
-      return "#f2b84b";
+      return "#f59e0b";
     case "high":
-      return "#f2554b";
+      return "#dc2626";
     case "critical":
-      return "#ff2e63";
+      return "#dc2626";
   }
 }
 
 export function workStateColor(state: WorkItemState): string {
   switch (state) {
     case "queued":
-      return "#5aa6ff";
+      return "#2563eb";
     case "running":
-      return "#35e0c2";
+      return "#2563eb";
     case "blocked":
-      return "#f2554b";
+      return "#dc2626";
     case "completed":
-      return "#6b7a8a";
+      return "#22c55e";
     case "failed":
-      return "#ff2e63";
+      return "#dc2626";
   }
 }
 

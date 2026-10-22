@@ -10,11 +10,10 @@ import { browserAgentsAdapter } from "./mock/browser-agents";
 
 // ─────────────────────────────────────────────────────────────────────────
 // CONNECTOR REGISTRY
-// The single source of truth for every system attached to the Agentic OS.
-// The sidebar, Operator Home, and every control room render FROM this list.
-// To add a new agent system: write one adapter module (implementing
-// AgentSystemAdapter) + its mock data, then register it here. Nothing else
-// in the UI layer changes.
+// System/connector integration registry: authoritative for registered adapters
+// and their health/capability surfaces. Cockpit agent discovery and pane/session
+// binding are intentionally separate in src/lib/cockpit/agent-registry.ts.
+// Registering an adapter here must not hard-bind that system to a cockpit pane.
 // ─────────────────────────────────────────────────────────────────────────
 
 class ConnectorRegistry {

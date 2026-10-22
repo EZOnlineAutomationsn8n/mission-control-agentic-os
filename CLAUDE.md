@@ -1,144 +1,109 @@
-# Claude / Fable Working Rules — Agentic OS
+# Claude Code Working Rules — Mission Control / Agentic OS
 
-Follow `AGENTIC_OS_BUILD_POLICY.md`.
+Follow `AGENTIC_OS_BUILD_POLICY.md` and the standing execution contract:
+`/opt/shared/agentic-sandbox/workspace/execution/CONTINUOUS_EXECUTION_AND_DEFERRED_OPERATOR_BOUNDARY_CONTRACT.md`.
 
-Do not steer this project back into disabled monitoring cards.
+This file governs Claude Code in the Mission Control repository only. It does not define OpenClaw, Hermes, Codex, Antigravity, provider fallback, or another runtime.
 
-The current mission:
-reconstruct the existing Agentic OS app into a user-operable end product.
+## Mission
+Reconstruct Mission Control / Agentic OS into a user-operable end product.
 
-Rules:
+Core product rules:
 - functionality before labels;
-- browser UI proof before ready claims;
-- no fake Send buttons;
-- no fake terminal panels;
-- no broad new modules;
-- no report-only progress;
-- no secrets;
+- browser UI proof before READY claims;
+- no fake Send buttons or fake terminal panels;
+- no broad new modules unless the current order requires them;
+- no report-only progress when executable work remains;
+- no secrets in output;
 - no tmux attach;
-- no service restarts unless explicitly requested.
+- no service restart, deployment, publication, package install, or privileged mutation unless current Dennis authority explicitly permits it.
 
-First implementation target:
-Claude Code Agent on Home as a real agent terminal:
+Claude Code Agent on Home is a real agent terminal:
 Start Claude Code -> persistent Claude Code session -> input -> Send -> agent output/history.
-FCC is only the underlying model gateway; a raw FCC completion is diagnostic only.
+FCC is only the model gateway. A raw FCC completion is diagnostic evidence, not Claude Code agent success.
 
----
+## Authority and execution precedence
+1. Current explicit Dennis work order / authority.
+2. Mission Control project-local source and policy.
+3. The continuous-execution contract named above.
+4. This Claude Code protocol.
 
-# Claude Code Operating Protocol
+Do not import another runtime's bootstrap or adapter merely because it is present in this repository. In particular, the root `AGENTS.md` contains OpenClaw runtime material and is NOT Claude Code authority unless a current Dennis order explicitly names it.
 
-These rules define how Claude Code should work in this repo.
+## A-to-Z execution rule
+For every non-trivial pass, execute the authorized objective end-to-end without repeatedly returning to Dennis.
 
-They do not define other agents, orchestrators, providers, provider fallback, or external tools.
+A local blocker is not a mission stop.
+- If an item needs Dennis but independent authorized work remains, record it as a `PARKED_ITEM` with exact evidence and re-entry point, then continue.
+- Collect Dennis-only decisions, credentials, approvals, external actions, destructive actions, deployment/publication actions, or authority expansions into one `OPERATOR_BATCH` after the executable frontier is exhausted.
+- Return only when one of these is true:
+  - `GOAL_REACHED=YES`; or
+  - `EXECUTABLE_FRONTIER_EMPTY=YES` with remaining items parked/dependency-blocked; or
+  - `GLOBAL_BLOCKER=YES` with evidence that all safe continuation is invalid.
+- Time elapsed, token count, a checkpoint, one failed branch, or one permission prompt is never by itself a valid stopping condition.
 
-## 1. Use subagents more often for substantial work
+This rule changes continuation behavior only. It creates no new mutation authority.
 
-Claude Code should use subagents more frequently for serious project work.
+## Source-first, bounded inspection
+Inspect the smallest source set that can answer the current question.
+Do not perform broad filesystem discovery by default.
+Do not search unrelated projects.
+Use project-local files first; use named external source paths only when the current order or policy requires them.
 
-Assume non-trivial work can benefit from subagents unless there is a clear reason not to.
+Subagents are optional, not mandatory. Use them only when they materially improve a bounded task. Do not create parallel overlapping mutation lanes merely because subagents are available.
 
-Use subagents for:
-- parallel inspection;
-- multiple perspectives;
-- broad search;
-- code review from different angles;
-- verification planning;
-- independent workstreams;
-- large refactors;
-- architecture review;
-- documentation review;
-- risk analysis;
-- UI/UX review;
-- test planning.
+## Planning and ambiguity
+For non-trivial work, maintain a compact implementation plan/spec internally or as a project artifact when useful. The plan is an execution aid, not an automatic Dennis approval gate.
 
-Do not use subagents when the task is clearly small, atomic, low-risk, and faster to do directly.
+Do NOT stop to ask Dennis to accept a plan when the current order already provides sufficient intent, scope, and mutation authority.
 
-When using subagents:
-- keep their tasks isolated;
-- avoid overlapping file mutations unless explicitly approved;
-- prefer subagents for inspection, planning, review, verification, and independent lanes before code mutation.
+If a requirement is ambiguous:
+- first continue every safe action that does not depend on that ambiguity;
+- park the ambiguous branch if needed;
+- ask Dennis only when the ambiguity globally blocks safe continuation or when operator intent is genuinely required.
 
-## 2. Create an implementation spec before non-trivial building
-
-Before meaningful code or infrastructure changes, create an implementation spec.
-
-The spec must include:
-- what is being built;
-- why it is being built;
-- what is in scope;
-- what is out of scope;
-- which files may be touched;
-- which files must not be touched;
-- key decisions;
-- default choices;
-- risks;
-- verification method;
-- rollback or recovery path.
-
-Do not start meaningful mutation before the spec is accepted, unless the task is clearly small and low-risk.
-
-## 3. Interview when requirements are unclear
-
-If requirements are unclear, interview the user before building.
-
-Ask focused questions.
-Do not overload the user with too many questions at once.
-Ask only what is needed to remove ambiguity.
-
-The interview should identify:
-- the core problem;
-- who or what the work is for;
-- who or what it is not for;
-- what success looks like;
-- what failure looks like;
-- key decisions that affect implementation.
-
-After the interview, summarize the answers as an implementation spec.
-
-## 4. Verify before and after building
-
-Before doing work, state how the result will be verified.
-
-After finishing, run the verification and report exact proof.
+## Verification
+Before meaningful mutation, know how the result will be verified.
+After mutation, run the relevant proof.
 
 Verification may include:
-- npm build;
-- tests;
-- typecheck;
-- git diff;
-- git status;
-- curl endpoint checks;
-- connector status checks;
-- browser UI check;
-- log review;
-- grep/source checks;
-- runtime proof.
+- targeted tests;
+- `npm run build`;
+- typecheck/lint;
+- git diff/status;
+- endpoint checks;
+- connector/runtime checks;
+- browser UI proof;
+- logs;
+- source/readback checks.
 
-Do not claim completion without proof.
+Do not claim completion without evidence.
+A checkpoint is evidence and re-entry state, not an approval gate.
 
-## 5. Build skills from proven workflows
+## Permission and shell behavior
+Avoid routine permission dead-ends.
 
-When a workflow is repeated and has worked, suggest turning it into a Claude Code skill or reusable protocol.
+For Mission Control read/build/test diagnostics:
+- prefer Claude Read/Glob/Grep tools for files instead of broad shell `find` commands;
+- for one-command temporary environment variables, use `env KEY=VALUE ... command`;
+- never use `export KEY=VALUE command`;
+- for the FCC launcher use only these pre-approved bounded timeout forms: 30, 60, or 120 seconds;
+- canonical launcher shape: `env CLAUDE_WORKDIR=/workspace/projects/mission-control CLAUDE_BARE=1 CLAUDE_QUIET=1 timeout <30|60|120> /runtime/bin/start-claude-fcc.sh ...`;
+- do not invent a different launcher timeout when one of those values is sufficient;
+- do not append `; echo ...`, `&& echo ...`, or other compound shell fragments to an otherwise pre-approved launcher probe; run any secondary status check separately;
+- use the canonical FCC read boundary `/opt/vireon/workfloor/fcc/**` when FCC source inspection is required;
+- do not bundle many unrelated diagnostics into one compound shell command when separate pre-approved reads/probes will avoid an approval prompt;
+- if one routine command form is denied but an equivalent pre-approved form exists, reformulate and continue;
+- do not bypass permissions and do not expand authority merely to avoid a prompt.
 
-Do not invent skills abstractly.
+If a command would trigger an interactive Dennis approval but is not globally blocking, do not stop the whole pass at that prompt. Park that exact action and continue the remaining executable frontier.
 
-Only suggest a skill after a real workflow has been performed and proven useful.
+## Runtime separation
+Claude Code identity = Claude Code.
+FCC identity = model gateway / transport layer.
+Backing runtime model = report only when machine-readable evidence proves it.
+OpenClaw bootstrap/adapter rules do not govern Claude Code.
+Hermes/Codex/Antigravity rules do not govern Claude Code.
 
-Every reusable skill or protocol should include:
-- when to use it;
-- when not to use it;
-- inputs needed;
-- exact workflow;
-- verification steps;
-- gotchas;
-- expected output.
-
-## 6. Treat automation carefully
-
-Before proposing automation, run:
-- a taste-test: does this require human judgment or taste?
-- an 80/20 check: would 80 percent quality be acceptable?
-
-If the task needs human judgment, exact quality, approval, or high trust, propose augmentation instead of full automation.
-
-Automation comes after a proven workflow, not before.
+## Final return
+On return, report exact files changed, verification performed, remaining parked items, re-entry points, and whether the goal is reached. Do not turn intermediate progress into a final return while authorized executable work remains.

@@ -2,6 +2,36 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { BrainEvent, BrainSource } from "@/lib/shared-brain";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
+
+interface OmiStatus {
+  status: "connected" | "blocked" | "rate_limited" | "error";
+  authentication: "authorized" | "configured_unverified" | "missing" | "rejected";
+  endpoint: string;
+  availableTools: string[];
+  counts: { memories: number | null; conversations: number | null };
+  intakeDirectory: string;
+  canonicalVaultMutation: false;
+  errors: string[];
+}
+
+interface OmiReceipt {
+  counts: { memories: number; conversations: number };
+  receiptPath: string;
+  canonicalVaultMutation: false;
+}
+
+interface BrainBindingStatus {
+  status: "connected" | "degraded" | "disconnected";
+  source: string;
+  authoritySource: string;
+  bindingKind: "derived-readonly-projection" | "direct-readonly-vault";
+  projectionFingerprint: string | null;
+  projectionGeneratedAt: string | null;
+  projectionNoteCount: number | null;
+  projectionContentPolicy: string | null;
+  canonicalByDisplay: false;
+}
 
 const classColor: Record<BrainSource["classification"], string> = {
   canonical: "text-ok bg-ok/15",
@@ -20,18 +50,30 @@ export function BrainView() {
   const [filter, setFilter] = useState("all");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [omiStatus, setOmiStatus] = useState<OmiStatus | null>(null);
+  const [omiReceipt, setOmiReceipt] = useState<OmiReceipt | null>(null);
+  const [omiImporting, setOmiImporting] = useState(false);
+  const [bindingStatus, setBindingStatus] = useState<BrainBindingStatus | null>(null);
 
   const refresh = useCallback(async () => {
-    const [sourceResponse, eventResponse] = await Promise.all([
+    const [sourceResponse, eventResponse, omiResponse, bindingResponse] = await Promise.all([
       fetch("/api/brain/sources", { cache: "no-store" }),
       fetch("/api/brain/events", { cache: "no-store" }),
+      fetch("/api/connectors/omi/status", { cache: "no-store" }),
+      fetch("/api/connectors/obsidian/status", { cache: "no-store" }),
     ]);
     const sourceBody = await sourceResponse.json() as { sources?: BrainSource[]; error?: string };
     const eventBody = await eventResponse.json() as { events?: BrainEvent[]; error?: string };
+    const omiBody = await omiResponse.json() as OmiStatus;
+    const bindingBody = await bindingResponse.json() as BrainBindingStatus;
     if (!sourceResponse.ok) throw new Error(sourceBody.error || "Source register read failed");
     if (!eventResponse.ok) throw new Error(eventBody.error || "LifeFeed read failed");
+    if (!omiResponse.ok) throw new Error("OMI status read failed");
+    if (!bindingResponse.ok) throw new Error("Shared Brain binding status read failed");
     setSources(sourceBody.sources ?? []);
     setEvents(eventBody.events ?? []);
+    setOmiStatus(omiBody);
+    setBindingStatus(bindingBody);
   }, []);
 
   useEffect(() => {
@@ -77,6 +119,22 @@ export function BrainView() {
     }
   }
 
+  async function importOmi() {
+    setOmiImporting(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/connectors/omi/intake", { method: "POST" });
+      const body = await response.json() as { receipt?: OmiReceipt; error?: string };
+      if (!response.ok || !body.receipt) throw new Error(body.error || "OMI intake failed");
+      setOmiReceipt(body.receipt);
+      await refresh();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "OMI intake failed");
+    } finally {
+      setOmiImporting(false);
+    }
+  }
+
   return (
     <div className="p-6 space-y-6">
       <div>
@@ -85,6 +143,27 @@ export function BrainView() {
           Evidence-backed source register and append-only continuity events. Source files are indexed read-only; none are silently promoted or rewritten.
         </p>
       </div>
+
+      <section className="rounded-lg border border-accent/30 bg-panel p-4 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium">Shared Brain authority binding</h2>
+          <span className={bindingStatus?.status === "connected" ? "text-xs text-ok" : "text-xs text-warn"}>
+            {bindingStatus?.status ?? "checking"}
+          </span>
+        </div>
+        <p className="text-xs text-muted">
+          The durable ViREON vault is the knowledge authority. Mission Control reads a derived read-only surface and indexes metadata in PostgreSQL; neither projection nor database becomes canonical by being displayed here.
+        </p>
+        <div className="grid grid-cols-1 gap-1 text-[11px] md:grid-cols-[auto_1fr] md:gap-x-3">
+          <span className="text-muted">Authority source</span><span className="mono break-all">{bindingStatus?.authoritySource ?? "checking"}</span>
+          <span className="text-muted">MC read surface</span><span className="mono break-all">{bindingStatus?.source ?? "checking"}</span>
+          <span className="text-muted">Binding</span><span className="mono">{bindingStatus?.bindingKind ?? "checking"}</span>
+          <span className="text-muted">Projection fingerprint</span><span className="mono break-all">{bindingStatus?.projectionFingerprint ?? "direct / unavailable"}</span>
+          <span className="text-muted">Projection generated</span><span className="mono">{bindingStatus?.projectionGeneratedAt ? new Date(bindingStatus.projectionGeneratedAt).toLocaleString() : "direct / unavailable"}</span>
+          <span className="text-muted">Projection notes</span><span className="mono">{bindingStatus?.projectionNoteCount ?? "—"}</span>
+          <span className="text-muted">DB source register</span><span>derived index · canonical-by-display: no</span>
+        </div>
+      </section>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Stat label="Indexed sources" value={sources.length} />
@@ -95,13 +174,54 @@ export function BrainView() {
 
       {canonical === 0 && (
         <div className="rounded border border-warn/40 bg-warn/10 p-3 text-sm text-warn">
-          No Mission Control continuity source has been declared canonical yet. Candidates remain candidates until operator acceptance.
+          No individual source-register row is operator-declared canonical. This does not demote the durable ViREON vault authority shown above; the database register is a derived index and candidates remain candidates until operator acceptance.
         </div>
       )}
       {error && <div className="rounded border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{error}</div>}
 
+      <section className="rounded-lg border border-border bg-panel p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium">OMI → Obsidian candidate intake</h2>
+            <p className="mt-1 text-xs text-muted">
+              Official OMI MCP read route. Imports only into the sandbox intake; the canonical vault is never changed.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={importOmi}
+            disabled={omiImporting || omiStatus?.status !== "connected"}
+            className="rounded bg-accent/20 px-4 py-2 text-xs text-accent hover:bg-accent/30 disabled:opacity-40"
+          >
+            {omiImporting ? "Importing…" : "Run candidate intake"}
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2 text-xs md:grid-cols-6">
+          <OmiFact label="Route" value={omiStatus?.status ?? "checking"} />
+          <OmiFact label="Authentication" value={omiStatus?.authentication ?? "checking"} />
+          <OmiFact label="Memories" value={omiStatus?.counts.memories ?? "—"} />
+          <OmiFact label="Conversations" value={omiStatus?.counts.conversations ?? "—"} />
+          <OmiFact label="MCP tools" value={omiStatus?.availableTools.length ?? "—"} />
+          <OmiFact label="Canonical writes" value="0" />
+        </div>
+        {omiStatus?.errors.map((message) => <div key={message} className="text-xs text-danger">{message}</div>)}
+        {omiReceipt && (
+          <div className="rounded border border-ok/30 bg-ok/10 p-3 text-xs text-ok">
+            Intake receipt written · {omiReceipt.counts.memories} memories · {omiReceipt.counts.conversations} conversations · 0 canonical writes
+            <div className="mt-1 break-all font-mono text-[10px]">{omiReceipt.receiptPath}</div>
+          </div>
+        )}
+        {omiStatus && (
+          <div className="space-y-1 break-all font-mono text-[10px] text-muted">
+            <div>MCP endpoint: {omiStatus.endpoint}</div>
+            <div>candidate destination: {omiStatus.intakeDirectory}</div>
+          </div>
+        )}
+      </section>
+
       <div className="grid grid-cols-1 xl:grid-cols-[1.25fr_0.75fr] gap-4 items-start">
-        <section className="rounded-lg border border-border bg-panel p-4 space-y-3">
+        <FocusablePanel id="brain-sources" label="Shared Brain · Continuity source register">
+        <section className="rounded-lg border border-border bg-panel p-4 space-y-3 h-full">
           <div className="flex items-center justify-between gap-3">
             <h2 className="text-sm font-medium">Continuity source register</h2>
             <select value={filter} onChange={(event) => setFilter(event.target.value)} className="rounded bg-panel-2 px-2 py-1 text-xs">
@@ -128,8 +248,10 @@ export function BrainView() {
             ))}
           </div>
         </section>
+        </FocusablePanel>
 
-        <div className="space-y-4">
+        <FocusablePanel id="brain-continuity" label="Shared Brain · Continuity events">
+        <div className="space-y-4 h-full">
           <form onSubmit={appendEvent} className="rounded-lg border border-border bg-panel p-4 space-y-3">
             <h2 className="text-sm font-medium">Append continuity event</h2>
             <input value={scope} onChange={(event) => setScope(event.target.value)} placeholder="Scope" className="w-full rounded bg-panel-2 px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent" />
@@ -153,6 +275,7 @@ export function BrainView() {
             </div>
           </section>
         </div>
+        </FocusablePanel>
       </div>
     </div>
   );
@@ -160,4 +283,8 @@ export function BrainView() {
 
 function Stat({ label, value }: { label: string; value: number }) {
   return <div className="rounded-lg border border-border bg-panel p-3"><div className="text-xs text-muted">{label}</div><div className="text-xl font-semibold mono">{value}</div></div>;
+}
+
+function OmiFact({ label, value }: { label: string; value: string | number }) {
+  return <div className="rounded border border-border bg-panel-2 p-2"><div className="text-[10px] text-muted">{label}</div><div className="mt-1 font-mono">{value}</div></div>;
 }

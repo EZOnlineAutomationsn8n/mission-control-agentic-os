@@ -21,6 +21,7 @@ import type { ObsidianLiveStatus } from "./obsidian-status-types";
 
 const VAULT_PATH = process.env.OBSIDIAN_VAULT_PATH || "/opt/vireon/workfloor/obsidian/vault";
 const VAULT_MARKER_PATH = path.join(VAULT_PATH, ".obsidian");
+const PROJECTION_MANIFEST_PATH = path.join(VAULT_PATH, "PROJECTION_MANIFEST.json");
 const REQUIRE_LOCAL_MCP_PROCESS = process.env.OBSIDIAN_REQUIRE_LOCAL_MCP_PROCESS !== "0";
 const MAX_FILES_SCANNED = 5000;
 const MCP_BRIDGE_CMDLINE_MARKERS = ["workfloor-readonly-mcp"];
@@ -41,6 +42,28 @@ interface GraphMetrics {
   linkCount: number;
   orphanCount: number;
   topLinkedNotes: string[];
+}
+
+interface ProjectionManifest {
+  source: string;
+  fingerprint: string;
+  generated_at: string;
+  note_count: number;
+  content_policy: string;
+}
+
+async function readProjectionManifest(): Promise<ProjectionManifest | null> {
+  try {
+    const raw = JSON.parse(await fs.readFile(PROJECTION_MANIFEST_PATH, "utf8")) as Partial<ProjectionManifest>;
+    if (
+      typeof raw.source !== "string" || typeof raw.fingerprint !== "string" ||
+      typeof raw.generated_at !== "string" || typeof raw.note_count !== "number" ||
+      typeof raw.content_policy !== "string"
+    ) return null;
+    return raw as ProjectionManifest;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -156,6 +179,12 @@ export async function readObsidianLiveStatus(): Promise<ObsidianLiveStatus> {
     errors.push("vault path exists but .obsidian marker directory is missing");
   }
 
+  const projectionManifestFound = vaultPathExists ? await pathExists(PROJECTION_MANIFEST_PATH) : false;
+  const projectionManifest = projectionManifestFound ? await readProjectionManifest() : null;
+  if (projectionManifestFound && !projectionManifest) {
+    errors.push("projection manifest exists but is invalid or unreadable");
+  }
+
   const graph = vaultPathExists ? await scanVaultGraph(VAULT_PATH) : null;
   if (vaultPathExists && graph === null) {
     errors.push("vault path exists but graph metadata could not be read");
@@ -182,6 +211,14 @@ export async function readObsidianLiveStatus(): Promise<ObsidianLiveStatus> {
     status,
     mode: REQUIRE_LOCAL_MCP_PROCESS ? "local-fs-status" : "mounted-readonly-status",
     source: VAULT_PATH,
+    authoritySource: projectionManifest?.source ?? VAULT_PATH,
+    bindingKind: projectionManifest ? "derived-readonly-projection" : "direct-readonly-vault",
+    projectionManifestFound,
+    projectionFingerprint: projectionManifest?.fingerprint ?? null,
+    projectionGeneratedAt: projectionManifest?.generated_at ?? null,
+    projectionNoteCount: projectionManifest?.note_count ?? null,
+    projectionContentPolicy: projectionManifest?.content_policy ?? null,
+    canonicalByDisplay: false,
     vaultPathExists,
     vaultMarkerFound,
     noteCount: graph?.noteCount ?? null,

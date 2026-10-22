@@ -1,0 +1,4 @@
+{"type":"init","sessionId":"gemini-reused-session-002","model":"gemini-free"}
+{"type":"message","role":"user","content":"PROMPT_ECHO_MUST_NOT_APPEAR: Answer this."}
+{"type":"message","role":"assistant","content":"Partial response before final."}
+{"type":"result","response":"Final Gemini assistant response.","sessionId":"gemini-reused-session-002"}

@@ -18,6 +18,8 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
       actionType: `work-item:${item.id}`,
       status: item.stage,
       resultSummary: item.stage === "execute" ? `Human gate released: ${item.title}` : item.title,
+      actor: "operator",
+      source: "app/api/work-items/[id]/route.ts:PATCH",
     });
     return NextResponse.json({ item });
   } catch (error) {

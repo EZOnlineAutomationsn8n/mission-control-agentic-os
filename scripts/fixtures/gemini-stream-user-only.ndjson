@@ -1,0 +1,2 @@
+{"type":"init","session_id":"gemini-native-id-003"}
+{"type":"message","role":"user","content":"PROMPT_ECHO_MUST_NOT_APPEAR: Only the submitted prompt, no model response."}

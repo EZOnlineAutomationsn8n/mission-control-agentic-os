@@ -141,3 +141,18 @@ Use:
 - CONNECTED BUT NOT USABLE;
 - ACTION REQUIRED for exact missing pieces only.
 
+## Storage lifecycle closeout
+
+OWNER_CLOSEOUT_CONTRACT=docs/operations/PEA_PORTFOLIO_ARCHIVE_MARKER_ADOPTION_001_20261016/MC_STORAGE_LIFECYCLE_CLOSEOUT_V1.md
+
+Every bounded build/stage closeout must record STORAGE_LIFECYCLE_CLASS.
+Only source-proven retired child artifacts may use COLD_ARCHIVE.
+For COLD_ARCHIVE, emit the owner-local ARCHIVE_LIFECYCLE.json defined by the contract above with cleanup_eligible=false.
+
+Do not classify by age alone.
+Protect the current live release source, current rollback/undo candidate, active staging or preview, open acceptance/re-entry lanes, mutable runtime state, protected configuration, latest proof/checkpoint and unknown data.
+
+The existing Windows VPS Cold Archive Lifecycle remains the single transfer mechanism.
+Mission Control must not create its own archive scheduler or copy service.
+Source deletion remains separately authorized.
+

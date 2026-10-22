@@ -9,6 +9,7 @@ const GEMINI_RUNTIME = "Gemini CLI 0.50.0";
 
 interface GeminiEvent {
   type?: string;
+  role?: string;
   session_id?: string;
   sessionId?: string;
   model?: string;
@@ -18,7 +19,7 @@ interface GeminiEvent {
   error?: { message?: string } | string;
 }
 
-function parseEvents(stdout: string, expectedSessionId: string): { text: string; sessionId: string; model: string | null } {
+export function parseGeminiStreamEvents(stdout: string, expectedSessionId: string): { text: string; sessionId: string; model: string | null } {
   let sessionId = expectedSessionId;
   let text = "";
   let model: string | null = null;
@@ -28,7 +29,9 @@ function parseEvents(stdout: string, expectedSessionId: string): { text: string;
     try { event = JSON.parse(line) as GeminiEvent; } catch { continue; }
     sessionId = event.session_id || event.sessionId || sessionId;
     model = event.model || model;
-    if (event.type === "message" && event.content) text += event.content;
+    // Gemini stream-json includes the submitted user prompt as a message event.
+    // Only assistant-role messages are agent output; other roles are never echoed.
+    if (event.type === "message" && event.role === "assistant" && event.content) text += event.content;
     if (event.type === "result") text = event.response || event.result || text;
     if (event.type === "error" && !text) text = typeof event.error === "string" ? event.error : event.error?.message || "";
   }
@@ -60,7 +63,7 @@ export async function runGeminiTurn(options: {
       maxBuffer: 40 * 1024 * 1024,
       encoding: "utf8",
     });
-    const parsed = parseEvents(String(stdout), options.session.runtimeSessionId);
+    const parsed = parseGeminiStreamEvents(String(stdout), options.session.runtimeSessionId);
     return {
       status: "completed",
       text: parsed.text,

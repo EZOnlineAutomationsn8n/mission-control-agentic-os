@@ -5,12 +5,14 @@ import type { CliAgentSession } from "./session-store";
 
 const execFileAsync = promisify(execFile);
 const OPENCLAW_BINARY = process.env.OPENCLAW_AGENT_BINARY || "/usr/bin/openclaw";
-const OPENCLAW_RUNTIME = "OpenClaw 2026.6.9";
 
-interface OpenClawResult {
+export interface OpenClawResult {
   status?: string;
   result?: {
-    payloads?: Array<{ text?: string | null }>;
+    payloads?: Array<{
+      text?: string | null;
+      isError?: boolean;
+    }>;
     meta?: {
       agentMeta?: {
         sessionId?: string;
@@ -18,8 +20,48 @@ interface OpenClawResult {
         model?: string;
       };
       systemPromptReport?: { workspaceDir?: string };
+      error?: {
+        kind?: string;
+        message?: string;
+        fallbackSafe?: boolean;
+        terminalPresentation?: boolean;
+      };
     };
   };
+}
+
+export function readSuccessfulOpenClawText(payload: OpenClawResult): string {
+  if (payload.status !== "ok") {
+    throw new Error("OpenClaw agent turn returned no successful response");
+  }
+
+  const structuralError = payload.result?.meta?.error;
+  if (structuralError?.kind) {
+    const message = structuralError.message?.trim() || "OpenClaw returned a structural terminal error";
+    throw new Error(`OpenClaw agent turn failed: ${structuralError.kind}: ${message}`);
+  }
+
+  const payloads = payload.result?.payloads ?? [];
+  const errorPayload = payloads.find((entry) => entry.isError === true);
+  if (errorPayload) {
+    const detail = errorPayload.text?.trim();
+    throw new Error(
+      detail
+        ? `OpenClaw agent turn failed: error payload: ${detail}`
+        : "OpenClaw agent turn failed: error payload without a model response"
+    );
+  }
+
+  const text = payloads
+    .map((entry) => entry.text ?? "")
+    .filter(Boolean)
+    .join("\n")
+    .trim();
+
+  if (!text) {
+    throw new Error("OpenClaw agent turn returned no successful response");
+  }
+  return text;
 }
 
 export async function runOpenClawTurn(options: {
@@ -27,9 +69,13 @@ export async function runOpenClawTurn(options: {
   prompt: string;
 }): Promise<ConnectorConversationResult> {
   if (!options.session.runtimeSessionId) throw new Error("OpenClaw runtime session ID is missing");
+  const versionResult = await execFileAsync(OPENCLAW_BINARY, ["--version"], {
+    cwd: options.session.workspace, env: { ...process.env }, timeout: 20_000, maxBuffer: 1024 * 1024, encoding: "utf8",
+  }).catch(() => null);
+  const installedVersion = versionResult ? String(versionResult.stdout).trim() || null : null;
   const { stdout } = await execFileAsync(OPENCLAW_BINARY, [
     "agent",
-    "--agent", process.env.OPENCLAW_AGENT_ID || "main",
+    "--agent", process.env.OPENCLAW_AGENT_ID || "mission-control",
     "--session-id", options.session.runtimeSessionId,
     "--message", options.prompt,
     "--json",
@@ -44,8 +90,7 @@ export async function runOpenClawTurn(options: {
 
   const payload = JSON.parse(String(stdout)) as OpenClawResult;
   const meta = payload.result?.meta?.agentMeta;
-  const text = (payload.result?.payloads ?? []).map((entry) => entry.text ?? "").filter(Boolean).join("\n").trim();
-  if (payload.status !== "ok" || !text) throw new Error("OpenClaw agent turn returned no successful response");
+  const text = readSuccessfulOpenClawText(payload);
   const providerModel = meta?.provider && meta?.model ? `${meta.provider}/${meta.model}` : undefined;
 
   return {
@@ -56,7 +101,11 @@ export async function runOpenClawTurn(options: {
     actualRuntimeModel: meta?.model ?? null,
     attempts: [],
     agentIdentity: "OpenClaw",
-    agentRuntime: OPENCLAW_RUNTIME,
+    agentRuntime: "OpenClaw CLI agent route",
+    installedVersion,
+    provider: meta?.provider ?? null,
+    runtimeVerifiedAt: new Date().toISOString(),
+    responseProvenance: "Mission Control OpenClaw profile -> sandbox gateway relay -> OpenClaw agent JSON response",
     agentSessionId: meta?.sessionId ?? options.session.runtimeSessionId,
     workspace: payload.result?.meta?.systemPromptReport?.workspaceDir ?? options.session.workspace,
     sessionState: "idle",

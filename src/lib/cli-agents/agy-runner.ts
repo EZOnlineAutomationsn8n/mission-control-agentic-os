@@ -9,7 +9,6 @@ import type { CliAgentSession } from "./session-store";
 
 const execFileAsync = promisify(execFile);
 const AGY_BINARY = process.env.AGY_AGENT_BINARY || "/root/.local/bin/agy";
-const AGY_RUNTIME = "Antigravity CLI 1.1.1";
 const AGY_PROJECT_ID = process.env.AGY_AGENT_PROJECT_ID || null;
 const IDENTITY_CONTEXT =
   "Your product name and agent identity is Antigravity. " +
@@ -41,6 +40,11 @@ ${options.prompt}`;
     args.push("--conversation", options.session.runtimeSessionId);
   }
 
+  const versionResult = await execFileAsync(AGY_BINARY, ["--version"], {
+    cwd: options.session.workspace, env: { ...process.env, PATH: `/root/.local/bin:${process.env.PATH || ""}` },
+    timeout: 20_000, maxBuffer: 1024 * 1024, encoding: "utf8",
+  }).catch(() => null);
+  const installedVersion = versionResult ? String(versionResult.stdout).trim() || null : null;
   let stdout = "";
   let log = "";
   try {
@@ -73,7 +77,11 @@ ${options.prompt}`;
     actualRuntimeModel: model,
     attempts: [],
     agentIdentity: "Antigravity",
-    agentRuntime: AGY_RUNTIME,
+    agentRuntime: "Antigravity CLI",
+    installedVersion,
+    provider: null,
+    runtimeVerifiedAt: new Date().toISOString(),
+    responseProvenance: "Antigravity CLI --sandbox -> persistent Mission Control conversation",
     agentSessionId: runtimeSessionId,
     workspace: options.session.workspace,
     sessionState: "idle",

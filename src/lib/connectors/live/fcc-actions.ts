@@ -46,15 +46,20 @@ const MAX_PROMPT_LENGTH = 4000;
 // OPERATOR-DEFINED FREE-only route order. Do not reorder or edit in code
 // passes — this list belongs to the operator (locked in commit 4af1aaf).
 export const FALLBACK_MODEL_ROUTES: readonly string[] = [
-  // FREE-only routes verified from live FCC /v1/models.
-  "open_router/poolside/laguna-m.1:free",
-  "open_router/qwen/qwen3-coder:free",
+  // Operator-approved FREE-only routes verified from live FCC /v1/models
+  // on 2026-07-17. Keep this FCC order code-first and different from the
+  // OpenClaw order so both runtimes do not exhaust the same route together.
+  "open_router/poolside/laguna-xs-2.1:free",
   "open_router/cohere/north-mini-code:free",
-  "open_router/qwen/qwen3-next-80b-a3b-instruct:free",
-  "open_router/openai/gpt-oss-120b:free",
-  "open_router/nvidia/nemotron-3-ultra-550b-a55b:free",
+  "open_router/nvidia/nemotron-3-nano-30b-a3b:free",
+  "open_router/nvidia/nemotron-3-super-120b-a12b:free",
+  "open_router/nvidia/nemotron-nano-9b-v2:free",
+  "open_router/nvidia/nemotron-nano-12b-v2-vl:free",
+  "open_router/nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+  "open_router/google/gemma-4-26b-a4b-it:free",
   "open_router/google/gemma-4-31b-it:free",
   "open_router/openai/gpt-oss-20b:free",
+  "open_router/nvidia/nemotron-3-ultra-550b-a55b:free",
   "open_router/openrouter/free",
 ];
 

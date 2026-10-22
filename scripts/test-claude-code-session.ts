@@ -14,17 +14,25 @@ const args = process.argv.slice(2);
 const idFlag = args.indexOf("--session-id");
 const resumeFlag = args.indexOf("--resume");
 const sessionId = args[idFlag >= 0 ? idFlag + 1 : resumeFlag + 1];
+const permissionFlag = args.indexOf("--permission-mode");
+const permissionMode = permissionFlag >= 0 ? args[permissionFlag + 1] : "";
 const providerFailure = args.at(-1) === "force provider failure";
 const bootstrapFailure = process.env.TEST_CLAUDE_BOOTSTRAP_FAILURE === "1" && args.at(-1).startsWith("Initialize this Mission Control");
-const model = args[args.indexOf("--model") + 1];
-const firstRouteFailure = args.at(-1) === "fallback after provider failure" && model.includes("laguna-m.1");
+if (args.includes("--model")) {
+  console.error("explicit --model must not be passed through the FCC launcher");
+  process.exit(64);
+}
+const model = process.env.CLAUDE_MODEL || "";
+const firstRouteFailure = args.at(-1) === "fallback after provider failure" && model.includes("laguna-xs-2.1");
 console.log(JSON.stringify({
   type: "result",
   subtype: "success",
   is_error: providerFailure || firstRouteFailure || bootstrapFailure,
-  result: providerFailure || firstRouteFailure || bootstrapFailure ? "Provider API request failed. (request_id=test)" : "FAKE_CLAUDE_CODE cwd=" + process.cwd() + " bare=" + process.env.CLAUDE_BARE + " model=" + model,
+  result: providerFailure || firstRouteFailure || bootstrapFailure ? "Provider API request failed. (request_id=test)" : "FAKE_CLAUDE_CODE cwd=" + process.cwd() + " bare=" + process.env.CLAUDE_BARE + " model=" + model + " permission=" + permissionMode,
   session_id: sessionId,
-  modelUsage: { "fcc-gateway-alias": {} },
+  // Deliberately stale: provenance must come from the successful route,
+  // not a modelUsage key carried by the persistent/resumed Claude session.
+  modelUsage: { "claude-3-freecc-no-thinking/open_router/poolside/laguna-xs-2.1:free": {} },
   permission_denials: []
 }));
 `, "utf8");
@@ -62,7 +70,11 @@ test("real-agent bridge lifecycle is explicit, persisted, and audited", async ()
   assert.equal(started.session.workspace, workspace);
   assert.equal(started.agentIdentity, "Claude Code");
   assert.match(started.bootstrap, /FAKE_CLAUDE_CODE/);
-  assert.equal(started.gatewayModelAlias, "fcc-gateway-alias");
+  assert.match(started.bootstrap, /permission=plan/);
+  assert.equal(
+    started.gatewayModelAlias,
+    "claude-3-freecc-no-thinking/open_router/poolside/laguna-xs-2.1:free"
+  );
 
   const turnResponse = await askRoute.POST(new Request("http://local/api/connectors/claude-code/actions/ask", {
     method: "POST",
@@ -74,28 +86,69 @@ test("real-agent bridge lifecycle is explicit, persisted, and audited", async ()
   assert.equal(turn.agentIdentity, "Claude Code");
   assert.equal(turn.agentSessionId, started.session.claudeSessionId);
   assert.equal(turn.workspace, workspace);
-  assert.equal(turn.transportModelAlias, "fcc-gateway-alias");
+  assert.equal(
+    turn.transportModelAlias,
+    "claude-3-freecc-no-thinking/open_router/poolside/laguna-xs-2.1:free"
+  );
+  assert.equal(turn.attempts[0].transportModelAlias, "open_router/poolside/laguna-xs-2.1:free");
+  assert.equal(turn.attempts[0].outcome, "completed");
   assert.equal(turn.actualRuntimeModel, null);
   assert.match(turn.text, /bare=0/);
-  assert.match(turn.text, /poolside\/laguna-m\.1/);
+  assert.match(turn.text, /poolside\/laguna-xs-2\.1/);
+  assert.match(turn.text, /permission=acceptEdits/);
+
+  const rejectedOperatorClaim = await askRoute.POST(new Request("http://local/api/connectors/claude-code/actions/ask", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      sessionId: "test-session",
+      prompt: "must not run",
+      initiator: { kind: "operator" },
+    }),
+  }));
+  assert.equal(rejectedOperatorClaim.status, 400);
+  assert.match((await rejectedOperatorClaim.json()).error, /operator turns must omit initiator/);
+
+  const acfInitiator = {
+    kind: "acf-participant-dialogue",
+    runId: "RUN-ACF-DLG-02-LIVE-1",
+    role: "reviewer",
+    participantId: "claude-code",
+    turnId: "turn-2",
+  };
 
   const fallbackResponse = await askRoute.POST(new Request("http://local/api/connectors/claude-code/actions/ask", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ sessionId: "test-session", prompt: "fallback after provider failure" }),
+    body: JSON.stringify({ sessionId: "test-session", prompt: "fallback after provider failure", initiator: acfInitiator }),
   }));
   assert.equal(fallbackResponse.status, 200);
   const fallbackTurn = await fallbackResponse.json();
   assert.equal(fallbackTurn.status, "completed");
-  assert.match(fallbackTurn.text, /qwen\/qwen3-coder:free/);
-  assert.equal(fallbackTurn.attempts[0].transportModelAlias, "open_router/poolside/laguna-m.1:free");
+  assert.match(fallbackTurn.text, /cohere\/north-mini-code:free/);
+  assert.equal(fallbackTurn.attempts[0].transportModelAlias, "open_router/poolside/laguna-xs-2.1:free");
   assert.equal(fallbackTurn.attempts[0].outcome, "upstream_provider_failed");
-  assert.equal(fallbackTurn.attempts[1].transportModelAlias, "open_router/qwen/qwen3-coder:free");
+  assert.equal(fallbackTurn.attempts[1].transportModelAlias, "open_router/cohere/north-mini-code:free");
   assert.equal(fallbackTurn.attempts[1].outcome, "completed");
+  assert.equal(
+    fallbackTurn.transportModelAlias,
+    "claude-3-freecc-no-thinking/open_router/cohere/north-mini-code:free"
+  );
+  assert.equal(fallbackTurn.agentSessionId, started.session.claudeSessionId);
+  assert.deepEqual(fallbackTurn.initiator, acfInitiator);
+  assert.equal(fallbackTurn.initiatorVerified, false);
 
   const persisted = await readConversation("claude-code", "test-session");
   assert.equal(persisted.length, 2);
   assert.equal(persisted[0].agentSessionId, started.session.claudeSessionId);
+  assert.equal(
+    persisted[1].transportModelAlias,
+    "claude-3-freecc-no-thinking/open_router/cohere/north-mini-code:free"
+  );
+  assert.equal(persisted[1].attempts[0].outcome, "upstream_provider_failed");
+  assert.equal(persisted[1].attempts[1].outcome, "completed");
+  assert.deepEqual(persisted[1].initiator, acfInitiator);
+  assert.equal(persisted[1].initiatorVerified, false);
 
   const failedTurnResponse = await askRoute.POST(new Request("http://local/api/connectors/claude-code/actions/ask", {
     method: "POST",
@@ -120,8 +173,15 @@ test("real-agent bridge lifecycle is explicit, persisted, and audited", async ()
   assert.equal(stopped.session.status, "stopped");
 
   const audits = await readAuditEvents();
-  assert.equal(audits.some((event) => event.actionType === "claude-code-session-start"), true);
+  const sessionStartAudit = audits.find((event) => event.actionType === "claude-code-session-start");
+  assert.ok(sessionStartAudit);
+  assert.equal(sessionStartAudit?.actor, "operator");
+  assert.equal(sessionStartAudit?.source, "claude-code/session/route.ts:POST");
   assert.equal(audits.some((event) => event.actionType === "claude-code-agent-turn"), true);
+  const acfAudit = audits.find((event) => event.actor === "acf:RUN-ACF-DLG-02-LIVE-1:reviewer");
+  assert.ok(acfAudit);
+  assert.deepEqual(acfAudit?.initiator, acfInitiator);
+  assert.equal(acfAudit?.initiatorVerified, false);
   assert.equal(audits.some((event) => event.actionType === "claude-code-session-stop"), true);
 
   process.env.TEST_CLAUDE_BOOTSTRAP_FAILURE = "1";

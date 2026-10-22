@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { sendFccControlledPrompt, FCC_ROUTE_COUNT } from "@/lib/connectors/live/fcc-actions";
+import {
+  FALLBACK_MODEL_ROUTES,
+  sendFccControlledPrompt,
+  FCC_ROUTE_COUNT,
+} from "@/lib/connectors/live/fcc-actions";
 import { executeConversationRequest } from "@/lib/agent-conversations/service";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 
@@ -20,7 +24,7 @@ export async function POST(request: Request) {
         status: "failed",
         text: null,
         error: "invalid JSON body",
-        transportModelAlias: "open_router/poolside/laguna-m.1:free",
+        transportModelAlias: FALLBACK_MODEL_ROUTES[0],
         actualRuntimeModel: null,
         attempts: [],
         routeCount: FCC_ROUTE_COUNT,

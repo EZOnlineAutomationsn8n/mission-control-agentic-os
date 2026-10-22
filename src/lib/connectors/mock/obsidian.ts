@@ -44,15 +44,12 @@ const descriptor: ConnectorDescriptor = {
   // overridden every poll by the live/fallback logic in getState() below.
   status: "degraded",
   capabilities: [
-    "read vault notes",
-    "write vault notes (append-only for governed files)",
-    "session registry",
-    "handovers",
-    "governance record store",
-    "backlinks",
-    "live vault/graph status (read-only)",
+    "read-only current ViREON vault projection",
+    "graph metadata",
+    "derived Shared Brain source index",
+    "no live vault mutation",
   ],
-  permissions: ["read", "write", "append", "no-overwrite-without-approval"],
+  permissions: ["read-projection", "read-graph-metadata", "no-live-vault-write"],
   lastSync: "2026-07-08T09:12:00Z",
   memoryWriteObligation: false,
   obsidianWriteTarget: null,
@@ -100,6 +97,13 @@ const LIVE_STATUS_ENDPOINT = "/api/connectors/obsidian/status";
 
 function toStatusDetail(live: ObsidianLiveStatus): Record<string, string> {
   const detail: Record<string, string> = {
+    "authority source": live.authoritySource,
+    "Mission Control read surface": live.source,
+    binding: live.bindingKind,
+    "canonical by display": live.canonicalByDisplay ? "yes" : "no",
+    "projection fingerprint": live.projectionFingerprint ?? "direct source / none",
+    "projection generated": live.projectionGeneratedAt ?? "direct source / none",
+    "projection content policy": live.projectionContentPolicy ?? "direct source",
     "vault path exists": live.vaultPathExists ? "yes" : "no",
     "vault marker (.obsidian)": live.vaultMarkerFound ? "yes" : "no",
     "note count": live.noteCount !== null ? String(live.noteCount) : "unknown",
@@ -169,7 +173,10 @@ export const obsidianAdapter: ObsidianAdapter = {
       status: live.status,
       runState,
       health: live.status === "connected" ? "ok" : live.status === "degraded" ? "warn" : "fail",
-      currentTask: `Vault ${live.vaultPathExists ? "present" : "missing"} (${live.status}) — ${live.source}`,
+      currentTask: `Vault ${live.vaultPathExists ? "present" : "missing"} (${live.status}) — ${live.bindingKind}`,
+      modelOrService: live.bindingKind === "derived-readonly-projection"
+        ? "ViREON durable vault → immutable read-only projection"
+        : "ViREON durable vault (direct read-only)",
       connectorMode: "filesystem",
       commandExecution: false,
       outputKind: "live-status",

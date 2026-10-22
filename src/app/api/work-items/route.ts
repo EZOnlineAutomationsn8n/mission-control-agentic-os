@@ -29,6 +29,8 @@ export async function POST(request: Request) {
       actionType: `work-item:${item.id}`,
       status: "captured",
       resultSummary: item.title,
+      actor: "operator",
+      source: "app/api/work-items/route.ts:POST",
     });
     return NextResponse.json({ item }, { status: 201 });
   } catch (error) {

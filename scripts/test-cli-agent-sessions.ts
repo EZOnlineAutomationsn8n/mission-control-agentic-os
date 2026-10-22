@@ -31,3 +31,22 @@ test("parallel agent session mutations preserve every agent record", async () =>
   const updated = await Promise.all(agents.map((agentId) => readCliAgentSession(agentId, "parallel-proof")));
   assert.deepEqual(updated.map((entry) => entry?.status), ["idle", "idle", "idle", "error", "idle"]);
 });
+
+test("agent workspaces consolidate to the current Mission Control workspace by default", async () => {
+  const vars = [
+    "HERMES_AGENT_WORKSPACE", "OPENCLAW_AGENT_WORKSPACE", "AGY_AGENT_WORKSPACE",
+    "GEMINI_AGENT_WORKSPACE", "CODEX_AGENT_WORKSPACE", "MISSION_CONTROL_AGENT_WORKSPACE",
+  ];
+  for (const key of vars) delete process.env[key];
+
+  const expected = process.cwd();
+  for (const agentId of ["hermes", "openclaw", "agy", "gemini", "codex"] as const) {
+    const session = await createCliAgentSession(agentId, `workspace-default-${agentId}`);
+    assert.equal(session.workspace, expected);
+  }
+
+  process.env.CODEX_AGENT_WORKSPACE = "/tmp/mission-control-codex-override";
+  const overridden = await createCliAgentSession("codex", "workspace-override-codex");
+  assert.equal(overridden.workspace, "/tmp/mission-control-codex-override");
+  delete process.env.CODEX_AGENT_WORKSPACE;
+});

@@ -1,0 +1,6 @@
+{"type":"init","session_id":"gemini-native-id-001","model":"gemini-free"}
+{"type":"message","role":"user","content":"PROMPT_ECHO_MUST_NOT_APPEAR: Tell me about the dashboard."}
+{"type":"message","role":"tool","content":"TOOL_MESSAGE_MUST_NOT_APPEAR"}
+{"type":"message","content":"UNATTRIBUTED_MESSAGE_MUST_NOT_APPEAR"}
+{"type":"message","role":"assistant","content":"The existing "}
+{"type":"message","role":"assistant","content":"dashboard is ready for review."}

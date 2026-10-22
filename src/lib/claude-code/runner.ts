@@ -1,4 +1,8 @@
 import { execFile } from "child_process";
+import { observeDisposableClaudeChild } from "./disposable-fixture-child-observer";
+import { promises as fs } from "fs";
+import os from "os";
+import path from "path";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { ClaudeCodeSession } from "./session-store";
@@ -6,14 +10,17 @@ import { FALLBACK_MODEL_ROUTES, sendFccControlledPrompt } from "@/lib/connectors
 import type { FccModelAttempt } from "@/lib/connectors/live/fcc-actions-types";
 
 const execFileAsync = promisify(execFile);
-const DEFAULT_LAUNCHER = "/opt/vireon/workfloor/bin/start_claude_fcc.sh";
+const DEFAULT_LAUNCHER = "/runtime/bin/start-claude-fcc.sh";
 function toGatewayModel(route: string): string {
   return `claude-3-freecc-no-thinking/${route}`;
 }
 const IDENTITY_CONTEXT =
   "You are the Claude Code agent running inside the Mission Control Claude Code Agent Terminal. " +
   "Your agent identity is Claude Code. FCC is only the underlying model gateway. " +
-  "Never present a backing fallback model as your agent identity. FCC is provider-agnostic and may route to non-Anthropic models. The Claude Code CLI does not report the actual backing runtime model here, so call it unknown unless explicit machine-readable evidence is provided. Distinguish agent identity, CLI runtime, FCC gateway alias, and backing model.";
+  "Never present a backing fallback model as your agent identity. FCC is provider-agnostic and may route to non-Anthropic models. " +
+  "The Claude Code CLI does not report the actual backing runtime model here, so call it unknown unless explicit machine-readable evidence is provided. " +
+  "Distinguish agent identity, CLI runtime, FCC gateway alias, and backing model. " +
+  "Use the Mission Control CLAUDE.md as your runtime working protocol. Do not import OpenClaw or other runtime-specific AGENTS.md rules unless the current Dennis work order explicitly names them.";
 
 interface ClaudeCliPayload {
   type?: string;
@@ -26,6 +33,40 @@ interface ClaudeCliPayload {
 
 export interface ClaudeCodeTurnResult extends ConnectorConversationResult {
   cliPayload: ClaudeCliPayload;
+}
+
+interface NativeClaudeSessionSnapshot {
+  filePath: string | null;
+  size: number;
+  mtimeMs: number;
+}
+
+async function nativeClaudeSessionSnapshot(sessionId: string): Promise<NativeClaudeSessionSnapshot> {
+  const projectsRoot = path.join(os.homedir(), ".claude", "projects");
+  let projectDirs;
+  try {
+    projectDirs = await fs.readdir(projectsRoot, { withFileTypes: true });
+  } catch {
+    return { filePath: null, size: 0, mtimeMs: 0 };
+  }
+  for (const entry of projectDirs) {
+    if (!entry.isDirectory()) continue;
+    const filePath = path.join(projectsRoot, entry.name, `${sessionId}.jsonl`);
+    try {
+      const stat = await fs.stat(filePath);
+      return { filePath, size: stat.size, mtimeMs: stat.mtimeMs };
+    } catch {
+      continue;
+    }
+  }
+  return { filePath: null, size: 0, mtimeMs: 0 };
+}
+
+function nativeClaudeSessionChanged(
+  before: NativeClaudeSessionSnapshot,
+  after: NativeClaudeSessionSnapshot
+): boolean {
+  return before.filePath !== after.filePath || before.size !== after.size || before.mtimeMs !== after.mtimeMs;
 }
 
 function parseResult(stdout: string): ClaudeCliPayload {
@@ -53,6 +94,13 @@ export async function runClaudeCodeTurn(options: {
   if (!Array.isArray(launcherPrefix) || launcherPrefix.some((value) => typeof value !== "string")) {
     throw new Error("CLAUDE_CODE_LAUNCHER_ARGS_JSON must be a JSON array of strings");
   }
+  const runtimeVerifiedAt = new Date().toISOString();
+  const versionProbe = await execFileAsync(launcher, [...launcherPrefix, "--version"], {
+    cwd: options.session.workspace,
+    env: { ...process.env, CLAUDE_WORKDIR: options.session.workspace, CLAUDE_BARE: "0", CLAUDE_QUIET: "1" },
+    timeout: 20_000, maxBuffer: 1024 * 1024, encoding: "utf8",
+  }).catch(() => null);
+  const installedVersion = versionProbe ? String(versionProbe.stdout).trim() || null : null;
   const routeReadiness = process.env.CLAUDE_CODE_SKIP_ROUTE_PREFLIGHT === "1"
     ? {
         status: "completed" as const,
@@ -80,7 +128,11 @@ export async function runClaudeCodeTurn(options: {
       routeCount: routeReadiness.routeCount,
       skippedRouteNumbers: routeReadiness.skippedRouteNumbers,
       agentIdentity: "Claude Code",
-      agentRuntime: "Claude Code CLI 2.1.205",
+      agentRuntime: "Claude Code CLI",
+      installedVersion,
+      provider: null,
+      runtimeVerifiedAt,
+      responseProvenance: "Claude Code CLI -> FCC transport route -> persistent Claude Code session; backing model only when machine-readable",
       agentSessionId: options.session.claudeSessionId,
       workspace: options.session.workspace,
       sessionState: "error",
@@ -107,6 +159,7 @@ export async function runClaudeCodeTurn(options: {
   let createSession = options.create;
   let lastPayload: ClaudeCliPayload = {};
   let lastError = "all Claude Code agent routes failed";
+  let retrySuppressed = false;
 
   for (const route of routes) {
     const remainingMs = totalTimeoutMs - (Date.now() - startedAt);
@@ -121,26 +174,35 @@ export async function runClaudeCodeTurn(options: {
       "--permission-mode", options.session.permissionMode,
       "--add-dir", options.session.workspace,
       "--append-system-prompt", IDENTITY_CONTEXT,
-      "--model", gatewayModel,
+      // Claude Code 2.1.288 validates explicit --model values before the FCC
+      // proxy can resolve them. The launcher already maps CLAUDE_MODEL to
+      // ANTHROPIC_MODEL for FCC, so keep the selected route in the environment
+      // and do not feed the synthetic FCC alias through the CLI validator.
       createSession ? "--session-id" : "--resume", options.session.claudeSessionId,
       options.prompt,
     ];
 
+    const nativeBefore = await nativeClaudeSessionSnapshot(options.session.claudeSessionId);
     let payload: ClaudeCliPayload;
     try {
-      const { stdout } = await execFileAsync(launcher, [...launcherPrefix, ...args], {
-        cwd: options.session.workspace,
-        env: {
-          ...process.env,
-          CLAUDE_WORKDIR: options.session.workspace,
-          CLAUDE_BARE: "0",
-          CLAUDE_QUIET: "1",
-          CLAUDE_MODEL: process.env.CLAUDE_CODE_MODEL || gatewayModel,
-        },
-        timeout: Math.min(perRouteTimeoutMs, remainingMs),
-        maxBuffer: 10 * 1024 * 1024,
-        encoding: "utf8",
-      });
+      const childEnv = {
+        ...process.env,
+        CLAUDE_WORKDIR: options.session.workspace,
+        CLAUDE_BARE: "0",
+        CLAUDE_QUIET: "1",
+        CLAUDE_MODEL: process.env.CLAUDE_CODE_MODEL || gatewayModel,
+      };
+      const timeoutMs = Math.min(perRouteTimeoutMs, remainingMs);
+      const { stdout } = options.session.disposableFixture
+        ? await (async () => {
+            const observed = await observeDisposableClaudeChild({session:options.session,command:launcher,args:[...launcherPrefix,...args],cwd:options.session.workspace,env:childEnv,timeoutMs,maxBytes:10*1024*1024});
+            if (!observed.completed) throw new Error(`disposable fixture native child did not complete: ${observed.stderr.slice(0,300)}`);
+            // Child close proves direct-child completion only. Never mark descendants terminated.
+            return {stdout:observed.stdout};
+          })()
+        : await execFileAsync(launcher,[...launcherPrefix,...args],{
+            cwd:options.session.workspace,env:childEnv,timeout:timeoutMs,maxBuffer:10*1024*1024,encoding:"utf8"
+          });
       payload = parseResult(String(stdout));
     } catch (error) {
       const detail = error instanceof Error ? error.message : "Claude Code CLI route failed";
@@ -153,6 +215,16 @@ export async function runClaudeCodeTurn(options: {
         error: detail,
         latencyMs: Date.now() - attemptStartedAt,
       });
+      // A Claude CLI failure is only safe to reroute when it left the durable native
+      // session untouched. Replaying the same prompt after Claude already appended it
+      // can duplicate tool work and triggers Claude's resume/continuation machinery.
+      const nativeAfter = await nativeClaudeSessionSnapshot(options.session.claudeSessionId);
+      if (nativeClaudeSessionChanged(nativeBefore, nativeAfter)) {
+        createSession = false;
+        retrySuppressed = true;
+        lastError = `${detail}; retry suppressed because the persistent Claude Code session changed during the failed route`;
+        break;
+      }
       lastError = detail;
       continue;
     }
@@ -162,7 +234,10 @@ export async function runClaudeCodeTurn(options: {
       throw new Error("Claude Code CLI returned an unexpected session ID");
     }
     createSession = false;
-    const modelAlias = Object.keys(payload.modelUsage ?? {})[0] ?? gatewayModel;
+    // The transport route is the route selected for this exact attempt.
+    // payload.modelUsage may contain stale/resumed-session model keys and is not
+    // authoritative transport provenance for the current turn.
+    const successfulTransportModelAlias = toGatewayModel(route);
     const denials = Array.isArray(payload.permission_denials) ? payload.permission_denials.length : 0;
     const resultText = typeof payload.result === "string" ? payload.result.trim() : "";
     const gatewayFailure = payload.is_error || !resultText || /^Provider API request failed\.?/i.test(resultText);
@@ -177,6 +252,15 @@ export async function runClaudeCodeTurn(options: {
     });
 
     if (gatewayFailure) {
+      // A Claude CLI failure is only safe to reroute when it left the durable native
+      // session untouched. Replaying the same prompt after Claude already appended it
+      // can duplicate tool work and triggers Claude's resume/continuation machinery.
+      const nativeAfter = await nativeClaudeSessionSnapshot(options.session.claudeSessionId);
+      if (nativeClaudeSessionChanged(nativeBefore, nativeAfter)) {
+        retrySuppressed = true;
+        lastError = `${resultText || "Claude Code CLI turn failed"}; retry suppressed because the persistent Claude Code session changed during the failed route`;
+        break;
+      }
       lastError = resultText || "Claude Code CLI turn failed";
       continue;
     }
@@ -185,13 +269,17 @@ export async function runClaudeCodeTurn(options: {
       status: "completed",
       text: resultText,
       error: null,
-      transportModelAlias: modelAlias,
+      transportModelAlias: successfulTransportModelAlias,
       actualRuntimeModel: null,
       attempts,
       routeCount: routeReadiness.routeCount,
       skippedRouteNumbers: [],
       agentIdentity: "Claude Code",
-      agentRuntime: "Claude Code CLI 2.1.205",
+      agentRuntime: "Claude Code CLI",
+      installedVersion,
+      provider: null,
+      runtimeVerifiedAt,
+      responseProvenance: "Claude Code CLI -> FCC transport route -> persistent Claude Code session; backing model only when machine-readable",
       agentSessionId: payload.session_id,
       workspace: options.session.workspace,
       sessionState: "idle",
@@ -205,7 +293,7 @@ export async function runClaudeCodeTurn(options: {
   return {
     status: "failed",
     text: null,
-    error: `${lastError}; all available Claude Code agent routes failed`,
+    error: retrySuppressed ? lastError : `${lastError}; all available Claude Code agent routes failed`,
     transportModelAlias: attempts.at(-1)?.transportModelAlias,
     actualRuntimeModel: null,
     attempts,
@@ -214,7 +302,11 @@ export async function runClaudeCodeTurn(options: {
       (routeNumber) => !attemptedNumbers.has(routeNumber)
     ),
     agentIdentity: "Claude Code",
-    agentRuntime: "Claude Code CLI 2.1.205",
+    agentRuntime: "Claude Code CLI",
+    installedVersion,
+    provider: null,
+    runtimeVerifiedAt,
+    responseProvenance: "Claude Code CLI -> FCC transport route -> persistent Claude Code session; backing model only when machine-readable",
     agentSessionId: options.session.claudeSessionId,
     workspace: options.session.workspace,
     sessionState: "error",

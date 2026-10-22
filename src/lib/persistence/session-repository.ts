@@ -35,6 +35,17 @@ export async function upsertPersistedSession<T extends object>(
   return result.rows[0].payload;
 }
 
+/** Create an exact certification fixture once; never upsert over another session. */
+export async function insertPersistedFixtureSession<T extends object>(sessionKey: string, payload: T): Promise<T> {
+  const result = await databaseQuery<SessionRow<T>>(
+    `INSERT INTO agent_sessions (session_kind, agent_id, session_key, payload, updated_at)
+     VALUES ('claude-code', 'claude-code', $1, $2::jsonb, NOW())
+     ON CONFLICT (session_kind, agent_id, session_key) DO NOTHING
+     RETURNING payload`, [sessionKey, JSON.stringify(payload)]);
+  if (!result.rows[0]) throw new Error('disposable fixture session key already exists');
+  return result.rows[0].payload;
+}
+
 export async function patchPersistedSession<T extends object>(
   sessionKind: string,
   agentId: string,
@@ -52,4 +63,19 @@ export async function patchPersistedSession<T extends object>(
   );
   if (!result.rows[0]) throw new Error(`${agentId} session does not exist`);
   return result.rows[0].payload;
+}
+
+export async function listPersistedSessions<T>(
+  sessionKind: string,
+  agentId?: string
+): Promise<T[]> {
+  const result = await databaseQuery<SessionRow<T>>(
+    `SELECT payload
+       FROM agent_sessions
+      WHERE session_kind = $1
+        AND ($2::text IS NULL OR agent_id = $2)
+      ORDER BY updated_at DESC`,
+    [sessionKind, agentId ?? null]
+  );
+  return result.rows.map((row) => row.payload);
 }

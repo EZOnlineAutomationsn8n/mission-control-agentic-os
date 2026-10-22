@@ -1,4 +1,5 @@
 import type { AttachmentReference } from "@/lib/attachments/types";
+import type { ConversationInitiator } from "./initiator";
 
 export type ConversationStatus = "completed" | "action_required" | "failed" | "timeout";
 
@@ -31,11 +32,17 @@ export interface AgentConversationEntry {
   completedAt: string;
   agentIdentity?: string | null;
   agentRuntime?: string | null;
+  installedVersion?: string | null;
+  provider?: string | null;
+  runtimeVerifiedAt?: string | null;
+  responseProvenance?: string | null;
   agentSessionId?: string | null;
   workspace?: string | null;
   sessionState?: string | null;
   executionMode?: string | null;
   permissionMode?: string | null;
+  initiator?: ConversationInitiator;
+  initiatorVerified?: false;
 }
 
 export interface AgentConversationResult {

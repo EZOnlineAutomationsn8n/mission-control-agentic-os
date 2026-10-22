@@ -5,6 +5,7 @@ import { connectorRegistry } from "@/lib/connectors/registry";
 import type { ApprovalRequest, RiskLevel } from "@/lib/connectors/types";
 import type { PersistedApprovalDecision } from "@/lib/approval-decision-store";
 import { riskColor, timeAgo } from "@/lib/ui-helpers";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
 
 interface Row extends Omit<ApprovalRequest, "riskLevel"> {
   agentName: string;
@@ -75,7 +76,7 @@ export function ApprovalsCenter() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Approvals Center</h1>
           <p className="text-sm text-muted mt-1">
@@ -85,19 +86,20 @@ export function ApprovalsCenter() {
         <div className="flex gap-1 text-xs">
           <button
             onClick={() => setFilter("pending")}
-            className={`rounded px-2 py-1 ${filter === "pending" ? "bg-accent/20 text-accent" : "bg-panel-2"}`}
+            className={`whitespace-nowrap rounded px-2 py-1 ${filter === "pending" ? "bg-accent/20 text-accent" : "bg-panel-2"}`}
           >
             Pending ({rows.filter((r) => r.status === "pending").length})
           </button>
           <button
             onClick={() => setFilter("all")}
-            className={`rounded px-2 py-1 ${filter === "all" ? "bg-accent/20 text-accent" : "bg-panel-2"}`}
+            className={`whitespace-nowrap rounded px-2 py-1 ${filter === "all" ? "bg-accent/20 text-accent" : "bg-panel-2"}`}
           >
             All
           </button>
         </div>
       </div>
 
+      <FocusablePanel id="approvals-queue" label="Approvals Center · Approval queue">
       <div className="space-y-2">
         {visible.length === 0 && (
           <div className="text-sm text-muted rounded-lg border border-border bg-panel p-6 text-center">
@@ -186,6 +188,7 @@ export function ApprovalsCenter() {
           </div>
         ))}
       </div>
+      </FocusablePanel>
     </div>
   );
 }

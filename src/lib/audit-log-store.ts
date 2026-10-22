@@ -2,6 +2,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { createHash } from "crypto";
 import { databaseEnabled, databaseQuery } from "@/lib/persistence/database";
+import type { ConversationInitiator } from "@/lib/agent-conversations/initiator";
 
 // ─────────────────────────────────────────────────────────────────────────
 // SERVER-ONLY. Append-only local audit persistence, inside the project
@@ -28,25 +29,43 @@ export interface PersistedAuditEvent {
   actionType: string;
   status: string;
   resultSummary: string;
+  // Provenance fields (REMEDIATION: Mission Control audit accountability, optional/back-compat).
+  // actor: who initiated the event. This is a single-operator cockpit (Dennis is sole
+  // authority per project policy), so "operator" is the honest current value, not a
+  // per-request identity system. source: the exact call site that emitted the event.
+  // correlationId: links a pre-execution intent event to its post-execution result event
+  // (used by the mastermind dispatch idempotency remediation); absent on ordinary events.
+  actor?: string;
+  source?: string;
+  correlationId?: string;
+  initiator?: ConversationInitiator;
+  initiatorVerified?: false;
 }
 
 export async function appendAuditEvent(
   e: PersistedAuditEvent
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; inserted?: boolean }> {
+  // REMEDIATION (Block C): `inserted` reports whether this call wrote a NEW row
+  // versus being a no-op because a row with the same event_hash already existed
+  // (migration 002's unique index). This is what the mastermind dispatch
+  // idempotency check relies on: a "seen before" intent event returns
+  // inserted:false without any UPDATE/DELETE, preserving append-only history.
   try {
     if (databaseEnabled()) {
       const payload = JSON.stringify(e);
-      await databaseQuery(
+      const result = await databaseQuery(
         `INSERT INTO audit_events (payload, event_at, event_hash)
          VALUES ($1::jsonb, $2::timestamptz, $3)
-         ON CONFLICT (event_hash) WHERE event_hash IS NOT NULL DO NOTHING`,
+         ON CONFLICT (event_hash) WHERE event_hash IS NOT NULL DO NOTHING
+         RETURNING sequence`,
         [payload, e.timestamp, createHash("sha256").update(payload).digest("hex")]
       );
-      return { ok: true };
+      return { ok: true, inserted: (result.rowCount ?? 0) > 0 };
     }
     await fs.mkdir(auditDirectory(), { recursive: true });
     await fs.appendFile(auditFile(), `${JSON.stringify(e)}\n`, "utf8");
-    return { ok: true };
+    // File-mode fallback has no dedup index; every append is treated as new.
+    return { ok: true, inserted: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "append failed" };
   }

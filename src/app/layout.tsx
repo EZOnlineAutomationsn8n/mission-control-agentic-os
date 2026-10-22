@@ -1,18 +1,14 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+// Geist + Geist Mono are bundled locally via the official `geist` package
+// (next/font/local, SIL OFL 1.1 — see node_modules/geist/LICENSE.txt and
+// docs/operations/FONTS_GEIST_LOCAL.md). The production build must never
+// fetch fonts from the network; do not switch back to next/font/google.
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { TopBar } from "@/components/shell/TopBar";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+import { PanelFocusProvider } from "@/components/shell/PanelFocus";
 
 export const metadata: Metadata = {
   title: "Mission Control — Agentic OS",
@@ -27,16 +23,18 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full text-foreground">
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <div className="flex-1 flex flex-col min-w-0">
-            <TopBar />
-            <main className="flex-1 min-w-0 overflow-x-hidden">{children}</main>
+        <PanelFocusProvider>
+          <div className="mc-app-shell flex min-h-screen">
+            <Sidebar />
+            <div className="flex-1 flex flex-col min-w-0">
+              <TopBar />
+              <main className="flex-1 min-w-0 overflow-x-hidden">{children}</main>
+            </div>
           </div>
-        </div>
+        </PanelFocusProvider>
       </body>
     </html>
   );

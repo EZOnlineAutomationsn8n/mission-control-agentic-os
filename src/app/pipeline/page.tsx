@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { OperatorProject, OperatorWorkItem, WorkStage } from "@/lib/operator-work";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
 
 const COLUMNS: WorkStage[] = ["capture", "human-gate", "execute", "shipped"];
 
@@ -99,6 +100,7 @@ export default function PipelinePage() {
 
       {error && <div className="rounded border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{error}</div>}
 
+      <FocusablePanel id="pipeline-board" label="Execution Pipeline · Lifecycle board">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 items-start">
         {COLUMNS.map((column) => (
           <div key={column} className="rounded-lg border border-border bg-panel p-3 min-h-[260px] space-y-2">
@@ -123,6 +125,7 @@ export default function PipelinePage() {
           </div>
         ))}
       </div>
+      </FocusablePanel>
     </div>
   );
 }

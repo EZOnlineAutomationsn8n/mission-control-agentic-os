@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import type { OperatorProject } from "@/lib/operator-work";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
 
 export function ProjectLayer() {
   const [projects, setProjects] = useState<OperatorProject[]>([]);
@@ -56,7 +57,8 @@ export function ProjectLayer() {
         </p>
       </div>
 
-      <form onSubmit={createProject} className="rounded-lg border border-border bg-panel p-4 space-y-3 max-w-3xl">
+      <FocusablePanel id="projects-compose" label="Projects · Create project" className="max-w-3xl">
+      <form onSubmit={createProject} className="rounded-lg border border-border bg-panel p-4 space-y-3 h-full">
         <div className="text-sm font-medium">Create project</div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Project name" required className="bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent" />
@@ -67,9 +69,11 @@ export function ProjectLayer() {
           {saving ? "Creating…" : "Create project"}
         </button>
       </form>
+      </FocusablePanel>
 
       {error && <div className="rounded border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{error}</div>}
 
+      <FocusablePanel id="projects-list" label="Projects · Project workspaces">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         {projects.map((project) => (
           <div key={project.id} className="rounded-lg border border-border bg-panel p-4 space-y-2">
@@ -88,6 +92,7 @@ export function ProjectLayer() {
           </div>
         )}
       </div>
+      </FocusablePanel>
     </div>
   );
 }

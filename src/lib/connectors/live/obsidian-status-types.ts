@@ -10,7 +10,18 @@ export interface ObsidianLiveStatus {
   label: "Obsidian — Shared Brain / Graphlink";
   status: ObsidianConnectorStatus;
   mode: "local-fs-status" | "mounted-readonly-status";
+  /** Mission Control read surface (may be a derived immutable projection). */
   source: string;
+  /** Durable source authority from which the read surface was derived. */
+  authoritySource: string;
+  bindingKind: "derived-readonly-projection" | "direct-readonly-vault";
+  projectionManifestFound: boolean;
+  projectionFingerprint: string | null;
+  projectionGeneratedAt: string | null;
+  projectionNoteCount: number | null;
+  projectionContentPolicy: string | null;
+  /** Display/index state never promotes itself to canonical authority. */
+  canonicalByDisplay: false;
   vaultPathExists: boolean;
   vaultMarkerFound: boolean;
   /** Count only — never note content. */

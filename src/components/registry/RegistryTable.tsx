@@ -7,6 +7,7 @@ import { CATEGORY_ORDER, connectorCounts, getConnectorDirectory } from "@/lib/co
 import { statusColor, dotGlowStyle } from "@/lib/ui-helpers";
 import type { AgentSystemState, ConnectorCategory } from "@/lib/connectors/types";
 import { getLastAction } from "@/lib/action-log-store";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
 
 interface AgentSessionSummary {
   active: boolean;
@@ -14,14 +15,14 @@ interface AgentSessionSummary {
 }
 
 const AGENT_SESSION_ENDPOINTS: Record<string, string> = {
-  "claude-fcc": "/api/connectors/claude-code/session?sessionId=operator-default",
+  "claude-fcc": "/api/connectors/claude-code/session?sessionId=mission-control-default",
   hermes: "/api/connectors/hermes/session?sessionId=operator-default",
-  openclaw: "/api/connectors/openclaw/session?sessionId=operator-default",
+  openclaw: "/api/connectors/openclaw/session?sessionId=mission-control-default",
   agy: "/api/connectors/agy/session?sessionId=operator-default",
 };
 
 function capabilityModeLabel(live: AgentSystemState | undefined, session: AgentSessionSummary | null | undefined): string {
-  if (session?.active && session.status !== "error") return "READY TO USE (AGENT SESSION)";
+  if (session?.active && session.status !== "error") return "ACTIVE AGENT SESSION — readiness requires a proven turn";
   if (!live) return "NOT WIRED";
   if (live.outputKind === "mock-stream") return "NOT WIRED";
   if (live.controlledAction) return "READY TO USE";
@@ -107,12 +108,14 @@ export function RegistryTable() {
         </p>
       </div>
 
-      <div className="flex gap-2 items-center">
+      <FocusablePanel id="registry-systems" label="System Registry · Connectors">
+      <div className="space-y-3">
+      <div className="flex flex-wrap gap-2 items-center pr-10">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search connectors, category, capability…"
-          className="flex-1 bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
+          className="flex-1 basis-48 min-w-0 bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
         />
         <select
           value={categoryFilter}
@@ -329,6 +332,8 @@ export function RegistryTable() {
           </tbody>
         </table>
       </div>
+      </div>
+      </FocusablePanel>
     </div>
   );
 }

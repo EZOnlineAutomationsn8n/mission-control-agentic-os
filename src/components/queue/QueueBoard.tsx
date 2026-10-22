@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { PersistedAuditEvent } from "@/lib/audit-log-store";
 import type { OperatorWorkItem, WorkStage } from "@/lib/operator-work";
+import { FocusablePanel } from "@/components/shell/PanelFocus";
 
 const STAGES: WorkStage[] = ["capture", "human-gate", "execute", "shipped"];
 
@@ -39,9 +40,10 @@ export function QueueBoard() {
           <h1 className="text-lg font-semibold">Work Queue</h1>
           <p className="text-sm text-muted mt-1">Live projection of PostgreSQL work items and the append-only audit ledger.</p>
         </div>
-        <Link href="/pipeline" className="rounded bg-accent/20 px-3 py-2 text-xs text-accent hover:bg-accent/30">Open pipeline</Link>
+        <Link href="/pipeline" className="shrink-0 whitespace-nowrap rounded bg-accent/20 px-3 py-2 text-xs text-accent hover:bg-accent/30">Open pipeline</Link>
       </div>
       {error && <div className="rounded border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{error}</div>}
+      <FocusablePanel id="queue-board" label="Work Queue · Board">
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         {STAGES.map((stage) => (
           <div key={stage} className="rounded-lg border border-border bg-panel p-3 min-h-[190px] space-y-2">
@@ -57,7 +59,9 @@ export function QueueBoard() {
           </div>
         ))}
       </div>
-      <div className="rounded-lg border border-border bg-panel p-4">
+      </FocusablePanel>
+      <FocusablePanel id="queue-evidence" label="Work Queue · Recent evidence">
+      <div className="rounded-lg border border-border bg-panel p-4 h-full">
         <h2 className="text-sm font-medium mb-3">Recent evidence</h2>
         <div className="space-y-1 max-h-72 overflow-y-auto">
           {events.map((event, index) => (
@@ -70,6 +74,7 @@ export function QueueBoard() {
           {events.length === 0 && <div className="text-sm text-muted">No audit events recorded.</div>}
         </div>
       </div>
+      </FocusablePanel>
     </div>
   );
 }

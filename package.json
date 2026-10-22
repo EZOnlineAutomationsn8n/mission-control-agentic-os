@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/build-preflight.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -17,11 +18,19 @@
     "test:postgres-persistence": "tsx --test scripts/test-postgres-persistence.ts",
     "test:operator-work": "tsx --test scripts/test-operator-work.ts",
     "test:approval-postgres": "tsx --test scripts/test-approval-postgres.ts",
-    "test:attachments": "tsx --test scripts/test-attachments.ts"
+    "test:attachments": "tsx --test scripts/test-attachments.ts",
+    "test:omi-bridge": "tsx --test scripts/test-omi-bridge.ts",
+    "omi:intake:once": "tsx scripts/run-omi-intake.ts",
+    "test:system-register": "tsx --test scripts/test-system-register-schema.ts",
+    "test:source-binding": "tsx --test scripts/test-source-binding.ts",
+    "test:deterministic-execution": "tsx --test scripts/test-deterministic-execution.ts",
+    "test:acf-team-room": "tsx --test scripts/test-acf-team-room.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0-beta.4",
     "clsx": "^2.1.1",
     "framer-motion": "^12.42.2",
+    "geist": "1.7.2",
     "next": "16.2.10",
     "pg": "^8.22.0",
     "react": "19.2.4",
