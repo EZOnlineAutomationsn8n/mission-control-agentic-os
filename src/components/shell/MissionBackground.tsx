@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 
-type Theme = { background: string; backgroundWebm?: string; poster?: string; panelOpacity: number; veil: number; blur: number };
+type Theme = { background: string; backgroundWebm?: string; poster?: string; panelOpacity: number; veil: number; blur: number; focusY: string };
 const ROOT = "/api/theme/";
 const MEDIA = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 function mediaFile(value: unknown, exts: string[]): string | null {
@@ -22,6 +22,10 @@ function parseTheme(raw: unknown): Theme | null {
     panelOpacity: bounded(o.panelOpacity, 0.72, 0.6, 0.95),
     veil: bounded(o.veil, 0.35, 0.18, 0.8),
     blur: bounded(o.blur, 6, 0, 16),
+    // The focal starburst is at the video/image source centre. Translate that
+    // centre to an explicit viewport percentage; CSS scales to keep all edges filled.
+    focusY: typeof o.focusY === "string" && /^\d{1,3}(?:\.\d{1,4})?%$/.test(o.focusY)
+      && Number.parseFloat(o.focusY) >= 15 && Number.parseFloat(o.focusY) <= 85 ? o.focusY : "50%",
   };
 }
 const asset = (file: string) => ROOT + encodeURIComponent(file);
@@ -48,10 +52,12 @@ export function MissionBackground() {
     root.style.setProperty("--mc-panel-alpha", String(theme?.panelOpacity ?? 0.9));
     root.style.setProperty("--mc-veil", String(theme?.veil ?? 0.5));
     root.style.setProperty("--mc-glass-blur", (theme?.blur ?? 0) + "px");
+    root.style.setProperty("--mc-focus-y", theme?.focusY ?? "50%");
     return () => {
       root.style.removeProperty("--mc-panel-alpha");
       root.style.removeProperty("--mc-veil");
       root.style.removeProperty("--mc-glass-blur");
+      root.style.removeProperty("--mc-focus-y");
     };
   }, [theme]);
   const video = Boolean(theme && /\.(mp4|webm)$/i.test(theme.background));

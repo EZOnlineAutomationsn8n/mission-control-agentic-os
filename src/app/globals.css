@@ -3746,55 +3746,61 @@ html[data-mc-panel-focus-id="acf-reading-pane"] .acf-shell-focus-overlay { z-ind
   z-index: 1;
 }
 
-/* MC-THEMA-SLEUF-20261022-001: runtime theme, panel contrast clamp is in MissionBackground. */
-:root { --mc-panel-alpha:.90; --mc-veil:.50; --mc-glass-blur:0px; }
-.mc-background-video,.mc-background-still {
-  position:absolute;inset:0;width:100%;height:100%;opacity:.69;
+
+/* MC-THEMA-SLEUF-20261022-001 corrected by Dennis 16:11/16:14.
+   Preserve the Team Room header dimensions, texts, tabs and position.
+   Remove only decorative celestial layer and make header see-through. */
+:root { --mc-panel-alpha: .9; --mc-veil: .5; --mc-glass-blur: 0px; --mc-focus-y: 50%; --mc-star-scale: 1.7; }
+.mc-background-video, .mc-background-still {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  transform-origin: 50% 50%;
+  transform: translateY(calc(var(--mc-focus-y) - 50%)) scale(var(--mc-star-scale));
+  opacity: .69;
 }
-.mc-background-video { object-fit:cover;object-position:center; }
-.mc-background-still { background-position:center;background-size:cover;background-repeat:no-repeat; }
+.mc-background-video { object-fit: cover; object-position: 50% 50%; }
+.mc-background-still { background-position: 50% 50%; background-size: cover; background-repeat: no-repeat; }
 .mc-background-veil {
- background:linear-gradient(180deg,rgba(1,4,12,var(--mc-veil)),rgba(1,4,12,calc(var(--mc-veil) + .08)));
+  background: linear-gradient(180deg, rgba(1,4,12,var(--mc-veil)), rgba(1,4,12,calc(var(--mc-veil) + .08)));
 }
-@media(prefers-reduced-motion:reduce) { .mc-background-video { display:none; } }
-.mc-app-shell .bg-panel,.mc-app-shell .bg-panel-2,.mc-app-shell .bg-panel-3 {
- background-color:rgba(11,17,36,var(--mc-panel-alpha));
- backdrop-filter:blur(var(--mc-glass-blur));
+@media(prefers-reduced-motion: reduce) { .mc-background-video { display: none; } }
+.mc-app-shell .bg-panel, .mc-app-shell .bg-panel-2, .mc-app-shell .bg-panel-3 {
+  background-color: rgba(11,17,36,var(--mc-panel-alpha));
+  backdrop-filter: blur(var(--mc-glass-blur));
 }
 .mc-app-shell .acf-team-room-page {
- background:rgba(3,8,19,calc(var(--mc-panel-alpha) * .8));
- backdrop-filter:blur(var(--mc-glass-blur));
+  background: rgba(3,8,19,calc(var(--mc-panel-alpha) * .22));
+  backdrop-filter: blur(var(--mc-glass-blur));
 }
 .mc-app-shell .acf-shell .mc-team-original-five {
- background:rgba(3,10,25,var(--mc-panel-alpha));
- backdrop-filter:blur(var(--mc-glass-blur));
+  background: rgba(3,10,25,var(--mc-panel-alpha));
+  backdrop-filter: blur(var(--mc-glass-blur));
 }
-.mc-app-shell .acf-shell-agent-card,.mc-app-shell .acf-shell-focus-card,
+.mc-app-shell .acf-shell-agent-card, .mc-app-shell .acf-shell-focus-card,
 .mc-app-shell .mc-team-shared-conversation {
- background-color:rgba(9,20,40,var(--mc-panel-alpha));
- backdrop-filter:blur(var(--mc-glass-blur));
+  background-color: rgba(9,20,40,var(--mc-panel-alpha));
+  backdrop-filter: blur(var(--mc-glass-blur));
 }
-/* Removal of visual planet/header; retain slim modes and evidence-based state. */
 .mc-app-shell .acf-team-room-hero {
- min-height:0!important;padding:.38rem .7rem!important;border:1px solid rgba(89,157,205,.24)!important;
- border-radius:.65rem!important;align-items:center!important;gap:.65rem!important;
- background:rgba(5,13,29,var(--mc-panel-alpha))!important;box-shadow:none!important;
- backdrop-filter:blur(var(--mc-glass-blur));
+  /* No size/height/padding/text/tab changes: only glass replaces opaque art. */
+  background: rgba(3,9,22,calc(var(--mc-panel-alpha) * .38)) !important;
+  backdrop-filter: blur(var(--mc-glass-blur));
 }
-.mc-app-shell .acf-team-room-hero::before,.mc-app-shell .acf-team-room-hero::after {
- content:none!important;display:none!important;
+.mc-app-shell .acf-team-room-hero::before,
+.mc-app-shell .acf-team-room-hero::after {
+  /* Remove the oversized planet and painted nebula, not the header. */
+  content: none !important;
+  display: none !important;
 }
-.mc-app-shell .acf-team-room-hero-copy {
- display:flex;align-items:center;flex-wrap:wrap;gap:.8rem;min-width:0;padding:0;
+.mc-preview-identity {
+  position:fixed; z-index:10000; top:0;left:0;right:0;
+  height:26px;max-height:26px;overflow:hidden;
+  display:flex;align-items:center;justify-content:center;
+  background:#facc15;color:#201400;
+  border-bottom:1px solid #8d6403;
+  font-size:12px;font-weight:800;line-height:1.1;
+  letter-spacing:.02em;text-align:center;white-space:nowrap;
+  pointer-events:none;
 }
-.mc-app-shell .acf-team-room-hero-copy h1 { margin:0;font-size:.82rem;line-height:1.25rem;flex-shrink:0; }
-.mc-app-shell .acf-mode-tabs { display:flex;flex-wrap:wrap;gap:.22rem;margin:0;padding:0; }
-.mc-app-shell .acf-mode-tab { min-height:1.85rem!important;padding:.15rem .48rem!important;font-size:.72rem!important; }
-.mc-app-shell .acf-mode-readiness { display:none; }
-.mc-app-shell .acf-team-room-hero-controls { align-items:center;gap:.35rem; }
-.mc-app-shell .acf-team-room-page { gap:.45rem; }
-@media(max-width:640px) {
- .mc-app-shell .acf-team-room-hero { padding:.35rem .45rem!important; }
- .mc-app-shell .acf-team-room-hero-copy { gap:.3rem; }
- .mc-app-shell .acf-mode-tab { padding:.14rem .35rem!important; }
+@media(max-width:600px) {
+ .mc-preview-identity { font-size:9px;letter-spacing:0; }
 }
