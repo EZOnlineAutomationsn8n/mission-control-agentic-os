@@ -129,20 +129,24 @@ export const openClawAdapter: AgentSystemAdapter = {
       // Never claim live status when we couldn't confirm it.
       return {
         ...baseState,
+        status: "unknown",
+        runState: "blocked",
+        health: "warn",
+        currentTask: "Runtime status unknown: live status API unavailable",
         commandExecution: false,
-        outputKind: "mock-stream",
-        statusDetail: null,
+        outputKind: "live-status",
+        statusDetail: { "runtime observation": "unknown", "reason": "Mission Control could not read the live status API" },
       };
     }
 
     const runState: RunState =
-      live.status === "connected" ? "running" : live.status === "degraded" ? "error" : "stopped";
+      live.status === "connected" ? "running" : live.status === "degraded" ? "error" : live.status === "unknown" ? "blocked" : "stopped";
 
     return {
       ...baseState,
       status: live.status,
       runState,
-      health: live.status === "connected" ? "ok" : live.status === "degraded" ? "warn" : "fail",
+      health: live.status === "connected" ? "ok" : live.status === "degraded" || live.status === "unknown" ? "warn" : "fail",
       currentTask: `Gateway ${live.gatewayReachable ? "reachable" : "unreachable"} (${live.status}) — ${live.source}`,
       connectorMode: "api",
       commandExecution: false,

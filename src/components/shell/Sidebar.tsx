@@ -9,6 +9,7 @@ import { getCockpitRoutePresentation } from "@/lib/cockpit-route-presentation";
 import { statusColor, dotGlowStyle } from "@/lib/ui-helpers";
 import type { AgentSystemState } from "@/lib/connectors/types";
 import { usePanelFocus } from "@/components/shell/PanelFocus";
+import { startBoundedPoll, fetchJsonBounded } from "@/lib/cockpit/bounded-poll";
 
 type NavIcon = "graph" | "apps" | "control" | "paperclip" | "team" | "mastermind" | "pipeline" | "kanban" | "memory" | "approvals" | "evidence" | "registry" | "projects";
 
@@ -100,32 +101,35 @@ export function Sidebar() {
   const [sessions, setSessions] = useState<CockpitSessionSummary[]>([]);
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const entries = await Promise.all(connectorRegistry.list().map(async (adapter) => [adapter.descriptor().id, await adapter.getState()] as const));
-      if (!cancelled) setStates(Object.fromEntries(entries));
-    }
-    void load();
-    const timer = window.setInterval(() => void load(), 10000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, []);
+  useEffect(() => startBoundedPoll(async (signal) => {
+    const adapters = connectorRegistry.list();
+    const results = await Promise.allSettled(adapters.map((adapter) => adapter.getState()));
+    if (signal.aborted) return false;
+    setStates((previous) => {
+      const entries = results.map((result, index) => {
+        const id = adapters[index].descriptor().id;
+        if (result.status === "fulfilled") return [id, result.value] as const;
+        const last = previous[id];
+        return last ? [id, { ...last, status: "degraded" as const, health: "warn" as const,
+          sessionIndexStatus: "stale" as const }] as const : null;
+      }).filter((entry): entry is readonly [string, AgentSystemState] => entry !== null);
+      return Object.fromEntries(entries);
+    });
+    return results.every((result) => result.status === "fulfilled");
+  }, { intervalMs: 10_000, timeoutMs: 8_000, maxBackoffMs: 30_000 }), []);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadSessions() {
-      try {
-        const response = await fetch("/api/cockpit/sessions", { cache: "no-store" });
-        const body = await response.json() as { sessions?: CockpitSessionSummary[] };
-        if (!cancelled && response.ok) setSessions(body.sessions ?? []);
-      } catch {
-        // Registry truth remains unknown rather than fabricated when discovery fails.
-      }
+  useEffect(() => startBoundedPoll(async (signal) => {
+    try {
+      const body = await fetchJsonBounded<{ sessions?: CockpitSessionSummary[] }>(
+        "/api/cockpit/sessions", { signal }
+      );
+      if (!signal.aborted) setSessions(body.sessions ?? []);
+      return !signal.aborted;
+    } catch {
+      // Retain previous entries; do not replace a failed read with a fake empty registry.
+      return false;
     }
-    void loadSessions();
-    const timer = window.setInterval(() => void loadSessions(), 5000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, []);
+  }, { intervalMs: 5_000, timeoutMs: 8_000, maxBackoffMs: 30_000 }), []);
 
   function renderItem(item: NavItem) {
     const active = pathname === item.href;

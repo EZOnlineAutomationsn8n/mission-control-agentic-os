@@ -76,7 +76,7 @@ export function ApprovalsCenter() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-lg font-semibold">Approvals Center</h1>
           <p className="text-sm text-muted mt-1">
@@ -86,13 +86,13 @@ export function ApprovalsCenter() {
         <div className="flex gap-1 text-xs">
           <button
             onClick={() => setFilter("pending")}
-            className={`whitespace-nowrap rounded px-2 py-1 ${filter === "pending" ? "bg-accent/20 text-accent" : "bg-panel-2"}`}
+            className={`rounded px-2 py-1 ${filter === "pending" ? "bg-accent/20 text-accent" : "bg-panel-2"}`}
           >
             Pending ({rows.filter((r) => r.status === "pending").length})
           </button>
           <button
             onClick={() => setFilter("all")}
-            className={`whitespace-nowrap rounded px-2 py-1 ${filter === "all" ? "bg-accent/20 text-accent" : "bg-panel-2"}`}
+            className={`rounded px-2 py-1 ${filter === "all" ? "bg-accent/20 text-accent" : "bg-panel-2"}`}
           >
             All
           </button>

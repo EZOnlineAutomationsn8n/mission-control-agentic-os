@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveAttachments } from "@/lib/attachments/store";
-import { promptWithLocalPixelEvidence } from "@/lib/attachments/local-pixel-observation";
-import { hasImageAttachments, runLocalSemanticVision, verifyLocalVisionModel } from "@/lib/attachments/local-semantic-vision";
+import { promptWithAttachments, resolveAttachments } from "@/lib/attachments/store";
 import { executeConversationRequest } from "@/lib/agent-conversations/service";
 import { parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
@@ -31,22 +29,7 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "invalid attachments" }, { status: 400 });
   }
-  const containsImage = hasImageAttachments(attachments);
-  let localVision: Awaited<ReturnType<typeof verifyLocalVisionModel>> | null = null;
-  if (containsImage) {
-    if (attachments.filter((item) => /\.(?:png|jpe?g|webp|gif|heic|svg)$/i.test(item.name)).length > 3 ||
-        attachments.some((item) => /\.(?:heic|svg)$/i.test(item.name))) {
-      return NextResponse.json({ error: "VISION_IMAGE_FORMAT_OR_COUNT_UNSUPPORTED" }, { status: 422 });
-    }
-    try { localVision = await verifyLocalVisionModel(); }
-    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "VISION_MODEL_NOT_VERIFIED" }, { status: 422 }); }
-  }
-  let effectivePrompt: string;
-  try {
-    effectivePrompt = await promptWithLocalPixelEvidence(prompt.trim(), attachments);
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "local image inspection unavailable" }, { status: 422 });
-  }
+  const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
   const session = await readClaudeCodeSession(sessionId);
   if (!session?.active) return NextResponse.json({ error: "Claude Code session is stopped; start it before sending a prompt" }, { status: 409 });
   if (session.status === "running" || session.status === "starting") {
@@ -57,7 +40,7 @@ export async function POST(request: Request) {
   const persisted = await executeConversationRequest({
     agentId: "claude-code", sessionId, prompt: prompt.trim(), attachments, actionType: "claude-code-agent-turn",
     initiator: parsedInitiator.initiator ?? undefined,
-    run: () => localVision ? runLocalSemanticVision({ prompt: prompt.trim(), attachments, sessionId, agentId: "claude-code", verified: localVision }) : runClaudeCodeTurn({ session, prompt: effectivePrompt, create: false }),
+    run: () => runClaudeCodeTurn({ session, prompt: effectivePrompt, create: false }),
   });
   await updateClaudeCodeSession(sessionId, {
     status: persisted.entry.status === "completed" ? "idle" : "error",

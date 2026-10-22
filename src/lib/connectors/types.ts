@@ -14,6 +14,7 @@ export type ConnectionMode =
   | "browser";
 
 export type ConnectorStatus =
+  | "unknown"
   | "connected"
   | "degraded"
   | "disconnected"

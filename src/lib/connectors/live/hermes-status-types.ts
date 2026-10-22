@@ -3,7 +3,7 @@
 // browser bundle. The actual reader that touches the filesystem lives in
 // hermes-status.ts and is only ever invoked from the server-side API route.
 
-export type HermesConnectorStatus = "connected" | "degraded" | "disconnected";
+export type HermesConnectorStatus = "unknown" | "connected" | "degraded" | "disconnected";
 
 export interface HermesLiveStatus {
   systemId: "hermes";
@@ -12,7 +12,7 @@ export interface HermesLiveStatus {
   mode: "gateway";
   source: string;
   pid: number | null;
-  pidAlive: boolean;
+  pidAlive: boolean | null;
   gatewayState: string;
   platforms: string[];
   activeAgents: string[];
@@ -23,4 +23,13 @@ export interface HermesLiveStatus {
   commandExecution: false;
   lastCheckedAt: string;
   errors: string[];
+  /** Separate source-of-truth dimensions; no state is inferred from another. */
+  evidence: {
+    hostService: "UNOBSERVABLE_FROM_MC_CONTAINER";
+    mcRuntimeReachable: boolean | null;
+    modelCompletionProven: boolean | null;
+    acfSessionEligible: boolean | null;
+    acfRunParticipant: boolean | null;
+    hostObservationRoute: string;
+  };
 }

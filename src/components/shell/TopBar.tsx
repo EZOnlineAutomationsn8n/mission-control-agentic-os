@@ -5,25 +5,26 @@ import { connectorRegistry } from "@/lib/connectors/registry";
 import type { AgentSystemState } from "@/lib/connectors/types";
 import { countBlockedActions, countReadyActions, isLiveRunning } from "@/lib/ui-helpers";
 import { usePanelFocus } from "@/components/shell/PanelFocus";
+import { startBoundedPoll } from "@/lib/cockpit/bounded-poll";
 
 export function TopBar() {
   const { focusedPanelId, focusedPanelLabel, restoreLayout } = usePanelFocus();
   const [states, setStates] = useState<AgentSystemState[]>([]);
   const [clock, setClock] = useState<string>("");
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const all = await Promise.all(connectorRegistry.list().map((a) => a.getState()));
-      if (!cancelled) setStates(all);
-    }
-    void load();
-    const t = setInterval(() => void load(), 10000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
+  useEffect(() => startBoundedPoll(async (signal) => {
+    const adapters = connectorRegistry.list();
+    const results = await Promise.allSettled(adapters.map((adapter) => adapter.getState()));
+    if (signal.aborted) return false;
+    setStates((previous) => results.map((result, index) => {
+      if (result.status === "fulfilled") return result.value;
+      const last = previous.find((item) => item.id === adapters[index].descriptor().id);
+      // A failed observation is never displayed as freshly connected or healthy.
+      return last ? { ...last, status: "degraded" as const, health: "warn" as const,
+        sessionIndexStatus: "stale" as const } : null;
+    }).filter((item): item is AgentSystemState => item !== null));
+    return results.every((result) => result.status === "fulfilled");
+  }, { intervalMs: 10_000, timeoutMs: 8_000, maxBackoffMs: 30_000 }), []);
 
   useEffect(() => {
     const tick = () => setClock(new Date().toUTCString().slice(17, 25) + " UTC");

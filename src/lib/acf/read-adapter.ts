@@ -395,7 +395,17 @@ export async function readAcfTeamRoomSnapshot(options: {
       };
     }
 
-    const selectedId = options.runId || runs[0].runId;
+    let selectedId = options.runId;
+    if (!selectedId) {
+      for (const candidate of [...runs].reverse()) {
+        try {
+          const raw = parseJsonObject(await runner(["team-view", "--args",
+            JSON.stringify({ run_id: candidate.runId })]), "team-view");
+          if (raw.schema === 2) { selectedId = candidate.runId; break; }
+        } catch { /* unsupported historical run: continue; no ACF mutation */ }
+      }
+    }
+    selectedId ||= runs[0].runId;
     const selectedSummary = runs.find((run) => run.runId === selectedId);
     if (!selectedSummary) {
       throw new AcfReadError("MALFORMED_EXPORT", `requested run ${selectedId} is not present in ./acf runs`);

@@ -3,7 +3,7 @@
 // the browser bundle. The actual reader lives in fcc-status.ts and is only
 // ever invoked from the server-side API route.
 
-export type FccConnectorStatus = "connected" | "degraded" | "disconnected";
+export type FccConnectorStatus = "unknown" | "connected" | "degraded" | "disconnected";
 
 export interface FccLiveStatus {
   systemId: "claude-fcc";

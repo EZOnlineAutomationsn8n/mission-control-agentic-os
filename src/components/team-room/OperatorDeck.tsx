@@ -694,7 +694,7 @@ export function OperatorDeck({ run, busy, setBusy, callControl, waitForStep, ref
                 {(open?.messages ?? []).length === 0 && <p className="text-xs text-muted">Nog niets gezegd in deze ingreep.</p>}
               </div>
 
-              <div className="mt-3 border-t border-border/60 pt-3">
+              {tv.schema !== 2 && <div className="mt-3 border-t border-border/60 pt-3">
                 <div className="text-xs font-semibold">Sessies</div>
                 <div className="mt-2 space-y-1.5">
                   {participants.map((p) => (
@@ -737,7 +737,7 @@ export function OperatorDeck({ run, busy, setBusy, callControl, waitForStep, ref
                     <p className="mt-2 text-[10px] text-muted">Mission Control start, stopt of maakt hier geen sessie aan.</p>
                   </div>
                 )}
-              </div>
+              </div>}
             </div>
           )}
 

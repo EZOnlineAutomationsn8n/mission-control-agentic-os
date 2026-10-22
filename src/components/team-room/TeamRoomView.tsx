@@ -33,13 +33,16 @@ import {
 } from "@/lib/acf/participant-readiness";
 import { FocusablePanel, PanelFocusButton, usePanelFocus } from "@/components/shell/PanelFocus";
 import { OperatorDeck, TeamOpenSessions, agentLabel, refusalText } from "@/components/team-room/OperatorDeck";
+import { RosterTeamComposer, type TeamDraftChoice } from "@/components/team-room/RosterTeamComposer";
+import { FreeRoomPanel } from "@/components/team-room/FreeRoomPanel";
+import { deriveVisibleParticipants } from "@/lib/acf/visible-participants";
 
 const POLL_MS = 5_000;
 const STALE_AFTER_MS = 15_000;
 const READINESS_POLL_MS = 5_000;
 const READINESS_STALE_AFTER_MS = 20_000;
 
-type ReadinessAgentId = "hermes" | "claude-code" | "openclaw" | "antigravity";
+type ReadinessAgentId = "hermes" | "claude-code" | "openclaw" | "antigravity" | "gemini" | "codex";
 
 interface RuntimeTruthClient {
   targetId: ReadinessAgentId;
@@ -49,7 +52,7 @@ interface RuntimeTruthClient {
 }
 
 interface ConnectorStatusClient {
-  status?: "connected" | "degraded" | "disconnected";
+  status?: "connected" | "degraded" | "disconnected" | "unknown";
   lastCheckedAt?: string;
   errors?: string[];
   pidAlive?: boolean;
@@ -63,11 +66,11 @@ interface AgentOperationalEvidence {
   session: SessionReadinessObservation | null;
 }
 
-type OperationalEvidenceMap = Partial<Record<ReadinessAgentId, AgentOperationalEvidence>>;
+type OperationalEvidenceMap = Record<string, AgentOperationalEvidence>; // agent pool + "participant:<handle>" slots
 
 function normalizedReadinessAgentId(agentId: string | null): ReadinessAgentId | null {
   if (agentId === "agy" || agentId === "antigravity") return "antigravity";
-  if (agentId === "hermes" || agentId === "claude-code" || agentId === "openclaw") return agentId;
+  if (agentId === "hermes" || agentId === "claude-code" || agentId === "openclaw" || agentId === "gemini" || agentId === "codex") return agentId;
   return null;
 }
 
@@ -122,9 +125,9 @@ function runtimeObservation(
       exists,
       reachable,
       stale: truthStale || statusStale,
-      error: status?.status === "degraded"
-        ? (status.errors?.join("; ") || "runtime status reports degraded")
-        : null,
+      error: status?.errors?.length
+        ? status.errors.join("; ")
+        : status?.status === "unknown" ? "MC container cannot verify host service; UNKNOWN is not OFFLINE" : null,
       source: `GET ${connectorStatusEndpoint(agentId)} + /api/cockpit/runtime-truth`,
       observedAt,
     },
@@ -235,7 +238,8 @@ function readinessForParticipant(
   operationalEvidence: OperationalEvidenceMap
 ): ParticipantReadinessResult {
   const targetId = normalizedReadinessAgentId(card.agentId);
-  const evidence = targetId ? operationalEvidence[targetId] : null;
+  // D8: two independent sessions of one agent must never overwrite each other.
+  const evidence = targetId ? operationalEvidence[`participant:${card.role}`] ?? null : null;
   return deriveParticipantReadiness({
     agentId: card.agentId,
     role: card.role,
@@ -427,11 +431,7 @@ function PreparedMode({ mode }: { mode: TeamRoomMode }) {
   );
 }
 
-const ILLUSTRATED_TEAM_ROOM_IDS = new Set<ReadinessAgentId>(["hermes", "claude-code", "openclaw", "antigravity"]);
-const SHELL_AGENTS = deriveTeamRoomRoster(COCKPIT_AGENT_TARGETS)
-  .filter((agent) => ILLUSTRATED_TEAM_ROOM_IDS.has(agent.id as ReadinessAgentId));
-const SHELL_ORCHESTRATOR_COUNT = SHELL_AGENTS.filter((agent) => agent.id === "antigravity").length;
-const SHELL_WORKER_COUNT = SHELL_AGENTS.length - SHELL_ORCHESTRATOR_COUNT;
+const SHELL_AGENTS = deriveTeamRoomRoster(COCKPIT_AGENT_TARGETS);
 type ShellAgentId=string;
 type ShellReadingSurface = "live" | "per-agent" | "full";
 
@@ -447,6 +447,7 @@ function ShellAgentCard({
   onFocus,
   runCard = null,
   speaking = false,
+  membershipKind = "SHELL",
 }: {
   agent: TeamRosterAgent;
   sessions: CockpitSessionSummary[];
@@ -455,6 +456,7 @@ function ShellAgentCard({
   onFocus: () => void;
   runCard?: TeamRoomParticipantCard | null;
   speaking?: boolean;
+  membershipKind?: "DRAFT" | "CONFIRMED" | "SHELL";
 }) {
   const observed = shellSessionsFor(agent.id, sessions);
   const latest = observed[0] ?? null;
@@ -474,20 +476,25 @@ function ShellAgentCard({
           </span>
           {readiness.roleClass === "ORCHESTRATOR" && <span className="acf-orch-subtitle"><span aria-hidden="true">♛</span> ORCHESTRATOR</span>}
           <span className="mt-1 flex flex-wrap items-center gap-1.5">
-            <ReadinessBadge readiness={readiness} />
+            {membershipKind === "DRAFT" ? <span className="rounded border border-cyan-400/60 px-2 py-0.5 text-[10px] font-semibold text-cyan-200">DRAFT · nog niet in ACF-run</span> : <ReadinessBadge readiness={readiness} />}
             <span className="text-[10px] uppercase tracking-[0.08em] text-muted">
-              {runCard ? `IN TEAM-RUN · ${runCard.role}` : readiness.roleClass === "ORCHESTRATOR" ? "ORCHESTRATOR · NIET IN DEZE RUN" : "AGENT · NIET IN DEZE RUN"}
+              {membershipKind === "DRAFT" ? "ALLEEN SELECTIE · GEEN MODELTURN" : runCard ? `ACF BOUND · ${runCard.role}` : "VISUEEL VENSTER · GEEN ACF-LID GECONSTATEERD"}
             </span>
           </span>
         </span>
-        <span className="acf-shell-focus-pill">{focused ? "IN FOCUS" : "FOCUS"}</span>
+        <span className="acf-shell-focus-pill" data-testid={"shell-focus-pill-"+agent.id}>{focused ? "IN FOCUS" : "FOCUS"}</span>
         <PanelFocusButton asSpan className="acf-card-max" />
       </div>
       <div className="acf-shell-card-body">
         <ReadinessEvidenceLine readiness={readiness} />
         <div className="mt-1 text-[10px] leading-4 text-muted/90">{readiness.explanation}</div>
         <div className="mt-3">
-        {runCard ? (
+        {agent.id === "hermes" && (
+          <p className="mb-2 text-[11px] text-warn">Hermes bewijsgrenzen: VPS hostservice ≠ MC runtime ≠ modelantwoord ≠ ACF sessiegeschiktheid ≠ bevestigd ACF-lid. De actuele ACF-status staat in het rooster.</p>
+        )}
+        {membershipKind === "DRAFT" ? (
+          <p className="text-xs text-muted">Conceptdeelnemer. Controleer de sessie en bevestig via Team samenstellen; de bestaande run blijft onveranderd.</p>
+        ) : runCard ? (
           <>
             <div className="text-sm font-medium text-foreground/90">
               {runCard.latestReply ? `Beurt ${runCard.latestTurn ?? "?"} · ${runCard.role} → ${runCard.latestReply.to}` : `${runCard.role} · nog geen beurt`}
@@ -518,43 +525,48 @@ function ShellAgentCard({
   );
 }
 
-function shellRunCardFor(agent: TeamRosterAgent, discussion: TeamRoomDiscussionModel | null | undefined): TeamRoomParticipantCard | null {
-  if (!discussion) return null;
-  return discussion.participants.find((p) => p.agentId === agent.id || p.agentId === agent.apiAgentId) ?? null;
-}
-
-function shellSpeakerAgentId(discussion: TeamRoomDiscussionModel | null | undefined): ShellAgentId | null {
-  const role = discussion?.latestParticipantRole;
-  if (!role) return null;
-  const card = discussion?.participants.find((p) => p.role === role);
-  const agent = SHELL_AGENTS.find((a) => a.id === card?.agentId || a.apiAgentId === card?.agentId);
-  return agent?.id ?? null;
-}
-
 function TeamRoomShell({
   sessions,
+  draftSelected,
+  participantReadinessByRole,
   readLabel,
   operationalEvidence,
   discussion = null,
   runId = null,
   controls = null,
+  selection = null,
+  freeRoom = null,
 }: {
   sessions: CockpitSessionSummary[];
+  draftSelected: string[];
+  participantReadinessByRole: Map<string,ParticipantReadinessResult>;
   readLabel: string;
   operationalEvidence: OperationalEvidenceMap;
   discussion?: TeamRoomDiscussionModel | null;
   runId?: string | null;
   controls?: React.ReactNode;
+  selection?: React.ReactNode;
+  freeRoom?: React.ReactNode;
 }) {
-  const speakerId = shellSpeakerAgentId(discussion);
-  const [focusedId, setFocusedId] = useState<ShellAgentId | null>(() => speakerId ?? "claude-code");
-  const [previewPlaying, setPreviewPlaying] = useState(() => !discussion);
+  const visible = deriveVisibleParticipants(SHELL_AGENTS, (discussion?.participants ?? []).map(p=>({
+    role:p.role,agentId:p.agentId,sessionRef:p.sessionRef
+  })),draftSelected);
+  // Four visual windows on the registry/session pool, NOT four fixed ACF seats.
+  // All six registered agents remain addressable through the slot switcher.
+  const [visualSlotOffset, setVisualSlotOffset] = useState(0);
+  const visualSlots = useMemo(() => Array.from({length:Math.min(4,SHELL_AGENTS.length)},(_,i)=>
+    SHELL_AGENTS[(visualSlotOffset+i)%SHELL_AGENTS.length]),[visualSlotOffset]);
+  const speaker = discussion?.participants.find(p=>p.role===discussion.latestParticipantRole) ?? null;
+  const speakerAgent = SHELL_AGENTS.find(agent=>agent.apiAgentId===speaker?.agentId || agent.id===speaker?.agentId) ?? null;
+  const speakerKey = !draftSelected.length ? speakerAgent?.id ?? null : null;
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [previewPlaying, setPreviewPlaying] = useState(false);
   const latestMessageId = discussion?.latestParticipantMessage?.messageId ?? null;
   useEffect(() => {
-    if (!latestMessageId || !speakerId) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- follow the latest real speaker when a new ACF message arrives
-    setFocusedId(speakerId);
-  }, [latestMessageId, speakerId]);
+    if (!latestMessageId || !speakerKey) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- only ACF-exported turns may auto-focus speakers
+    setFocusedId(speakerKey);
+  }, [latestMessageId, speakerKey]);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [readingSurface, setReadingSurface] = useState<ShellReadingSurface>("live");
 
@@ -567,25 +579,30 @@ function TeamRoomShell({
   }, []);
 
   useEffect(() => {
-    if (!previewPlaying || prefersReducedMotion) return;
+    if (!previewPlaying || prefersReducedMotion || draftSelected.length || !visualSlots.length) return;
     const timer = window.setInterval(() => {
       setFocusedId((current) => {
-        if (current === null) return SHELL_AGENTS[0]?.id ?? null;
-        const index = SHELL_AGENTS.findIndex((agent) => agent.id === current);
-        return SHELL_AGENTS[(index + 1) % SHELL_AGENTS.length]?.id ?? current;
+        if (current === null) return visualSlots[0]?.id ?? null;
+        const index = visualSlots.findIndex(agent=>agent.id===current);
+        return visualSlots[(index + 1) % visualSlots.length]?.id ?? current;
       });
     }, 3_500);
     return () => window.clearInterval(timer);
-  }, [previewPlaying, prefersReducedMotion]);
+  }, [previewPlaying, prefersReducedMotion, visualSlots, draftSelected.length]);
 
-  const focusedAgent = SHELL_AGENTS.find((agent) => agent.id === focusedId) ?? null;
+  const focusedAgentId = focusedId ?? speakerKey ?? visualSlots[0]?.id ?? null;
+  const focusedVisible = visible.find(card=>card.id===focusedAgentId) ?? null;
+  const focusedAgent = SHELL_AGENTS.find(agent=>agent.id===focusedAgentId) ?? null;
   const focusedSessions = focusedAgent ? shellSessionsFor(focusedAgent.id, sessions) : [];
   const latestFocusedSession = focusedSessions[0] ?? null;
-  const focusedReadiness = focusedAgent ? shellReadiness(focusedAgent.id, operationalEvidence) : null;
-  const focusedRunCard = focusedAgent ? shellRunCardFor(focusedAgent, discussion) : null;
+  const focusedReadiness = focusedVisible?.kind==="CONFIRMED" && focusedVisible.role
+    ? participantReadinessByRole.get(focusedVisible.role) ?? null
+    : focusedAgent ? shellReadiness(focusedAgent.id, operationalEvidence) : null;
+  const focusedRunCard = focusedVisible?.kind === "CONFIRMED"
+    ? discussion?.participants.find(p=>p.role===focusedVisible.role) ?? null : null;
   const readingPaneMax = usePanelFocus().focusedPanelId === "acf-reading-pane";
 
-  const focusAgent = (agentId: ShellAgentId) => {
+  const focusAgent = (agentId: string) => {
     setPreviewPlaying(false);
     setFocusedId(agentId);
     setReadingSurface("live");
@@ -600,13 +617,13 @@ function TeamRoomShell({
             INTERACTION PREVIEW
           </div>
           <div className="mt-1 text-[11px] text-muted">
-            {discussion ? "Echte run · het middenvak volgt wie het laatst sprak. Klik een agent om zijn laatste bericht te lezen." : "View-only focus movement every 3.5 seconds · no agent is invoked and nobody is claimed to be speaking."}
+            {draftSelected.length ? `${visible.length} DRAFT-deelnemers · alleen lokale keuze, de ACF-run is onveranderd.` : discussion ? `${visible.length} bevestigde ACF-deelnemers · focus volgt alleen werkelijk geëxporteerde berichten.` : "Selecteer agents in Team samenstellen. Er zijn nog geen canonieke ACF-deelnemers."}
           </div>
         </div>
         <button
           type="button"
           aria-pressed={previewPlaying && !prefersReducedMotion}
-          disabled={prefersReducedMotion}
+          disabled={prefersReducedMotion || Boolean(draftSelected.length) || !visualSlots.length}
           title={prefersReducedMotion ? "Automatic focus preview is disabled by reduced-motion preference." : undefined}
           onClick={() => setPreviewPlaying((playing) => !playing)}
           className={"mc-button " + (previewPlaying && !prefersReducedMotion ? "mc-button-primary" : "mc-button-secondary")}
@@ -615,37 +632,52 @@ function TeamRoomShell({
         </button>
       </div>
 
-      <div className="acf-shell-layout">
-        <div className="acf-shell-canvas acf-shell-canvas-preview">
-          <div className="acf-shell-nebula" aria-hidden="true" />
+      <section className="mc-team-original-five" aria-label="Originele Team Room met vier agentvensters en centraal leesvenster" data-testid="original-five-card-room">
+        <header className="mc-team-visual-topline">
+          <div>
+            <h2 className="text-base font-semibold">Team Room · agentvensters & focus</h2>
+            <p className="text-xs text-muted">Vier vrije vensters op de geregistreerde agentpool · geen vaste ACF-lidmaatschapszetels. Kies een kaart voor het centrale leesvenster.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">Vensters {visualSlots.map(a=>a.label).join(" · ")}</span>
+            <button type="button" data-testid="visual-agent-switch" className="mc-button mc-button-secondary mc-button-sm"
+              disabled={SHELL_AGENTS.length<=4}
+              onClick={()=>{setPreviewPlaying(false);setVisualSlotOffset(previous=>(previous+4)%SHELL_AGENTS.length);setFocusedId(null);}}>
+              Andere agents
+            </button>
+          </div>
+        </header>
+          <div className="mc-team-visual-canvas">
           <div className="acf-shell-grid">
-            {SHELL_AGENTS.map((agent) => (
-              <FocusablePanel
+            {visualSlots.map((agent) => {
+              const member=visible.find(card=>card.id===agent.id) ?? null;
+              const runCard=member?.kind==="CONFIRMED" ? discussion?.participants.find(p=>p.role===member.role) ?? null : null;
+              return <FocusablePanel
                 key={agent.id}
-                id={`acf-illustrated-${agent.id}`}
-                label={`${agent.id === "antigravity" ? "AntiGravity 2.0" : agent.label} · ${agent.id === "antigravity" ? "Orchestrator" : "Agent"}`}
-                tone={agent.id === "antigravity" ? "gold" : "default"}
+                id={`acf-illustrated-visual-${agent.id}`}
+                label={`${agent.label} · visual agent/session viewport`}
                 className="acf-illustrated-focus-panel"
                 inlineControls
               >
-                <ShellAgentCard
-                  agent={agent}
-                  sessions={sessions}
-                  readiness={shellReadiness(agent.id, operationalEvidence)}
-                  focused={focusedId === agent.id}
-                  onFocus={() => focusAgent(agent.id)}
-                  runCard={shellRunCardFor(agent, discussion)}
-                  speaking={speakerId === agent.id}
-                />
-              </FocusablePanel>
-            ))}
+                <ShellAgentCard agent={agent} sessions={sessions}
+                  readiness={runCard && member?.role
+                    ? participantReadinessByRole.get(member.role) ?? shellReadiness(agent.id,operationalEvidence)
+                    : shellReadiness(agent.id,operationalEvidence)}
+                  membershipKind={member?.kind==="DRAFT" ? "DRAFT" : "SHELL"}
+                  focused={focusedAgentId===agent.id}
+                  onFocus={()=>focusAgent(agent.id)}
+                  runCard={runCard}
+                  speaking={speakerKey===agent.id && Boolean(runCard)} />
+              </FocusablePanel>;
+            })}
+
           </div>
 
           {focusedAgent && (
             <div className="acf-shell-focus-overlay">
               <motion.section
                 data-agent={focusedAgent.id}
-                className={"acf-shell-focus-card" + (speakerId === focusedAgent.id ? " acf-shell-focus-speaking" : "") + (readingPaneMax ? " acf-shell-focus-card-max" : "")}
+                className={"acf-shell-focus-card" + (speakerKey === focusedAgentId ? " acf-shell-focus-speaking" : "") + (readingPaneMax ? " acf-shell-focus-card-max" : "")}
                 initial={prefersReducedMotion ? false : { scale: 0.985, y: 8, opacity: 0.96 }}
                 animate={{ scale: 1, y: 0, opacity: 1 }}
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
@@ -760,30 +792,64 @@ function TeamRoomShell({
               </motion.section>
             </div>
           )}
+          </div>
+      </section>
+
+      <div className="acf-shell-layout">
+        <section className="acf-shell-selection" aria-label="Selecteer deelnemers voor Team Room">{selection}</section>
+        <div className="acf-shell-canvas acf-shell-canvas-preview">
+          <div className="acf-shell-nebula" aria-hidden="true" />
+          <section className="mc-team-shared-conversation" data-testid="acf-shared-conversation" aria-label="Gezamenlijk ACF-gesprek">
+            <header className="mc-team-shared-conversation-head">
+              <div>
+                <h2 className="text-base font-semibold">Gezamenlijk gesprek</h2>
+                <p className="mt-1 text-xs text-muted">{discussion ? `ACF · ${discussion.history.length} opgeslagen berichten · canonieke run ${runId ?? "?"}` : "Nog geen bevestigde ACF-run · er zijn geen modelantwoorden om te tonen"}</p>
+              </div>
+              <span className="rounded-full border border-cyan-400/40 px-2 py-1 text-[10px] text-cyan-200">ACF READ</span>
+            </header>
+            {draftSelected.length > 0 && <p className="mc-team-shared-draft-note" role="status">{draftSelected.length} conceptdeelnemer(s) geselecteerd. Het gesprek en de bevestigde run veranderen niet.</p>}
+            <div className={freeRoom ? "min-w-0 p-3" : "mc-team-shared-conversation-messages"} data-testid="acf-shared-conversation-messages">
+              {freeRoom ?? (discussion?.history.length ? discussion.history.slice(-18).map(message=>(
+                <article key={message.messageId} className="mc-team-shared-message" data-testid="acf-shared-message">
+                  <div className="flex items-center justify-between gap-2">
+                    <strong className="text-xs">{message.from}</strong>
+                    <span className="text-[10px] text-muted">#{message.sequence} · naar {message.to}</span>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{message.body}</p>
+                </article>
+              )) : <p className="p-4 text-sm text-muted">Nog geen gedeelde berichten in deze ACF-run. Conceptselectie verzendt niets.</p>)}
+            </div>
+          </section>
+
         </div>
 
         <aside className="acf-shell-side">
+          <details className="mc-team-extra-controls">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-semibold text-cyan-200">Aanvullende bediening · sessies · technische status</summary>
+            <div className="mc-team-extra-controls-body">
           {controls}
           <section className="acf-shell-side-panel">
             <div className="text-lg font-semibold">Team Room</div>
-            <div className="mt-1 text-xs text-muted">{SHELL_WORKER_COUNT} AGENTS + {SHELL_ORCHESTRATOR_COUNT} ORCHESTRATOR · {discussion ? `Live run · ${discussion.timeline.length} beurten` : "No ACF Run Yet"}</div>
-            <div className="acf-orchestrator-anchor mt-3" data-agent="antigravity" aria-label="AntiGravity 2.0 Orchestrator identity">
+            <div className="mt-1 text-xs text-muted">{visible.length} {draftSelected.length ? "DRAFT" : "ACF CONFIRMED"} · {discussion ? `${discussion.timeline.length} beurten` : "Geen actieve ACF-run"}</div>
+            {visible.some(member=>member.id==="antigravity") && <div className="acf-orchestrator-anchor mt-3" data-agent="antigravity" aria-label="AntiGravity 2.0 only when selected or canonically bound">
               <span className="acf-orchestrator-crown" aria-hidden="true">♛</span>
               <span className="min-w-0 flex-1">
                 <span className="acf-orchestrator-anchor-name">AntiGravity 2.0</span>
-                <span className="acf-orchestrator-anchor-role">ORCHESTRATOR</span>
+                <span className="acf-orchestrator-anchor-role">ORCHESTRATOR · {visible.find(member=>member.id==="antigravity")?.kind}</span>
               </span>
-            </div>
+            </div>}
             <div className="mt-4 space-y-2">
-              {SHELL_AGENTS.map((agent) => {
+              {visible.map((member) => {
+                const agent=SHELL_AGENTS.find(a=>a.id===member.id);
+                if (!agent) return <p key={member.key} className="text-xs text-warn">Onbekende ACF agent: {member.agentId}</p>;
                 const readiness = shellReadiness(agent.id, operationalEvidence);
                 return (
                   <button
                     type="button"
-                    key={agent.id}
+                    key={member.key}
                     data-agent={agent.id}
                     onClick={() => focusAgent(agent.id)}
-                    className={"acf-shell-roster-button " + (focusedId === agent.id ? "acf-shell-roster-button-active" : "")}
+                    className={"acf-shell-roster-button " + (focusedAgentId === agent.id ? "acf-shell-roster-button-active" : "")}
                   >
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
@@ -813,15 +879,17 @@ function TeamRoomShell({
               {discussion ? `Echte ACF-run ${runId ?? ""}. Wat je leest komt uit ACF; het middenvak volgt de laatste spreker.` : "NO_REAL_TEAM_RUN_YET. Focus animation is view-only until ACF exports real participant messages."}
             </div>
           </section>
+            </div>
+          </details>
         </aside>
       </div>
 
       <footer className="acf-shell-status">
         <span><strong>●</strong> {discussion ? `Live run ${runId ?? ""}` : "No Real ACF Run Yet"}</span>
-        <span>{SHELL_AGENTS.length} participants · {SHELL_WORKER_COUNT} agents + {SHELL_ORCHESTRATOR_COUNT} orchestrator</span>
+        <span>{visible.length} {draftSelected.length ? "DRAFT · not saved" : "confirmed ACF participants"}</span>
         <span>{discussion ? discussion.history.length : 0} ACF messages</span>
         <span>MC session source</span>
-        <span>Read only · {readLabel}</span>
+        <span>{freeRoom ? "ACF operatorbediening · " : "Read only · "}{readLabel}</span>
       </footer>
     </section>
   );
@@ -852,6 +920,9 @@ export function TeamRoomView() {
   const [openPins, setOpenPins] = useState<Record<string, string>>({});
   const [openSessions, setOpenSessions] = useState<Parameters<typeof TeamOpenSessions>[0]["answer"]>(null);
   const [cockpitSessions, setCockpitSessions] = useState<CockpitSessionSummary[]>([]);
+  // One selection source: the inline composer and the visual room consume this same presentation state.
+  const [draftChoices,setDraftChoices] = useState<Record<string,TeamDraftChoice>>({});
+  const draftSelected = COCKPIT_AGENT_TARGETS.filter(a=>draftChoices[a.apiAgentId]?.selected).map(a=>a.apiAgentId);
   const [operationalEvidence, setOperationalEvidence] = useState<OperationalEvidenceMap>({});
 
   const refresh = useCallback(async (runId: string | null) => {
@@ -929,6 +1000,12 @@ export function TeamRoomView() {
   const [autoRun, setAutoRun] = useState(false);
   type ControlAnswer = { ok: boolean; code?: string; detail?: string; result?: Record<string, unknown>; sessions?: Record<string, unknown> };
   const callControl = useCallback(async (verb: string, args: Record<string, unknown>): Promise<ControlAnswer> => {
+    // One operator stateflow: a visible DRAFT must never drive the old canonical
+    // run by an incidental click in the already-mounted OperatorDeck.
+    if (draftSelected.length > 0 && verb !== "team-open-participants" && verb !== "team-join") {
+      return { ok: false, code: "DRAFT_SELECTION_PENDING",
+        detail: "Conceptselectie actief. Bevestig Nieuw team of Toevoegen, of wis de selectie voordat je de bestaande run bedient." };
+    }
     try {
       const response = await fetch("/api/acf/team-room/control", {
         method: "POST",
@@ -939,7 +1016,7 @@ export function TeamRoomView() {
     } catch (error) {
       return { ok: false, code: "NETWORK", detail: error instanceof Error ? error.message : "request failed" };
     }
-  }, []);
+  }, [draftSelected.length]);
   const waitForStep = useCallback(async (runId: string): Promise<ControlAnswer | null> => {
     for (let i = 0; i < 160; i++) {          // up to ~8 minutes
       await new Promise((resolve) => window.setTimeout(resolve, 3_000));
@@ -1028,17 +1105,18 @@ export function TeamRoomView() {
         return [agent.id as ReadinessAgentId, await response.json() as ConnectorStatusClient] as const;
       });
 
-      const participantsByTarget = new Map<ReadinessAgentId, TeamRoomParticipantCard>();
+      const participantsByRole = new Map<string, TeamRoomParticipantCard>();
       for (const participant of discussion?.participants ?? []) {
-        const targetId = normalizedReadinessAgentId(participant.agentId);
-        if (targetId) participantsByTarget.set(targetId, participant);
+        if (normalizedReadinessAgentId(participant.agentId)) participantsByRole.set(participant.role, participant);
       }
 
-      const sessionPromises = Array.from(participantsByTarget.entries()).map(async ([targetId, participant]) => {
-        if (!participant.sessionRef || !participant.agentId) return [targetId, null] as const;
+      const sessionPromises = Array.from(participantsByRole.entries()).map(async ([role, participant]) => {
+        const targetId = normalizedReadinessAgentId(participant.agentId);
+        if (!targetId) return [role, null] as const;
+        if (!participant.sessionRef || !participant.agentId) return [role, null] as const;
         const apiAgentId = participant.agentId === "antigravity" ? "agy" : participant.agentId;
         const target = getCockpitAgentByApiId(apiAgentId);
-        if (!target) return [targetId, null] as const;
+        if (!target) return [role, null] as const;
         const endpoint = `${target.sessionEndpoint}?sessionId=${encodeURIComponent(participant.sessionRef)}`;
         const response = await fetch(endpoint, { cache: "no-store" });
         if (!response.ok) throw new Error(`${targetId} session readiness HTTP ${response.status}`);
@@ -1060,7 +1138,7 @@ export function TeamRoomView() {
           source: `GET ${endpoint} · exact ACF-bound session`,
           observedAt,
         };
-        return [targetId, observation] as const;
+        return [role, observation] as const;
       });
 
       const [truthResult, statusResults, sessionResults] = await Promise.all([
@@ -1093,14 +1171,14 @@ export function TeamRoomView() {
         else failedStatuses.add(agentId);
       });
 
-      const sessionMap = new Map<ReadinessAgentId, SessionReadinessObservation | null>();
-      const failedSessions = new Set<ReadinessAgentId>();
+      const sessionMap = new Map<string, SessionReadinessObservation | null>();
+      const failedSessions = new Set<string>();
       sessionResults.forEach((result, index) => {
-        const entry = Array.from(participantsByTarget.entries())[index];
+        const entry = Array.from(participantsByRole.entries())[index];
         if (!entry) return;
-        const targetId = entry[0];
-        if (result.ok) sessionMap.set(targetId, result.value[1]);
-        else failedSessions.add(targetId);
+        const role = entry[0];
+        if (result.ok) sessionMap.set(role, result.value[1]);
+        else failedSessions.add(role);
       });
 
       setOperationalEvidence((previous) => {
@@ -1142,12 +1220,18 @@ export function TeamRoomView() {
             }
           }
 
-          let session = sessionMap.has(agent.id as ReadinessAgentId) ? sessionMap.get(agent.id as ReadinessAgentId) ?? null : null;
-          if (failedSessions.has(agent.id as ReadinessAgentId)) {
-            session = prior?.session ? { ...prior.session, stale: true } : null;
-          }
-
-          next[agent.id as ReadinessAgentId] = { runtime, requiredTransport, session };
+          // Pool state is agent-level; never attach a random independent participant session.
+          next[agent.id as ReadinessAgentId] = { runtime, requiredTransport, session: null };
+        }
+        for (const [role, participant] of participantsByRole) {
+          const agentId = normalizedReadinessAgentId(participant.agentId);
+          if (!agentId) continue;
+          const pool = next[agentId];
+          const slot = `participant:${role}`;
+          const prior = previous[slot];
+          let session = sessionMap.get(role) ?? null;
+          if (failedSessions.has(role) && prior?.session) session = { ...prior.session, stale: true };
+          next[slot] = { runtime: pool?.runtime ?? null, requiredTransport: pool?.requiredTransport ?? null, session };
         }
         return next;
       });
@@ -1231,23 +1315,40 @@ export function TeamRoomView() {
         <TeamRoomShell
           key={selected?.runId ?? "empty"}
           sessions={cockpitSessions}
+          draftSelected={draftSelected}
+          participantReadinessByRole={participantReadinessByRole}
           readLabel={presentation.label}
           operationalEvidence={operationalEvidence}
           discussion={display?.availability === "available" ? discussion : null}
           runId={display?.availability === "available" ? selected?.runId ?? null : null}
+          freeRoom={display?.availability === "available" && selected?.teamView?.schema===2
+            ? <FreeRoomPanel key={selected.runId} run={selected} busy={controlBusy} setBusy={setControlBusy}
+                callControl={callControl} waitForStep={waitForStep} readView={readView} refresh={refresh}
+                disabled={draftSelected.length>0 || presentation.stale || Boolean(refreshError)} />
+            : null}
+          selection={<RosterTeamComposer run={selected} busy={controlBusy} callControl={callControl}
+            onSelectRun={(id)=>{setDraftChoices({});setSelectedRunId(id);void refresh(id);}}
+            refresh={async id=>{await refresh(id);}}
+            choices={draftChoices} onChoicesChange={setDraftChoices} />}
           controls={(
             <section className="acf-shell-side-panel acf-shell-controls">
               <div className="text-lg font-semibold">Bediening</div>
               {display?.availability === "available" && selected?.teamView ? (
                 <>
                   <div className="mt-1 text-xs text-muted">Run {selected.teamView.run_status} · Loop {String(selected.teamView.loop?.status ?? "?")} · {selected.teamView.turns.length} beurten</div>
-                  <div className={"mt-1 text-xs font-semibold " + (selected.teamView.autonomy === "OPERATOR_INTERVENTION" ? "text-warn" : "text-ok")}>
-                    {selected.teamView.autonomy === "OPERATOR_INTERVENTION" ? `Dennis grijpt in (${selected.teamView.intervention?.open?.intervention_id ?? "?"}) — team gepauzeerd` : selected.teamView.autonomy === "AUTONOMOUS" || !selected.teamView.autonomy ? "Team werkt zelfstandig" : selected.teamView.autonomy}
+                  <div className={"mt-1 text-xs font-semibold " + (draftSelected.length > 0 || selected.teamView.schema===2 && !selected.teamView.tasks?.length || selected.teamView.autonomy === "OPERATOR_INTERVENTION" ? "text-warn" : "text-ok")}>
+                    {draftSelected.length > 0
+                      ? `${draftSelected.length} DRAFT · alleen conceptselectie; bestaande ACF-run onveranderd`
+                      : selected.teamView.schema===2 && !selected.teamView.tasks?.length
+                      ? "Schema 2 · nog geen taak toegekend, geen agent werkt"
+                      : selected.teamView.autonomy === "OPERATOR_INTERVENTION" ? `Dennis grijpt in (${selected.teamView.intervention?.open?.intervention_id ?? "?"}) — team gepauzeerd`
+                      : selected.teamView.autonomy === "AUTONOMOUS" || !selected.teamView.autonomy ? "ACF-run zelfstandig ingesteld (activiteit alleen volgens bevestigde turns)" : selected.teamView.autonomy}
                   </div>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <button type="button" className="mc-button mc-button-success disabled:opacity-50" disabled={controlBusy!==null} onClick={()=>void stepTeam(selected.runId,false)}>{controlBusy==="team-step" ? "Beurt loopt…" : "Volgende beurt"}</button>
-                    <button type="button" className="mc-button mc-button-secondary disabled:opacity-50" disabled={controlBusy!==null} onClick={()=>void stepTeam(selected.runId,true)}>{autoRun ? "Loopt…" : "Automatisch"}</button>
-                  </div>
+                  {draftSelected.length > 0 && <p className="mt-2 text-xs text-warn" role="status">Bestaande run geblokkeerd zolang de selectie DRAFT is. Bevestig Nieuw team/Toevoegen of vink alle conceptdeelnemers uit.</p>}
+                  {selected.teamView.schema!==2 && <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button type="button" className="mc-button mc-button-success disabled:opacity-50" disabled={controlBusy!==null || draftSelected.length>0} onClick={()=>void stepTeam(selected.runId,false)}>{controlBusy==="team-step" ? "Beurt loopt…" : "Volgende beurt"}</button>
+                    <button type="button" className="mc-button mc-button-secondary disabled:opacity-50" disabled={controlBusy!==null || draftSelected.length>0} onClick={()=>void stepTeam(selected.runId,true)}>{autoRun ? "Loopt…" : "Automatisch"}</button>
+                  </div>}
                 </>
               ) : (
                 <div className="mt-1 text-xs text-muted">Nog geen run geselecteerd.</div>
@@ -1268,19 +1369,22 @@ export function TeamRoomView() {
       )}
 
       {mode === "discuss" && display?.availability === "available" && selected?.teamView && (
+        <details className="mx-4 my-2 rounded-lg border border-border/60 p-2" open={selected.teamView.schema!==2 ? true : undefined}>
+        <summary className="cursor-pointer text-xs text-muted">Geavanceerd · operatorinterventies en historische controls</summary>
         <OperatorDeck
           key={`operator-deck:${selected.runId}`}
           run={selected}
-          busy={controlBusy}
+          busy={draftSelected.length>0 ? "draft-selection" : controlBusy}
           setBusy={setControlBusy}
           callControl={callControl}
           waitForStep={waitForStep}
           refresh={refresh}
           readView={readView}
           onSelectRun={(runId) => { setSelectedRunId(runId); setFocusPreference({ role: null, sequence: null }); void refresh(runId); }}
-        />
+        /></details>
       )}
 
+      <details className="mx-4 my-2 rounded-lg border border-border/60 p-2"><summary className="cursor-pointer text-xs text-muted">Historische v1 team-open (builder/reviewer) · uitklappen</summary>
       <section className="mx-4 my-3 rounded-xl border border-cyan-400/40 bg-panel-2 p-4" aria-label="ACF Team Room objective">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold">Nieuw team-doel</h2>
@@ -1291,9 +1395,10 @@ export function TeamRoomView() {
         <label className="mt-3 block text-sm" htmlFor="acf-success-criterion">Wanneer is het goed?</label>
         <textarea id="acf-success-criterion" value={operatorSuccessCriterion} onChange={event=>setOperatorSuccessCriterion(event.target.value)} rows={2} maxLength={400} placeholder="Waar moet de reviewer bewijs van zien?" className="mt-1 w-full min-w-0 rounded-lg border border-border bg-background p-3 text-sm" />
         <TeamOpenSessions roles={openRoles} setRoles={setOpenRoles} pins={openPins} setPins={setOpenPins} answer={openSessions} setAnswer={setOpenSessions} />
-        <button type="button" onClick={()=>void openTeam()} disabled={controlBusy!==null || !operatorObjective.trim() || !operatorSuccessCriterion.trim()} className="mt-3 mc-button mc-button-success disabled:opacity-50">{controlBusy==="team-open" ? "Bezig…" : "Start team"}</button>
+        <button type="button" onClick={()=>void openTeam()} disabled={controlBusy!==null || draftSelected.length>0 || !operatorObjective.trim() || !operatorSuccessCriterion.trim()} className="mt-3 mc-button mc-button-success disabled:opacity-50">{controlBusy==="team-open" ? "Bezig…" : "Start team"}</button>
         {controlNote && <p className="mt-2 text-sm" role="status">{controlNote}</p>}
       </section>
+      </details>
       {selected?.teamView && (
         <section className="mx-4 my-3 rounded-xl border border-border bg-panel-2 p-4 text-xs" aria-label="ACF operator controls">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1304,8 +1409,8 @@ export function TeamRoomView() {
           <p className="mt-1">Volgende: {selected.nextSafeAction ?? "—"}</p>
           {selected.teamView.in_flight ? <p className="mt-1 text-warn">Er loopt een beurt.</p> : null}
           <div className="mt-3 flex flex-wrap gap-2" aria-label="ACF operator actions">
-            <button type="button" className="mc-button mc-button-success disabled:opacity-50" disabled={controlBusy!==null} onClick={()=>void stepTeam(selected.runId,false)}>{controlBusy==="team-step" ? "Beurt loopt…" : "Volgende beurt"}</button>
-            <button type="button" className="mc-button mc-button-secondary disabled:opacity-50" disabled={controlBusy!==null} onClick={()=>void stepTeam(selected.runId,true)}>{autoRun ? "Loopt automatisch…" : "Automatisch doorlopen"}</button>
+            <button type="button" className="mc-button mc-button-success disabled:opacity-50" disabled={controlBusy!==null || draftSelected.length>0} onClick={()=>void stepTeam(selected.runId,false)}>{controlBusy==="team-step" ? "Beurt loopt…" : "Volgende beurt"}</button>
+            <button type="button" className="mc-button mc-button-secondary disabled:opacity-50" disabled={controlBusy!==null || draftSelected.length>0} onClick={()=>void stepTeam(selected.runId,true)}>{autoRun ? "Loopt automatisch…" : "Automatisch doorlopen"}</button>
           </div>
           {controlNote && <p className="mt-2 text-sm" role="status">{controlNote}</p>}
           <details className="mt-3">
@@ -1333,7 +1438,7 @@ export function TeamRoomView() {
             </div>})()}
           </header>
           <div className="acf-dynamic-terminals mt-3" aria-label="Registry agent terminals">
-            {SHELL_AGENTS.map(agent=>{const participant=selected.participants.find(p=>p.agentId===agent.apiAgentId||p.agentId===agent.id);const messages=exactParticipantMessages(selected,agent);const observed=shellSessionsFor(agent.id,cockpitSessions);return <section key={agent.id} className="min-w-0 rounded-xl border border-border bg-panel-2 p-3" data-agent={agent.id}>
+            {SHELL_AGENTS.filter(agent=>selected.participants.some(p=>p.agentId===agent.apiAgentId||p.agentId===agent.id)).map(agent=>{const participant=selected.participants.find(p=>p.agentId===agent.apiAgentId||p.agentId===agent.id);const messages=exactParticipantMessages(selected,agent);const observed=shellSessionsFor(agent.id,cockpitSessions);return <section key={agent.id} className="min-w-0 rounded-xl border border-border bg-panel-2 p-3" data-agent={agent.id}>
               <header className="flex flex-wrap items-center justify-between gap-2"><h3 className="acf-dynamic-agent-name font-semibold">{labelForAgent(agent.id)}</h3><span className="text-xs text-muted">{participant?"ACF PARTICIPANT · CLAIMED":"NOT ACF-BOUND"}</span></header>
               <p className="mt-1 break-all text-xs text-muted">{participant?`Bound session: ${participant.sessionRef??"UNKNOWN"}`:`${observed.length} MC session record(s); no ACF participant claim`}</p>
               <div className="mt-2 max-h-72 space-y-2 overflow-y-auto overscroll-contain" aria-label={`${labelForAgent(agent.id)} authentic history`}>

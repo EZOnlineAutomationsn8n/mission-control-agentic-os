@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { appendAuditEvent } from "@/lib/audit-log-store";
-import { resolveAttachments } from "@/lib/attachments/store";
-import { promptWithLocalPixelEvidence } from "@/lib/attachments/local-pixel-observation";
-import { hasImageAttachments, runLocalSemanticVision, verifyLocalVisionModel } from "@/lib/attachments/local-semantic-vision";
+import { promptWithAttachments, resolveAttachments } from "@/lib/attachments/store";
 import { executeConversationRequest, type ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
@@ -159,24 +157,7 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "invalid attachments" }, { status: 400 });
   }
-  // Images never fall back to paid or text-only agent routes. A local vision model must
-  // be explicitly enabled, installed and verified with native vision capability.
-  const containsImage = hasImageAttachments(attachments);
-  let localVision: Awaited<ReturnType<typeof verifyLocalVisionModel>> | null = null;
-  if (containsImage) {
-    if (attachments.filter((item) => /\.(?:png|jpe?g|webp|gif|heic|svg)$/i.test(item.name)).length > 3 ||
-        attachments.some((item) => /\.(?:heic|svg)$/i.test(item.name))) {
-      return NextResponse.json({ error: "VISION_IMAGE_FORMAT_OR_COUNT_UNSUPPORTED" }, { status: 422 });
-    }
-    try { localVision = await verifyLocalVisionModel(); }
-    catch (error) { return NextResponse.json({ error: error instanceof Error ? error.message : "VISION_MODEL_NOT_VERIFIED" }, { status: 422 }); }
-  }
-  let effectivePrompt: string;
-  try {
-    effectivePrompt = await promptWithLocalPixelEvidence(prompt.trim(), attachments);
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "local image inspection unavailable" }, { status: 422 });
-  }
+  const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
 
   const session = await readCliAgentSession(agentId, key);
   if (!session?.active) return NextResponse.json({ error: `${LABELS[agentId]} session is stopped; start it before sending a prompt` }, { status: 409 });
@@ -192,7 +173,7 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
     attachments,
     actionType: `${agentId}-agent-turn`,
     initiator: parsedInitiator.initiator ?? undefined,
-    run: () => localVision ? runLocalSemanticVision({ prompt: prompt.trim(), attachments, sessionId: key, agentId, verified: localVision }) : runAgentTurn(agentId, session, effectivePrompt, false),
+    run: () => runAgentTurn(agentId, session, effectivePrompt, false),
   });
   await updateCliAgentSession(agentId, key, {
     runtimeSessionId: persisted.entry.agentSessionId ?? session.runtimeSessionId,

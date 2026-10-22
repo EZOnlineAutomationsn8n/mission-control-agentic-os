@@ -116,7 +116,7 @@ export function EvidenceView() {
         </p>
         <div className="mono text-xs space-y-1 max-h-64 overflow-y-auto">
           {actions.map((a, i) => (
-            <div key={`${a.timestamp}-${i}`} className="mc-log-row flex gap-2">
+            <div key={`${a.timestamp}-${i}`} className="flex gap-2">
               <span className="text-muted shrink-0">{new Date(a.timestamp).toLocaleTimeString()}</span>
               <span className="text-muted shrink-0 w-24 truncate">
                 {connectorRegistry.get(a.connectorId)?.descriptor().name ?? a.connectorId}
@@ -148,7 +148,7 @@ export function EvidenceView() {
         </p>
         <div className="mono text-xs space-y-1 max-h-64 overflow-y-auto">
           {persistedAudit.map((a, i) => (
-            <div key={`${a.timestamp}-${i}`} className="mc-log-row flex gap-2">
+            <div key={`${a.timestamp}-${i}`} className="flex gap-2">
               <span className="text-muted shrink-0">{new Date(a.timestamp).toLocaleTimeString()}</span>
               <span className="text-muted shrink-0 w-24 truncate">
                 {connectorRegistry.get(a.connectorId)?.descriptor().name ?? a.connectorId}
@@ -173,9 +173,9 @@ export function EvidenceView() {
 
       <FocusablePanel id="evidence-structured-logs" label="Evidence · Structured logs">
       <div className="rounded-lg border border-border bg-panel p-4 h-full">
-        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex items-center justify-between mb-3">
           <div className="text-sm font-medium">Structured logs</div>
-          <div className="flex flex-wrap gap-2 text-xs min-w-0">
+          <div className="flex gap-2 text-xs">
             <select value={agentFilter} onChange={(e) => setAgentFilter(e.target.value)} className="bg-panel-2 rounded px-2 py-1">
               <option value="all">All agents</option>
               {connectorRegistry.list().map((a) => (
@@ -199,7 +199,7 @@ export function EvidenceView() {
         </div>
         <div className="mono text-xs space-y-1 max-h-96 overflow-y-auto">
           {filteredLogs.map((l) => (
-            <div key={l.id} className="mc-log-row flex gap-2">
+            <div key={l.id} className="flex gap-2">
               <span className="text-muted shrink-0">{new Date(l.timestamp).toLocaleTimeString()}</span>
               <span className="text-muted shrink-0 w-24 truncate">{connectorRegistry.get(l.agentId)?.descriptor().name ?? l.agentId}</span>
               <span

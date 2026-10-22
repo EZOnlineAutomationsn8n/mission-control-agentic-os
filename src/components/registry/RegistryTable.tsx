@@ -110,12 +110,12 @@ export function RegistryTable() {
 
       <FocusablePanel id="registry-systems" label="System Registry · Connectors">
       <div className="space-y-3">
-      <div className="flex flex-wrap gap-2 items-center pr-10">
+      <div className="flex gap-2 items-center">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search connectors, category, capability…"
-          className="flex-1 basis-48 min-w-0 bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
+          className="flex-1 bg-panel-2 rounded px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-accent"
         />
         <select
           value={categoryFilter}

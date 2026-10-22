@@ -92,7 +92,8 @@ export async function readHermesLiveStatus(): Promise<HermesLiveStatus> {
     }
   }
 
-  const pidAlive = await isPidAlive(pid);
+  // Container-local /proc cannot establish liveness of an unobservable host PID.
+  const pidAlive = pid === null ? null : await isPidAlive(pid);
 
   let contractStatus = "unknown";
   if (contractResult.ok) {
@@ -104,13 +105,14 @@ export async function readHermesLiveStatus(): Promise<HermesLiveStatus> {
   }
 
   let status: HermesLiveStatus["status"];
-  if (stateResult.ok && pidAlive) {
+  if (stateResult.ok && pid !== null && pidAlive) {
     status = "connected";
-  } else if (stateResult.ok && !pidAlive) {
+  } else if (stateResult.ok && pid !== null && pidAlive === false) {
     status = "degraded";
     errors.push("gateway state file readable but pid is not alive");
   } else {
-    status = "disconnected";
+    status = "unknown";
+    errors.push("Host Hermes gateway state is not observable from this Mission Control container; host service and CLI readiness unverified");
   }
 
   if (contractStatus === "SCAFFOLD_ONLY" && status === "connected") {
@@ -136,5 +138,13 @@ export async function readHermesLiveStatus(): Promise<HermesLiveStatus> {
     commandExecution: false,
     lastCheckedAt: new Date().toISOString(),
     errors,
+    evidence: {
+      hostService: "UNOBSERVABLE_FROM_MC_CONTAINER",
+      mcRuntimeReachable: status === "connected" ? true : null,
+      modelCompletionProven: null,
+      acfSessionEligible: null, // The real ACF roster, not this adapter, owns eligibility.
+      acfRunParticipant: null, // The canonical run read, not this adapter, owns membership.
+      hostObservationRoute: "VPS systemd host owner observation (external to MC container)",
+    },
   };
 }

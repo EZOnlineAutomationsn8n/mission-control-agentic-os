@@ -104,7 +104,7 @@ function blockerReason(live: HermesLiveStatus): string | null {
   if (live.status === "connected") return null;
   const reasons: string[] = [];
   if (live.contractStatus === "SCAFFOLD_ONLY") reasons.push("integration contract is scaffold-only");
-  if (live.platforms.length === 0) reasons.push("no messaging platform bridged");
+  if (live.platforms.length === 0 && live.status !== "unknown") reasons.push("no messaging platform bridged");
   reasons.push("no operator command route wired");
   return reasons.join("; ");
 }
@@ -113,7 +113,7 @@ function toStatusDetail(live: HermesLiveStatus): Record<string, string> {
   const detail: Record<string, string> = {
     "gateway state": live.gatewayState,
     pid: live.pid !== null ? String(live.pid) : "unknown",
-    "pid alive": live.pidAlive ? "yes" : "no",
+    "pid alive": live.pidAlive === null ? "unknown (container boundary)" : live.pidAlive ? "yes" : "no",
     "platforms bridged": live.platforms.length > 0 ? live.platforms.join(", ") : "none",
     provider: live.provider,
     "default model": live.defaultModel,
@@ -157,20 +157,24 @@ export const hermesAdapter: AgentSystemAdapter = {
       // Never claim live status when we couldn't confirm it.
       return {
         ...baseState,
+        status: "unknown",
+        runState: "blocked",
+        health: "warn",
+        currentTask: "Runtime status unknown: live status API unavailable",
         commandExecution: false,
-        outputKind: "mock-stream",
-        statusDetail: null,
+        outputKind: "live-status",
+        statusDetail: { "runtime observation": "unknown", "reason": "Mission Control could not read the live status API" },
       };
     }
 
     const runState: RunState =
-      live.status === "connected" ? "running" : live.status === "degraded" ? "error" : "stopped";
+      live.status === "connected" ? "running" : live.status === "degraded" ? "error" : live.status === "unknown" ? "blocked" : "stopped";
 
     return {
       ...baseState,
       status: live.status,
       runState,
-      health: live.status === "connected" ? "ok" : live.status === "degraded" ? "warn" : "fail",
+      health: live.status === "connected" ? "ok" : live.status === "degraded" || live.status === "unknown" ? "warn" : "fail",
       currentTask: `Gateway ${live.gatewayState} (${live.status}) — ${live.source}`,
       connectorMode: "filesystem",
       commandExecution: false,

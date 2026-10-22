@@ -3,7 +3,7 @@
 // the browser bundle. The actual reader lives in openclaw-status.ts and is
 // only ever invoked from the server-side API route.
 
-export type OpenClawConnectorStatus = "connected" | "degraded" | "disconnected";
+export type OpenClawConnectorStatus = "unknown" | "connected" | "degraded" | "disconnected";
 
 export interface OpenClawLiveStatus {
   systemId: "openclaw";

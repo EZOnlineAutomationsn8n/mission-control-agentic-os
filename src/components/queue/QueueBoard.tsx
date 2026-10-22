@@ -40,7 +40,7 @@ export function QueueBoard() {
           <h1 className="text-lg font-semibold">Work Queue</h1>
           <p className="text-sm text-muted mt-1">Live projection of PostgreSQL work items and the append-only audit ledger.</p>
         </div>
-        <Link href="/pipeline" className="shrink-0 whitespace-nowrap rounded bg-accent/20 px-3 py-2 text-xs text-accent hover:bg-accent/30">Open pipeline</Link>
+        <Link href="/pipeline" className="rounded bg-accent/20 px-3 py-2 text-xs text-accent hover:bg-accent/30">Open pipeline</Link>
       </div>
       {error && <div className="rounded border border-danger/40 bg-danger/10 p-3 text-sm text-danger">{error}</div>}
       <FocusablePanel id="queue-board" label="Work Queue · Board">

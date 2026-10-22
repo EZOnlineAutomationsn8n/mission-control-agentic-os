@@ -11,6 +11,7 @@ import {
 import { AgentConversationPanel } from "./AgentConversationPanel";
 import { getCockpitRoutePresentation } from "@/lib/cockpit-route-presentation";
 import { FocusablePanel } from "@/components/shell/PanelFocus";
+import { startBoundedPoll, fetchJsonBounded } from "@/lib/cockpit/bounded-poll";
 
 const STORAGE_KEY = "mission-control-pane-bindings-v5";
 const LEGACY_STORAGE_KEY = "mission-control-terminal-slots-v2";
@@ -76,25 +77,23 @@ export function TerminalWorkspace() {
   const [sessionDiscoveryError, setSessionDiscoveryError] = useState<string | null>(null);
   const [presentationHydrated, setPresentationHydrated] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadSessions() {
-      try {
-        const response = await fetch("/api/cockpit/sessions", { cache: "no-store" });
-        const body = await response.json() as { sessions?: CockpitSessionSummary[]; error?: string };
-        if (!response.ok) throw new Error(body.error ?? `session discovery returned HTTP ${response.status}`);
-        if (!cancelled) {
-          setSessions(body.sessions ?? []);
-          setSessionDiscoveryError(null);
-        }
-      } catch (error) {
-        if (!cancelled) setSessionDiscoveryError(error instanceof Error ? error.message : "session discovery unavailable");
+  useEffect(() => startBoundedPoll(async (signal) => {
+    try {
+      const body = await fetchJsonBounded<{ sessions?: CockpitSessionSummary[]; error?: string }>(
+        "/api/cockpit/sessions", { signal }
+      );
+      if (!signal.aborted) {
+        setSessions(body.sessions ?? []);
+        setSessionDiscoveryError(null);
       }
+      return !signal.aborted;
+    } catch (error) {
+      if (!signal.aborted) setSessionDiscoveryError(
+        error instanceof Error ? error.message : "session discovery unavailable"
+      );
+      return false;
     }
-    void loadSessions();
-    const timer = window.setInterval(() => void loadSessions(), 5000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, []);
+  }, { intervalMs: 5_000, timeoutMs: 8_000, maxBackoffMs: 30_000 }), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -263,14 +262,14 @@ export function TerminalWorkspace() {
               onFocusCapture={() => setActiveSlot(slotIndex)}
               className={'mc-pane overflow-hidden h-[calc(100dvh-9rem)] min-h-[36rem] max-h-[72rem] xl:h-[calc(100dvh-12rem)] xl:min-h-[48rem] flex flex-col ' + (activeSlot === slotIndex ? "mc-pane-selected" : "")}
             >
-              <header className="mc-pane-header px-2.5 py-2 shrink-0">
-                <div className="flex flex-wrap items-center gap-2">
+              <header className="mc-pane-header mc-operator-pane-header px-2.5 py-2 shrink-0">
+                <div className="mc-operator-pane-header-controls flex flex-wrap items-center gap-2">
                   <span className="mc-pane-number">P{slotIndex + 1}</span>
                   <span className="status-dot shrink-0" style={{ backgroundColor: sessionDot(boundSession) }} title={sessionStatusText(boundSession)} />
                   <select
                     value={target.id}
                     onChange={(event) => assignTarget(slotIndex, event.target.value)}
-                    className="mc-pane-agent-select min-w-[8.5rem] flex-[1_1_10rem] outline-none"
+                    className="mc-pane-agent-select mc-operator-agent-select min-w-[8.5rem] flex-[1_1_10rem] outline-none"
                     aria-label={`Agent for pane ${slotIndex + 1}`}
                   >
                     {COCKPIT_AGENT_TARGETS.map((entry) => {
@@ -278,12 +277,12 @@ export function TerminalWorkspace() {
                       return <option key={entry.id} value={entry.id} className="bg-panel text-foreground">{entry.label} · {route.routeType} · {route.routeStatus}</option>;
                     })}
                   </select>
-                  <span className="rounded-full border border-border bg-panel-2 px-2 py-0.5 text-[9px] font-semibold tracking-wide text-foreground shrink-0" title={routePresentation.routeStatusDetail}>
+                  <span className="mc-operator-route-badge rounded-full border border-border bg-panel-2 px-2 py-0.5 text-[9px] font-semibold tracking-wide text-foreground shrink-0" title={routePresentation.routeStatusDetail}>
                     {routePresentation.routeType} · {routePresentation.routeStatus}
                   </span>
-                  <span className="text-[10px] font-semibold text-muted shrink-0">{sessionStatusText(boundSession)}</span>
+                  <span className="mc-operator-session-status text-[10px] font-semibold text-muted shrink-0">{sessionStatusText(boundSession)}</span>
                   {activeSlot === slotIndex && <span className="mc-pane-selected-badge rounded-full px-2 py-0.5 text-[9px] font-semibold">Selected</span>}
-                  <div className="flex min-w-[13rem] flex-[1.4_1_17rem] items-center gap-1.5">
+                  <div className="mc-operator-session-control flex min-w-[13rem] flex-[1.4_1_17rem] items-center gap-1.5">
                     <span className="text-[9px] font-semibold tracking-wide text-muted shrink-0">Session</span>
                     <select
                       value={binding.sessionId}
@@ -297,7 +296,7 @@ export function TerminalWorkspace() {
                         </option>
                       ))}
                     </select>
-                    <button type="button" onClick={() => createSessionBinding(slotIndex)} className="mc-button mc-button-secondary mc-button-sm" title="Prepare a new independent session key for this pane; no runtime starts until Start is clicked">
+                    <button type="button" onClick={() => createSessionBinding(slotIndex)} className="mc-button mc-button-secondary mc-button-sm mc-operator-new-session" title="Prepare a new independent session key for this pane; no runtime starts until Start is clicked">
                       New session
                     </button>
                   </div>

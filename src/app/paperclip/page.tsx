@@ -30,7 +30,7 @@ export default function PaperclipPage() {
         </div>
       </div>
 
-      <FocusablePanel id="paperclip-runtime" label="Paperclip · Runtime console">
+      <FocusablePanel id="paperclip-runtime" label="Paperclip · Runtime console" className="max-w-xl">
       <div>
         <AgentWindow systemId="paperclip" />
         <div className="mt-2 text-xs">

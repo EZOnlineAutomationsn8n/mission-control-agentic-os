@@ -108,16 +108,21 @@ export async function readOpenClawLiveStatus(): Promise<OpenClawLiveStatus> {
   }
 
   if (REQUIRE_LOCAL_PROCESS && !pidAlive) {
-    errors.push("no process matching the expected OpenClaw gateway command shape was found");
+    errors.push("OpenClaw process not visible in this PID namespace; host process status unverified");
   }
 
   let status: OpenClawLiveStatus["status"];
-  if (gatewayReachable && (pidAlive || !REQUIRE_LOCAL_PROCESS)) {
+  const healthBody = health.reachable ? (health.body as { ok?: unknown; status?: unknown } | null) : null;
+  const verifiedHealthy = health.reachable && gatewayReachable
+    && Boolean(healthBody && (healthBody.ok === true || healthBody.status === "live" || healthBody.status === "ok"));
+  if (verifiedHealthy && (pidAlive || !REQUIRE_LOCAL_PROCESS)) {
     status = "connected";
   } else if (pidAlive || gatewayReachable) {
     status = "degraded";
   } else {
-    status = "disconnected";
+    // Container-local loopback and a missing host relay cannot prove host shutdown.
+    status = "unknown";
+    errors.push("Host gateway reachability is unverified from this container network namespace");
   }
 
   return {

@@ -20,8 +20,8 @@ export const ACF_PROJECT_ROOT = process.env.ACF_PROJECT_ROOT || "/workspace/proj
 export const ACF_TEAM_ROOM_HOME = process.env.ACF_STATE_DIR || `${ACF_PROJECT_ROOT}/state/team-room`;
 export const ACF_TEAM_ROOM_ROUTES = process.env.ACF_TEAM_ROOM_ROUTES || `${ACF_TEAM_ROOM_HOME}/participant_routes.json`;
 export const ACF_TEAM_CONTROL_VERBS = [
-  "team-open", "team-step", "team-reconcile",
-  "team-intervene", "team-say", "team-resume", "team-rebind", "team-continue",
+  "team-open", "team-open-participants", "team-task", "team-join", "team-step", "team-reconcile",
+  "team-intervene", "team-say", "team-collaborate", "team-resume", "team-rebind", "team-continue",
 ] as const;
 export type AcfControlVerb = (typeof ACF_TEAM_CONTROL_VERBS)[number];
 
@@ -46,6 +46,68 @@ const ROLE_RE = /^[a-z][a-z0-9_-]{0,31}$/;
 const AGENT_RE = /^[a-z][a-z0-9-]{0,31}$/;
 const SESSION_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;   // mission-control isValidConversationKey (= ACF routes pattern)
 const CONTROL_CHARS = /[\u0000-\u001f\u007f]/;
+
+// D8: a participant slot is an independent agent/session, not a fixed job seat.
+// Roles below are optional *function tags*, not ACF core role identities.
+const D8_HANDLE_RE = /^[a-z][a-z0-9-]{0,30}$/;
+const D8_TASK_RE = /^T[1-9][0-9]{0,3}$/;
+const D8_FUNCTION_RE = /^[a-z][a-z0-9_-]{0,31}$/;
+export interface D8Participant {
+  handle: string; agent_id: string; session_ref: string; roles?: string[];
+}
+
+export function validateD8Participants(value: unknown, enabled: string[]): D8Participant[] | null {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 8) return null;
+  const seen = new Set<string>(); const handles = new Set<string>();
+  const checked: D8Participant[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const p = raw as Record<string, unknown>;
+    if (typeof p.handle !== "string" || !D8_HANDLE_RE.test(p.handle) || handles.has(p.handle)) return null;
+    if (typeof p.agent_id !== "string" || !AGENT_RE.test(p.agent_id) || !enabled.includes(p.agent_id)) return null;
+    if (typeof p.session_ref !== "string" || !SESSION_RE.test(p.session_ref)) return null;
+    const key = JSON.stringify([p.agent_id, p.session_ref]);
+    if (seen.has(key)) return null;
+    if (p.roles !== undefined && (!Array.isArray(p.roles) || p.roles.length > 8
+      || p.roles.some(r => typeof r !== "string" || !D8_FUNCTION_RE.test(r))
+      || new Set(p.roles).size !== p.roles.length)) return null;
+    handles.add(p.handle); seen.add(key);
+    checked.push({ handle: p.handle, agent_id: p.agent_id, session_ref: p.session_ref,
+      ...(p.roles === undefined ? {} : { roles: p.roles as string[] }) });
+  }
+  return checked;
+}
+
+export function buildD8OpenSpec(goal: string, participants: D8Participant[], successCriterion: string, runId = newRunId()) {
+  return {
+    run_id: runId, ...(goal.trim() ? { goal: goal.trim() } : {}), project: "ACF", created_by: OPERATOR,
+    participants, routes_file: ACF_TEAM_ROOM_ROUTES, max_turns: 24,
+    ...(successCriterion.trim() ? { success_criteria: [oneLine(successCriterion, LIMITS.criterion)] } : {}),
+  };
+}
+
+async function requireExistingMcSessions(participants: D8Participant[], lister: SessionLister): Promise<string | null> {
+  let rows: Array<Record<string, unknown>>;
+  try { rows = await lister(); } catch { return "Mission Control session index unavailable"; }
+  for (const participant of participants) {
+    const match = rows.find(row => row.agentId === participant.agent_id && row.sessionId === participant.session_ref);
+    if (!match) return `Unknown session ${participant.agent_id}/${participant.session_ref}; create/restore it in its owning registry first`;
+  }
+  return null;
+}
+
+async function requireV2Run(runId: string, runner: AcfRunner): Promise<
+  { ok: true; participants: Array<{ role: string; agent_id: string; session_ref: string }> }
+  | { ok: false; code: string; detail: string }
+> {
+  const raw = await callAcf("team-view", { run_id: runId }, OTHER_TIMEOUT_MS, runner);
+  if (!raw.ok) return raw;
+  if (raw.answer.schema !== 2) return { ok: false, code: "D8_SCHEMA_REQUIRED", detail: "D8 controls require an acf.schema:2 run; historical v1 runs remain on their existing controls" };
+  const members = Array.isArray(raw.answer.participants) ? raw.answer.participants : [];
+  return { ok: true, participants: members.filter(x => x && typeof x === "object")
+    .map(x => x as { role: string; agent_id: string; session_ref: string }) };
+}
+
 
 function oneLine(text: string, max: number): string {
   return text.replace(/\s+/g, " ").trim().slice(0, max);
@@ -214,6 +276,30 @@ export async function teamSessions(input: { roles?: unknown; pins?: unknown; exc
   return { ok: true, answer: raw.answer, roles: checked.roles, enabled: agents };
 }
 
+/** D8 §13 read-only roster. ACF remains source of route, session verdict and member truth.
+ * The caller cannot inject arbitrary ACF files, users, sessions or route settings. */
+export async function readAcfTeamRoster(
+  runId: unknown = undefined,
+  runner: AcfRunner = defaultRunner,
+  lister: SessionLister = defaultLister,
+  registry: ReadonlyArray<{ apiAgentId: string; label: string }> | null = null,
+): Promise<{ ok: true; answer: Record<string, unknown> } | { ok: false; code: string; detail: string }> {
+  if (runId !== undefined && (typeof runId !== "string" || !RUN_ID_RE.test(runId))) {
+    return { ok: false, code: "ARGUMENTS", detail: "Invalid runId" };
+  }
+  let candidates: Array<Record<string, unknown>>;
+  try { candidates = candidateRows(await lister()); }
+  catch (error) {
+    return { ok: false, code: "SESSION_INDEX_UNAVAILABLE",
+      detail: error instanceof Error ? error.message.slice(0, 300) : "session index unavailable" };
+  }
+  const targets = registry ?? (await import("@/lib/cockpit/agent-registry")).COCKPIT_AGENT_TARGETS;
+  const agents = targets.map(target => ({ agent_id: target.apiAgentId, label: target.label }));
+  const args: Record<string, unknown> = { routes_file: ACF_TEAM_ROOM_ROUTES, agents, candidates };
+  if (runId) args.run_id = runId;
+  return callAcf("team-roster", args, OTHER_TIMEOUT_MS, runner);
+}
+
 /** The run's bound roles, read from ACF's own team-view (R2). */
 async function boundRoles(runId: string, runner: AcfRunner): Promise<{ ok: true; roles: string[] } | { ok: false; code: string; detail: string }> {
   const raw = await callAcf("team-view", { run_id: runId }, OTHER_TIMEOUT_MS, runner);
@@ -238,7 +324,19 @@ export async function runAcfControl(verb: unknown, args: unknown, runner: AcfRun
 
   let acfArgs: Record<string, unknown>;
   let timeout = OTHER_TIMEOUT_MS;
-  if (v === "team-open") {
+  if (v === "team-open-participants") {
+    const goal = typeof obj.goal === "string" ? obj.goal.trim() : "";
+    const criterion = typeof obj.success_criterion === "string" ? obj.success_criterion.trim() : "";
+    if (goal.length > LIMITS.objective || hasControlChars(goal)) return bad(v, "Goal: at most 4000 characters, no control characters");
+    if (criterion.length > LIMITS.criterion || hasControlChars(criterion)) return bad(v, "Invalid success criterion");
+    const agents = enabled ?? await enabledTeamRoomAgents();
+    const participants = validateD8Participants(obj.participants, agents);
+    if (!participants) return bad(v, "1..8 unique participant handles and distinct enabled agent/session pairs required; functions are optional");
+    const existing = await requireExistingMcSessions(participants, lister);
+    if (existing) return { ok: false, verb: v, code: "SESSION_INDEX_UNAVAILABLE", detail: existing };
+    acfArgs = buildD8OpenSpec(goal, participants, criterion);
+    timeout = OPEN_TIMEOUT_MS;
+  } else if (v === "team-open") {
     const objective = typeof obj.objective === "string" ? obj.objective.trim() : "";
     const criterion = typeof obj.success_criterion === "string" ? obj.success_criterion.trim() : "";
     if (!objective || objective.length > LIMITS.objective) return bad(v, `Objective: 1..${LIMITS.objective} characters`);
@@ -255,7 +353,38 @@ export async function runAcfControl(verb: unknown, args: unknown, runner: AcfRun
   } else {
     const runId = typeof obj.run_id === "string" ? obj.run_id : "";
     if (!RUN_ID_RE.test(runId)) return bad(v, "run_id required");
-    if (v === "team-step") {
+    if (v === "team-task") {
+      const v2 = await requireV2Run(runId, runner);
+      if (!v2.ok) return { ok: false, verb: v, code: v2.code, detail: v2.detail };
+      const taskId = typeof obj.task_id === "string" ? obj.task_id : "";
+      const assignee = typeof obj.assignee === "string" ? obj.assignee : "";
+      const brief = typeof obj.brief === "string" ? obj.brief.trim() : "";
+      const reviewer = typeof obj.reviewer === "string" && obj.reviewer ? obj.reviewer : null;
+      const title = typeof obj.title === "string" ? obj.title.trim() : "";
+      if (!D8_TASK_RE.test(taskId) || !v2.participants.some(p => p.role === assignee)
+        || (reviewer !== null && (!v2.participants.some(p => p.role === reviewer) || reviewer === assignee
+          || v2.participants.find(p => p.role === reviewer)?.agent_id === v2.participants.find(p => p.role === assignee)?.agent_id))
+        || !brief || brief.length > LIMITS.objective || hasControlChars(brief)
+        || title.length > 200 || hasControlChars(title)) return bad(v, "Task ID T<n>, a bound assignee, optional distinct reviewer and text brief required");
+      // ACF itself owns due turns, per-task review gates and file-writing refusals.
+      acfArgs = { run_id: runId, by: OPERATOR, task_id: taskId, assignee, brief,
+        ...(reviewer ? { reviewer } : {}), ...(title ? { title } : {}) };
+    } else if (v === "team-join") {
+      const v2 = await requireV2Run(runId, runner);
+      if (!v2.ok) return { ok: false, verb: v, code: v2.code, detail: v2.detail };
+      const agents = enabled ?? await enabledTeamRoomAgents();
+      const participants = validateD8Participants([{
+        handle: obj.handle, agent_id: obj.agent_id, session_ref: obj.session_ref, roles: obj.roles ?? [],
+      }], agents);
+      if (!participants) return bad(v, "Handle, enabled agent, own registered session and optional functions required");
+      if (v2.participants.some(p => p.role === participants[0].handle
+        || (p.agent_id === participants[0].agent_id && p.session_ref === participants[0].session_ref))) {
+        return { ok: false, verb: v, code: "D8_PARTICIPANT_EXISTS", detail: "Existing participant identity may not be rebound; join a different independent session" };
+      }
+      const existing = await requireExistingMcSessions(participants, lister);
+      if (existing) return { ok: false, verb: v, code: "SESSION_INDEX_UNAVAILABLE", detail: existing };
+      acfArgs = { run_id: runId, by: OPERATOR, ...participants[0] };
+    } else if (v === "team-step") {
       acfArgs = { run_id: runId, by: OPERATOR, live: true };
       timeout = STEP_TIMEOUT_MS;
     } else if (v === "team-reconcile") {
@@ -287,6 +416,21 @@ export async function runAcfControl(verb: unknown, args: unknown, runner: AcfRun
         if (unknown.length) return { ok: false, verb: v, code: "ROLE_UNBOUND", detail: unknown.join(",") };
       }
       acfArgs = { run_id: runId, by: OPERATOR, to, text, kind, reply };
+    } else if (v === "team-collaborate") {
+      const v2 = await requireV2Run(runId, runner);
+      if (!v2.ok) return { ok: false, verb: v, code: v2.code, detail: v2.detail };
+      const rounds = obj.rounds === undefined ? 1 : obj.rounds;
+      const topic = obj.topic === undefined ? "" : obj.topic;
+      const participants = obj.participants;
+      if (!Number.isInteger(rounds) || (rounds as number) < 1 || (rounds as number) > 4) return bad(v, "Samenwerken: rounds must be 1..4");
+      if (typeof topic !== "string" || topic.length > LIMITS.objective || hasControlChars(topic)) return bad(v, "Samenwerken: invalid topic");
+      const bound = v2.participants.map(p => p.role);
+      if (participants !== undefined && (!Array.isArray(participants) || participants.length < 2
+          || participants.some(x => typeof x !== "string" || !bound.includes(x))
+          || new Set(participants).size !== participants.length)) return bad(v, "Samenwerken: choose at least 2 distinct bound participants");
+      acfArgs = { run_id: runId, by: OPERATOR, rounds,
+        ...(topic.trim() ? { topic: topic.trim() } : {}),
+        ...(participants === undefined ? {} : { participants }) };
     } else if (v === "team-resume") {
       if (obj.abandon_owed_replies !== undefined && typeof obj.abandon_owed_replies !== "boolean") return bad(v, "abandon_owed_replies: boolean");
       acfArgs = { run_id: runId, by: OPERATOR, abandon_owed_replies: obj.abandon_owed_replies === true };

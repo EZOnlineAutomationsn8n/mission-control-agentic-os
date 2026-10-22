@@ -6,6 +6,7 @@ import type { AgentConversationEntry } from "@/lib/agent-conversations/types";
 import type { AttachmentReference } from "@/lib/attachments/types";
 import { getCockpitAgentByApiId, getCockpitAgentTarget } from "@/lib/cockpit/agent-registry";
 import { getCockpitRoutePresentation } from "@/lib/cockpit-route-presentation";
+import { reconstructSpeechTranscript } from "@/lib/cockpit/speech-transcript";
 
 const DEFAULT_SESSION_ID = "operator-default";
 const CLIENT_TIMEOUT_MS = 660000;
@@ -171,10 +172,10 @@ export function AgentConversationPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [clearConfirm, setClearConfirm] = useState(false);
   const [attachments, setAttachments] = useState<AttachmentReference[]>([]);
-  const [localImageObservations, setLocalImageObservations] = useState<Array<{ id: string; status: string; text: string }>>([]);
   const [uploading, setUploading] = useState(false);
   const [copiedMessage, setCopiedMessage] = useState<string | null>(null);
   const [listening, setListening] = useState(false);
+  const [voiceNeedsReview, setVoiceNeedsReview] = useState(false);
   const [pendingTurn, setPendingTurn] = useState<{ prompt: string; attachments: AttachmentReference[] } | null>(null);
   const [scrollTick, setScrollTick] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -334,19 +335,14 @@ export function AgentConversationPanel({
     }
 
     const recognition = new Recognition();
-    const promptBeforeDictation = prompt.trimEnd();
-    let finalTranscript = "";
+    const promptBeforeDictation = prompt;
     recognition.lang = "nl-NL";
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.onresult = (event) => {
-      let interimTranscript = "";
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const transcript = event.results[index][0]?.transcript ?? "";
-        if (event.results[index].isFinal) finalTranscript += transcript;
-        else interimTranscript += transcript;
-      }
-      setPrompt([promptBeforeDictation, finalTranscript.trim(), interimTranscript.trim()].filter(Boolean).join(" "));
+      // Each event.results is the complete indexed recognition snapshot.
+      // Never append repeated final results as if the event were a delta.
+      setPrompt(reconstructSpeechTranscript(promptBeforeDictation, event).text);
     };
     recognition.onerror = (event) => {
       if (event.error !== "aborted" && event.error !== "no-speech") {
@@ -361,8 +357,9 @@ export function AgentConversationPanel({
     try {
       speechRecognition.current = recognition;
       setLoadError(null);
-      setListening(true);
       recognition.start();
+      setVoiceNeedsReview(true);
+      setListening(true);
     } catch (error) {
       speechRecognition.current = null;
       setListening(false);
@@ -407,7 +404,7 @@ export function AgentConversationPanel({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!prompt.trim() || running || !session?.active) return;
+    if (!prompt.trim() || running || !session?.active || listening || voiceNeedsReview) return;
     const submittedPrompt = prompt.trim();
     const submittedAttachments = attachments;
     setRunning(true);
@@ -459,10 +456,9 @@ export function AgentConversationPanel({
       form.set("sessionId", sessionId);
       Array.from(files).slice(0, 5).forEach((file) => form.append("files", file));
       const response = await fetch("/api/attachments", { method: "POST", body: form });
-      const data = (await response.json()) as { attachments?: AttachmentReference[]; localImageObservations?: Array<{ id: string; status: string; text: string }>; error?: string };
+      const data = (await response.json()) as { attachments?: AttachmentReference[]; error?: string };
       if (!response.ok || !data.attachments) throw new Error(data.error ?? `upload returned HTTP ${response.status}`);
       setAttachments((current) => [...current, ...data.attachments!].slice(0, 5));
-      if (data.localImageObservations?.length) setLocalImageObservations((current) => [...current, ...data.localImageObservations!].slice(-5));
     } catch (error) {
       setLoadError(error instanceof Error ? error.message : "attachment upload failed");
     } finally {
@@ -530,7 +526,7 @@ export function AgentConversationPanel({
       )}
 
       <div
-        className="grid grid-cols-2 gap-x-3 gap-y-1 rounded border border-border/80 bg-panel-2/70 px-2.5 py-2 text-[10px] mono shrink-0 lg:grid-cols-6"
+        className="mc-route-identity-strip grid grid-cols-2 gap-x-3 gap-y-1 rounded border border-border/80 bg-panel-2/70 px-2.5 py-2 text-[10px] mono shrink-0 lg:grid-cols-6"
         data-route-identity={routeTypeLabel}
         title={routePresentation?.routeStatusDetail ?? "Route presentation evidence unavailable"}
       >
@@ -543,7 +539,7 @@ export function AgentConversationPanel({
       </div>
 
       {/* Terminal panes: everything below the header is ONE scroll surface (notices, turns, composer). */}
-      <div ref={terminal ? scrollSurface : undefined} className={terminal ? "flex-1 min-h-0 overflow-y-auto -ml-1.5 pl-1.5 pr-1 space-y-2.5" : "space-y-3"} data-conversation-stream={terminal ? "true" : undefined}>
+      <div ref={terminal ? scrollSurface : undefined} className={terminal ? "flex-1 min-h-0 overflow-y-auto pr-1 space-y-2.5" : "space-y-3"} data-conversation-stream={terminal ? "true" : undefined}>
       {session?.lastError && <StreamNotice tone="warn" title="Runtime blocker" text={session.lastError} terminal={terminal} />}
       {!terminal && loadError && <StreamNotice tone="danger" text={loadError} terminal={false} />}
 
@@ -721,15 +717,6 @@ export function AgentConversationPanel({
         <input ref={fileInput} type="file" multiple className="hidden"
           accept=".pdf,.txt,.md,.json,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.jpg,.jpeg,.png,.webp,.gif,.heic,.svg,.zip"
           onChange={(event) => void uploadFiles(event.target.files)} />
-        {localImageObservations.filter((item) => attachments.some((attachment) => attachment.id === item.id)).length > 0 && (
-          <div className="rounded-lg border border-border bg-panel-2 p-2 text-xs" aria-label="Local image pixel observations">
-            <p className="font-semibold">Local image inspection — colors/regions only, no semantic vision model</p>
-            {localImageObservations.filter((item) => attachments.some((attachment) => attachment.id === item.id)).map((item) => (
-              <p key={item.id} className="mt-1 break-words">{item.status === "measured" ? "Measured locally: " : "Unavailable: "}{item.text}</p>
-            ))}
-            <p className="mt-1 text-muted">Image bytes remain local. Send requires a verified, explicitly enabled local vision model; otherwise the request is refused without a paid provider call.</p>
-          </div>
-        )}
         <input ref={cameraInput} type="file" accept="image/*" capture="environment" className="hidden"
           onChange={(event) => void uploadFiles(event.target.files)} />
         {attachments.length > 0 && (
@@ -743,11 +730,22 @@ export function AgentConversationPanel({
             ))}
           </div>
         )}
-        <textarea ref={composerInput} value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={busy || !active} rows={1}
+        <textarea ref={composerInput} value={prompt} onChange={(event) => setPrompt(event.target.value)} disabled={busy || !active || listening} rows={1}
           placeholder={active ? `Send a prompt to ${label}...` : `Start ${label} before sending a prompt`}
           aria-label={`${label} agent prompt`}
           className="mc-composer overflow-hidden disabled:opacity-50"
           style={{ minHeight: COMPOSER_MIN_HEIGHT_PX }} />
+        {voiceNeedsReview && (
+          <div className="mc-voice-review" role="status" data-testid="voice-review">
+            <span>{listening ? "Dictation in progress — stop the mic, then review your words." : "Review the dictated text. Nothing is sent automatically."}</span>
+            {!listening && (
+              <button type="button" className="mc-button mc-button-secondary mc-button-sm"
+                onClick={() => setVoiceNeedsReview(false)} aria-label="Confirm dictated text for sending">
+                Confirm text
+              </button>
+            )}
+          </div>
+        )}
         <div className="mc-toolbar">
           <div className="flex flex-wrap items-center gap-1.5">
             <button type="button" onClick={() => fileInput.current?.click()} disabled={busy || uploading || attachments.length >= 5}
@@ -765,11 +763,18 @@ export function AgentConversationPanel({
               <UiIcon name="mic" /> {listening ? "Stop mic" : "Mic"}
             </button>
             <button type="button" onClick={() => setClearConfirm(true)} disabled={busy || entries.length === 0}
-              className="mc-button mc-button-danger" aria-label={`Clear ${label} conversation history`}>
+              className="mc-button mc-button-danger mc-clear-history-desktop" aria-label={`Clear ${label} conversation history`}>
               <UiIcon name="trash" /> Clear history
             </button>
+            <details className="mc-clear-history-mobile">
+              <summary aria-label="More conversation options">More</summary>
+              <button type="button" onClick={() => setClearConfirm(true)} disabled={busy || entries.length === 0}
+                className="mc-button mc-button-danger mc-button-sm" aria-label="Clear conversation history on mobile">
+                <UiIcon name="trash" /> Clear history
+              </button>
+            </details>
           </div>
-          <button type="submit" disabled={busy || uploading || !active || !prompt.trim()} className="mc-button mc-button-primary px-4">
+          <button type="submit" disabled={busy || uploading || !active || listening || voiceNeedsReview || !prompt.trim()} className="mc-button mc-button-primary px-4">
             <UiIcon name="send" /> {busy ? `${label} running...` : "Send"}
           </button>
         </div>

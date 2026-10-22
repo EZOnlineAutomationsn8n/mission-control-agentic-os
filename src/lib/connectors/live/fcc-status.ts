@@ -72,8 +72,9 @@ export async function readFccLiveStatus(): Promise<FccLiveStatus> {
   let httpStatus: number | null = null;
 
   if (!health.reachable) {
-    status = "disconnected";
-    errors.push(`health endpoint unreachable: ${health.error}`);
+    status = "unknown";
+    errors.push(`health endpoint not observable from this container: ${health.error}`);
+    errors.push("Host FCC service state is unknown here; container-local loopback is not host loopback");
   } else {
     httpStatus = health.httpStatus;
     const body = health.body as { status?: unknown } | null;

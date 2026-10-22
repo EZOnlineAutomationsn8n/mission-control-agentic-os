@@ -61,7 +61,7 @@ export function ControlRoom({ systemId }: { systemId: string }) {
 
   return (
     <div className="p-6 flex flex-col gap-4 h-full">
-      <header className="flex flex-wrap items-center justify-between gap-3">
+      <header className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <span className="status-dot" style={dotGlowStyle(statusColor(state.status))} />
           <div>

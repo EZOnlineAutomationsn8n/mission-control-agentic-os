@@ -1325,12 +1325,12 @@ summary:focus-visible {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 16.5rem;
   gap: .85rem;
-  min-height: 43rem;
+  min-height: 30rem;
 }
 
 .acf-shell-canvas {
   position: relative;
-  min-height: 43rem;
+  min-height: 30rem;
   overflow: hidden;
   border: 1px solid rgba(72,186,255,.28);
   border-radius: 16px;
@@ -3217,142 +3217,499 @@ html[data-mc-panel-focus-id="acf-reading-pane"] .acf-shell-focus-overlay { z-ind
 .mc-graph-wikilink:hover { background: rgba(250,204,21,.2); }
 .mc-apps-input-mode { flex: 0 0 11rem; }
 
-/* ---------- MC global UX polish 2026-10-14 (MC-TEAM-ROOM-OPERATOR-UX-FIT-AND-POLISH-002) ---------- */
-/* Shell geometry: the sidebar brand and the top bar share one height (3.5rem incl. the 1px bottom line),
-   so their bottom borders form one continuous line and the orb, collapse toggle and status pills share
-   one optical center. */
-:root { --mc-shell-bar-h: 3.5rem; }
-.mc-topbar { height: var(--mc-shell-bar-h); }
-.mc-sidebar-brand {
-  flex: none;
+/* MC-TEAM-ROOM-FIT-AND-STORM-002 | desktop 2x2 inside remaining dynamic viewport.
+   Only the live-K2 stage copy is changed. All four free agent viewports and the
+   separate centre focus panel keep their existing identities/behavior. */
+@media (min-width: 901px) {
+  .acf-shell-preview-bar {
+    min-height: 2.75rem;
+    padding: .42rem .75rem;
+    gap: .55rem;
+  }
+  .acf-shell-preview-title { gap: .45rem; }
+  .acf-shell-preview-icon { width: 1.65rem; height: 1.65rem; }
+  .acf-shell-layout {
+    min-height: 30rem;
+    height: clamp(30rem, calc(100dvh - 18.5rem), 56rem);
+    align-items: stretch;
+  }
+  .acf-shell .acf-shell-canvas {
+    height: 100%;
+    min-height: 30rem;
+    min-width: 0;
+  }
+  .acf-shell-layout > .acf-shell-side {
+    min-height: 0;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+}
+
+/* MC apps viewer 001 (CSA 2026-10-17): one persistent server-browser viewer, stacked layers keep its size when hidden */
+.mc-apps-stack { position: relative; flex: 1 1 auto; min-height: 0; }
+.mc-apps-stack-layer { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mc-apps-viewer-banner { position: absolute; left: .75rem; right: .75rem; top: .75rem; z-index: 2; display: flex; align-items: center; gap: .6rem; justify-content: space-between; padding: .55rem .75rem; border-radius: 10px; font-size: .8rem; background: rgba(40,12,18,.92); border: 1px solid rgba(255,120,140,.45); color: #ffd9de; }
+
+/* MC-TEAM-COMPOSER-REAL-OPERABILITY-20261019-001:
+   The participant room is not the FOUR free workpanes. It has 1–8
+   canonical or presentation-DRAFT members. No card overlays chat. */
+.acf-shell .acf-shell-canvas.acf-shell-canvas-preview {
+  height: auto !important;
+  min-height: 12rem !important;
+  overflow: visible;
+  padding-bottom: .8rem;
+}
+.acf-shell .acf-shell-grid {
+  position: relative !important;
+  inset: auto !important;
+  grid-template-columns: repeat(auto-fit,minmax(min(100%,16rem),1fr)) !important;
+  grid-template-rows: auto !important;
+  gap: .75rem !important;
+  padding: .75rem !important;
+}
+.acf-shell .acf-shell-grid > .mc-focusable-panel {
+  height: auto !important;
+  min-height: 11rem;
+}
+.acf-shell .acf-shell-grid > .mc-focusable-panel > .mc-focus-panel-body {
+  overflow: visible;
+}
+.acf-shell .acf-shell-agent-card { min-height: 11rem; }
+.acf-shell .acf-shell-agent-card .acf-shell-card-body { overflow: visible; }
+.acf-shell .acf-shell-focus-overlay {
+  position: relative !important;
+  inset: auto !important;
+  z-index: 2;
+  width: 100%;
+  padding: 0 .75rem .75rem;
+  pointer-events: auto;
+}
+.acf-shell .acf-shell-focus-overlay .acf-shell-focus-card {
+  position: relative !important;
+  width: 100% !important;
+  height: auto !important;
+  max-height: 24rem;
+  min-height: 13rem;
+  margin: 0;
+  overflow: auto;
+}
+.acf-shell .acf-shell-layout {
+  height: auto;
+  min-height: 12rem;
+  align-items: stretch;
+}
+.acf-shell .acf-shell-layout > .acf-shell-side {
+  max-height: none;
+  height: auto;
+  min-height: 0;
+  overflow-y: visible;
+}
+@media (max-width: 900px) {
+  .acf-shell .acf-shell-layout { height: auto; min-height: 0; }
+  .acf-shell .acf-shell-grid { grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr)) !important; }
+}
+@media (max-width: 480px) {
+  .acf-shell .acf-shell-grid { grid-template-columns:minmax(0,1fr) !important; }
+  .acf-shell .acf-shell-focus-overlay { padding:0 .5rem .5rem; }
+}
+
+/* MC dynamic ACF Room: integrated selection LEFT, conversation CENTER,
+   read/actions RIGHT. The four free workpanes are a separate layer. */
+@media (min-width: 1180px) {
+  .acf-shell .acf-shell-layout {
+    display: grid !important;
+    grid-template-columns: minmax(16rem, .83fr) minmax(0, 2.18fr) minmax(16rem, .83fr) !important;
+    align-items: start;
+    gap: .85rem;
+    height: auto !important;
+  }
+}
+.acf-shell .acf-shell-selection {
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid rgba(56,189,248,.27);
+  border-radius: 12px;
+  background: rgba(3, 11, 28, .67);
+  padding: .85rem;
+}
+.acf-shell .acf-shell-selection > button { position:relative; z-index:auto; }
+.acf-shell .acf-shell-selection > section { position:relative; z-index:auto; }
+@media (min-width: 701px) and (max-width: 1179px) {
+  .acf-shell .acf-shell-layout {
+    display: grid !important;
+    grid-template-columns:minmax(16rem,.8fr) minmax(0,2fr) !important;
+    gap:.65rem;
+    height:auto !important;
+  }
+  .acf-shell .acf-shell-side { grid-column:1/-1; }
+}
+@media (max-width: 700px) {
+  .acf-shell .acf-shell-layout {display:flex !important;flex-direction:column;gap:.65rem;height:auto !important;}
+  .acf-shell .acf-shell-selection,.acf-shell .acf-shell-canvas,.acf-shell .acf-shell-side {width:100%;min-width:0;max-width:none;}
+}
+
+/* MC-TEAM-COMPOSER-UX-REFINE-20261019-002
+   Embedded operator flow: three columns by two rows of cards,
+   goal fields follow the growing grid, shared ACF conversation has
+   its own reading surface. No position:fixed or popover overlay. */
+.acf-shell .acf-shell-layout {
+  min-height: 0 !important;
+  height: auto !important;
+  align-items: start !important;
+  gap: 1rem !important;
+}
+.acf-shell .acf-shell-selection {
+  min-width: 0;
+  max-width: none;
+  align-self: start;
+}
+.acf-shell .mc-team-composer-body,
+.acf-shell .mc-team-composer-agent-grid {
+  max-height: none !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+.acf-shell .mc-team-composer-agent-grid {
+  display: grid;
+  grid-template-columns: repeat(3,minmax(0,1fr));
+  grid-auto-rows: max-content;
+  align-items: start;
+  gap: .7rem;
+  padding: .1rem;
+}
+.acf-shell .mc-team-composer-agent-card {
+  min-width: 0;
+  min-height: 7.6rem;
+  height: auto;
+  position: relative;
+  overflow: visible;
+  align-self: start;
+  box-sizing: border-box;
+  transition: border-color .15s ease, background-color .15s ease;
+}
+.acf-shell .mc-team-composer-agent-card details,
+.acf-shell .mc-team-composer-card-details[open] {
+  position: relative;
+  z-index: auto;
+  overflow: visible;
+}
+.acf-shell .mc-team-composer-agent-card header label { min-width: 0; flex: 1 1 auto; }
+.acf-shell .mc-team-composer-agent-card header span { max-width: 100%; overflow-wrap: anywhere; }
+.acf-shell .mc-team-composer-agent-card summary { list-style-position: inside; }
+.acf-shell .mc-team-composer-workflow { clear: both; position: relative; z-index: auto; }
+.acf-shell .acf-shell-canvas.acf-shell-canvas-preview {
+  min-height: 24rem !important;
+  padding: 0 !important;
+}
+.acf-shell .mc-team-shared-conversation {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  border: 1px solid rgba(56,189,248,.33);
+  border-radius: 12px;
+  background: rgba(3,11,29,.91);
+  overflow: hidden;
+}
+.acf-shell .mc-team-shared-conversation-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: .6rem;
+  border-bottom: 1px solid rgba(56,189,248,.22);
+  padding: 1rem;
+}
+.acf-shell .mc-team-shared-draft-note {
+  margin: .75rem;
+  padding: .75rem;
+  border-radius: 8px;
+  font-size: .75rem;
+  color: #bde8ff;
+  border: 1px solid rgba(56,189,248,.35);
+}
+.acf-shell .mc-team-shared-conversation-messages {
+  min-height: 21rem;
+  max-height: 44rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: .8rem;
+  display: flex;
+  flex-direction: column;
+  gap: .7rem;
+}
+.acf-shell .mc-team-shared-message {
+  border: 1px solid rgba(82,126,183,.38);
+  background: rgba(9,24,48,.86);
+  border-radius: 10px;
+  padding: .85rem;
+}
+.acf-shell .mc-team-confirmed-details {
+  margin-top: .75rem;
+  position: relative;
+  border: 1px solid rgba(82,126,183,.25);
+  border-radius: 10px;
+  background: rgba(3,11,29,.65);
+}
+.acf-shell .mc-team-confirmed-details > summary { list-style-position: inside; }
+.acf-shell .mc-team-extra-controls { border: 1px solid rgba(82,126,183,.25); border-radius: 10px; }
+.acf-shell .mc-team-extra-controls-body { padding: .75rem; }
+.acf-shell .acf-shell-layout > .acf-shell-side { grid-column:1/-1 !important; overflow:visible !important; min-width:0; }
+@media (min-width: 1260px) {
+  .acf-shell .acf-shell-layout {
+    display:grid !important;
+    grid-template-columns: minmax(0, 1.36fr) minmax(0, 1fr) !important;
+  }
+}
+@media (min-width: 1000px) and (max-width: 1259px) {
+  .acf-shell .acf-shell-layout { display:grid !important; grid-template-columns:minmax(0,1.27fr) minmax(0,1fr) !important; }
+  .acf-shell .mc-team-composer-agent-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+}
+@media (min-width: 701px) and (max-width: 999px) {
+  .acf-shell .acf-shell-layout { display:flex !important; flex-direction:column !important; }
+  .acf-shell .acf-shell-selection,.acf-shell .acf-shell-canvas,.acf-shell .acf-shell-side { width:100%; }
+  .acf-shell .mc-team-composer-agent-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media (max-width: 700px) {
+  .acf-shell .acf-shell-layout { display:flex !important; flex-direction:column !important; gap:.7rem !important; }
+  .acf-shell .mc-team-composer-agent-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .acf-shell .mc-team-shared-conversation-messages { min-height:17rem; max-height:32rem; }
+}
+@media (max-width: 460px) {
+  .acf-shell .mc-team-composer-agent-grid { grid-template-columns:minmax(0,1fr); }
+}
+
+/* MC-TEAM-COMPOSER-UX-REFINE-20261019-002 / RESTORE_ORIGINAL_FIVE_CARD_VISUAL_TOPOLOGY
+   Restore the EXISTING four free visual agent windows and central FocusablePanel
+   as the FIRST CLASS room. These cards are views on the registry/session pool:
+   they do not assert ACF member identity or constrain the canonical 1–8 roster.
+   Original shell visuals are scoped to this stage only, never to composer/conversation. */
+.acf-shell .mc-team-original-five {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgba(72,186,255,.32);
+  border-radius: 14px;
+  background: radial-gradient(ellipse at 50% 20%,rgba(31,95,176,.23),transparent 75%),rgba(3,10,25,.87);
+  box-shadow: 0 16px 45px -35px rgba(0,0,0,.9);
+}
+.acf-shell .mc-team-visual-topline {
   display: flex;
   align-items: center;
-  height: var(--mc-shell-bar-h);
-  padding-block: 0;
-}
-.mc-sidebar-brand-row { min-width: 0; }
-.mc-top-metric { flex: none; height: 1.85rem; min-height: 1.85rem; padding-block: 0; line-height: 1; white-space: nowrap; }
-.mc-top-clock { padding-inline: .7rem; letter-spacing: .02em; }
-
-/* Mobile navigation toggle: hidden on desktop (the unlayered .mc-button display rule used to beat xl:hidden),
-   vertically centered on the top bar on phone/tablet. */
-.mc-mobile-nav-toggle {
-  top: calc((var(--mc-shell-bar-h) - 1px - 2.5rem) / 2);
-  width: 2.5rem;
-  height: 2.5rem;
-  min-height: 2.5rem;
-}
-@media (min-width: 1280px) {
-  .mc-mobile-nav-toggle { display: none; }
-}
-
-/* Agent pool rows: the agent name gets the full row width; route badge and session count move to a
-   compact second line instead of squeezing the name to nothing. */
-.mc-agent-row-text { display: flex; flex: 1 1 auto; min-width: 0; flex-direction: column; gap: .14rem; }
-.mc-agent-row-label { display: block; min-width: 0; line-height: 1.15rem; }
-.mc-agent-row-meta { display: flex; align-items: center; gap: .4rem; min-width: 0; line-height: 1; }
-.mc-agent-row-meta .mc-agent-route-badge { min-width: 0; max-width: 100%; }
-.mc-agent-row { padding-block: .38rem; }
-
-@media (min-width: 1280px) {
-  /* rail mode: the stacked orb + toggle must fit the shared bar height */
-  .mc-sidebar-focus-rail .mc-sidebar-brand { padding-inline: .4rem; justify-content: center; }
-  .mc-sidebar-focus-rail .mc-sidebar-brand > div { gap: .2rem; }
-  .mc-sidebar-focus-rail .mc-brand-orb { width: 1.45rem; height: 1.45rem; border-radius: 7px; font-size: 8px; }
-  .mc-sidebar-focus-rail .mc-sidebar-rail-toggle { width: 1.3rem; height: 1.3rem; border-radius: 6px; }
-  .mc-sidebar-focus-rail .mc-agent-row-text { display: none !important; }
-}
-
-/* Floating pane focus controls sit as a notch on the pane's top edge instead of on top of the pane's
-   header content (they used to cover counts, selects and headings on 12 routes). The visible button stays
-   compact; an invisible halo keeps the touch target large. A focused (maximized) pane keeps the controls
-   inside, because its top edge sits directly under the top bar. */
-.mc-focusable-panel:not(.mc-panel-focused) > .mc-panel-focus-controls {
-  top: 0;
-  right: .85rem;
-  transform: translateY(-50%);
-}
-.mc-focusable-panel:not(.mc-panel-focused) > .mc-panel-focus-controls .mc-panel-focus-button {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .65rem;
+  min-height: 3.15rem;
+  padding: .65rem .85rem;
+  border-bottom: 1px solid rgba(72,186,255,.22);
   position: relative;
-  width: 1.45rem;
-  height: 1.45rem;
-  border-radius: 6px;
-  background: rgba(5, 12, 28, .96);
-  box-shadow: 0 0 0 3px rgba(4, 8, 19, .9);
+  z-index: 5;
 }
-.mc-focusable-panel:not(.mc-panel-focused) > .mc-panel-focus-controls .mc-panel-focus-button:hover,
-.mc-focusable-panel:not(.mc-panel-focused) > .mc-panel-focus-controls .mc-panel-focus-button:focus-visible {
-  box-shadow: 0 0 0 3px rgba(4, 8, 19, .9), 0 0 12px rgba(34, 211, 238, .2);
+.acf-shell .mc-team-visual-canvas {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 27rem;
+  min-width: 0;
+  overflow: hidden;
 }
-.mc-focusable-panel:not(.mc-panel-focused) > .mc-panel-focus-controls .mc-panel-focus-button::after {
+.acf-shell .mc-team-visual-canvas::before {
   content: "";
   position: absolute;
-  inset: -.4rem;
+  inset: 0;
+  opacity: .65;
+  background: radial-gradient(ellipse at 12% 15%,rgba(28,103,244,.19),transparent 43%),radial-gradient(ellipse at 86% 84%,rgba(137,54,225,.18),transparent 38%);
+  pointer-events: none;
 }
-.mc-focusable-panel:not(.mc-panel-focused) > .mc-panel-focus-controls .mc-panel-focus-icon { width: .74rem; height: .74rem; }
-
-/* Knowledge graph on phone/tablet: the header wraps instead of pushing its actions out of the clipped card,
-   and the note pane stacks under the canvas instead of squeezing it. */
-@media (max-width: 767px) {
-  .mc-graph-page { padding: .75rem; }
-  .mc-graph-head { flex-wrap: wrap; row-gap: .45rem; }
-  .mc-graph-head > .min-w-0 { flex: 1 1 calc(100% - 3rem); }
-  .mc-graph-search { flex: 1 1 100%; width: auto; order: 5; }
-  .mc-graph-head > .mc-button { flex: 1 1 auto; }
-  .mc-graph-body { flex-direction: column; }
-  .mc-graph-canvas-wrap { min-height: 16rem; }
-  .mc-graph-note { flex: 0 0 auto; max-width: none; max-height: 45%; border-left: 0; border-top: 1px solid rgba(103,217,244,.16); }
+.acf-shell .mc-team-visual-canvas > .acf-shell-grid {
+  display: grid !important;
+  position: absolute !important;
+  inset: .6rem !important;
+  grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  grid-template-rows: repeat(2,minmax(0,1fr)) !important;
+  gap: .75rem !important;
+  padding: 0 !important;
+  z-index: 1;
 }
-
-/* Log rows (Evidence): the message column wraps inside its card instead of running out of it. */
-.mc-log-row > span:last-child { min-width: 0; overflow-wrap: anywhere; }
-
-/* Team Room hero on phone/tablet: mode tabs wrap inside the hero instead of running out of it, and the
-   freshness chip + Refresh stay reachable (they used to be display:none below 800px). */
-.acf-team-room-hero .acf-mode-tabs { align-self: stretch; max-width: 100%; }
-@media (max-width: 800px) {
-  .acf-team-room-hero-copy { width: 100%; }
-  .acf-team-room-hero .acf-mode-tabs { flex-wrap: wrap; row-gap: .4rem; column-gap: .95rem; overflow: visible; }
-  .acf-team-room-hero-controls { display: flex; flex-wrap: wrap; align-items: center; margin-left: 0; margin-top: .55rem; width: 100%; }
+.acf-shell .mc-team-visual-canvas > .acf-shell-grid > .mc-focusable-panel {
+  height: 100% !important;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
 }
-
-/* Team Room canvas on phones: the absolutely positioned 4-card room collapsed to a 2px strip below 421px
-   (cards and the focused reading card were clipped away) and was a cramped 2x2 up to 767px. Below 768px
-   the room becomes normal document flow: agent cards in one column, the focused card underneath. */
-@media (max-width: 767px) {
-  .acf-shell .acf-shell-canvas-preview .acf-shell-grid {
-    position: relative !important; inset: auto !important;
-    grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: none !important;
-    gap: .75rem !important; padding: .75rem !important;
-  }
-  .acf-shell-canvas.acf-shell-canvas-preview { min-height: 0 !important; height: auto; overflow: visible; padding-bottom: .25rem; }
-  .acf-shell-canvas-preview .acf-shell-nebula { display: none; }
-  .acf-shell-canvas-preview .acf-shell-agent-card,
-  .acf-shell-canvas-preview .acf-shell-agent-card:nth-child(n) { min-height: 0; }
-  .acf-shell-canvas-preview .acf-shell-focus-overlay { position: relative; inset: auto; display: block; padding: 0 .75rem .75rem; pointer-events: auto; }
-  .acf-shell-canvas-preview .acf-shell-focus-overlay .acf-shell-focus-card { width: 100%; height: auto; min-height: 0; max-height: none; }
+.acf-shell .mc-team-visual-canvas > .acf-shell-grid > .mc-focusable-panel > .mc-focus-panel-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
+.acf-shell .mc-team-visual-canvas .acf-shell-agent-card {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.acf-shell .mc-team-visual-canvas .acf-shell-agent-card .acf-shell-card-body {
+  overflow: hidden;
+}
+.acf-shell .mc-team-visual-canvas > .acf-shell-focus-overlay {
+  display: flex !important;
+  position: absolute !important;
+  inset: 9% 21% !important;
+  z-index: 4;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0 !important;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.acf-shell .mc-team-visual-canvas > .acf-shell-focus-overlay > .acf-shell-focus-card {
+  width: 100% !important;
+  height: 100% !important;
+  max-width: 52rem;
+  max-height: none;
+  min-height: 0;
+  overflow: hidden;
+  pointer-events: auto;
+  box-shadow: 0 0 0 1px rgba(79,210,255,.55),0 22px 80px rgba(0,0,0,.72),0 0 38px rgba(52,191,255,.1);
+}
+.acf-shell .mc-team-visual-canvas > .acf-shell-focus-overlay .acf-shell-focus-reading {
+  min-height: 0;
+  overflow-y: auto;
+}
+@media (max-width: 900px) {
+  .acf-shell .mc-team-visual-canvas { height: 30rem; }
+  .acf-shell .mc-team-visual-canvas > .acf-shell-focus-overlay { inset: 10% 13% !important; }
+}
+@media (max-width: 560px) {
+  .acf-shell .mc-team-visual-canvas { height: 35rem; }
+  .acf-shell .mc-team-visual-canvas > .acf-shell-grid { gap: .4rem !important; }
+  .acf-shell .mc-team-visual-canvas > .acf-shell-focus-overlay { inset: 24% 5% !important; }
+  .acf-shell .mc-team-visual-canvas > .acf-shell-focus-overlay > .acf-shell-focus-card { min-height: 0; }
+}
+/* IMPORTANT: no "position:fixed" and no overlay on .acf-shell-layout,
+   .mc-team-shared-conversation or .acf-shell-selection. */
 
-/* One page gutter for every route (was 12/16/22/24px depending on the page): 1.5rem on desktop, 1rem on
-   phones. Applies to the page roots only, so inner layouts keep their own spacing. */
-:root { --mc-page-gutter: 1.5rem; }
-@media (max-width: 640px) { :root { --mc-page-gutter: 1rem; } }
-main > .p-6,
-main > .mc-home,
-.mc-apps-page,
-.mc-graph-page,
-.acf-team-room-page { padding: var(--mc-page-gutter) !important; }
+/* MC-MOBILE-VOICE-AND-OPERATOR-UX-20261020-001
+   Compact mobile workstation, not a condensed diagnostics dashboard.
+   On phone only; desktop four free panes keep their previous geometry. */
+.mc-voice-review {
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: .45rem .6rem;
+  border: 1px solid rgba(253, 191, 86, .44);
+  border-radius: .55rem;
+  color: #f6dba3;
+  background: rgba(111, 75, 15, .2);
+  font-size: .73rem;
+  line-height: 1.3;
+}
 @media (max-width: 640px) {
-  /* keep the hero copy readable: the bright planet moves out from under the text on phones */
-  .acf-team-room-hero::after { right: -15rem; bottom: -19rem; opacity: .5; }
+  .mc-home { padding: .45rem .5rem .75rem !important; gap: .3rem; }
+  .mc-home-intro { padding: 0 .25rem !important; margin: 0 !important; }
+  .mc-home-intro h1 { font-size: .95rem; line-height: 1.25; }
+  .mc-home-intro p { display: none; }
+  .mc-mobile-pane-switcher {
+    position: sticky;
+    top: 3.3rem;
+    min-height: 2.9rem;
+    padding: .25rem;
+    margin-block: .2rem;
+    gap: .24rem;
+  }
+  .mc-mobile-pane-tab { min-height: 2.55rem; padding: .28rem .12rem; }
+  .mc-mobile-pane-tab span { font-size: .59rem; }
+  .mc-terminal-grid { gap: .3rem; }
+  .mc-terminal-pane-slot { min-height: 0; min-width: 0; }
+  .mc-terminal-pane-slot .mc-pane {
+    height: calc(100dvh - 11rem);
+    min-height: 29rem;
+    max-height: none;
+    overflow: hidden;
+  }
+  .mc-operator-pane-header { padding: .35rem .45rem !important; }
+  .mc-operator-pane-header-controls { gap: .28rem !important; }
+  .mc-operator-pane-header .mc-pane-number { min-width: 2.2rem; padding: .28rem; }
+  .mc-operator-agent-select { flex: 1 1 10rem !important; min-width: 0 !important; max-width: 19rem; }
+  .mc-operator-route-badge, .mc-pane-selected-badge { display: none !important; }
+  .mc-operator-session-status {
+    display: inline-flex;
+    white-space: nowrap;
+    font-size: .7rem !important;
+    margin-left: auto;
+  }
+  .mc-operator-session-control {
+    min-width: 0 !important;
+    flex: 1 1 100% !important;
+    gap: .3rem !important;
+  }
+  .mc-operator-session-control > span { font-size: .65rem; }
+  .mc-operator-session-control select {
+    min-width: 0 !important;
+    width: 0;
+    flex: 1 1 0 !important;
+    font-size: .75rem;
+  }
+  .mc-operator-new-session { flex: none; font-size: .7rem !important; padding: .35rem .5rem !important; }
+  .mc-terminal-surface { padding: .35rem .55rem .45rem !important; gap: .32rem !important; }
+  .mc-lifecycle-row { min-height: 1.9rem !important; }
+  .mc-route-identity-strip { display: none !important; }
+  .mc-terminal-surface [data-conversation-stream="true"] {
+    min-height: 0;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+  .mc-terminal-surface .mc-composer-shell {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    background: rgba(6, 13, 29, .98);
+    box-shadow: 0 -.6rem 1rem rgba(6, 13, 29, .9);
+    padding: .45rem .1rem .15rem;
+  }
+  .mc-terminal-surface .mc-toolbar {
+    gap: .25rem;
+    flex-wrap: wrap;
+  }
+  .mc-terminal-surface .mc-toolbar .mc-button { font-size: .73rem; }
+  .mc-terminal-surface .mc-composer { min-height: 5rem !important; }
+  .mc-terminal-surface .mc-diagnostics-scroll { max-height: 9rem; }
 }
 
-/* Hover/focus rings must not be cut by their container: room for the ring around the hero mode tabs and the
-   Team Room agent cards (their pane body clipped the card border glow on all four sides). */
-.acf-team-room-hero .acf-mode-tabs { padding-inline: .3rem; margin-inline: -.3rem; }
-.acf-shell .acf-shell-grid > .mc-focusable-panel > .mc-focus-panel-body { overflow: visible; }
-@media (max-width: 767px) {
-  /* phone order stays as certified with the deck: operator controls, roster and reading surface first;
-     the (now visible) agent room follows */
-  .acf-shell-layout > .acf-shell-side { order: -1; }
+/* Acceptance follow-up: real 390px Chromium caught sticky tabs crossing the pane header.
+   Keep navigation in document flow and anchor the composer at bottom of its own scroll region. */
+.mc-clear-history-mobile { display: none; }
+@media (max-width: 640px) {
+  .mc-mobile-pane-switcher { position: relative !important; top: auto !important; z-index: auto; }
+  .mc-terminal-surface [data-conversation-stream="true"] {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mc-terminal-surface .mc-composer-shell {
+    margin-top: auto;
+    flex-shrink: 0;
+  }
+  .mc-clear-history-desktop { display: none !important; }
+  .mc-clear-history-mobile {
+    display: block;
+    flex: 1 0 100%;
+    font-size: .7rem;
+    border: 1px solid rgba(80, 128, 177, .3);
+    border-radius: .4rem;
+    color: #cbdcf1;
+    background: rgba(10, 20, 39, .94);
+  }
+  .mc-clear-history-mobile > summary {
+    cursor: pointer;
+    padding: .45rem .65rem;
+    list-style: none;
+  }
+  .mc-clear-history-mobile > summary::-webkit-details-marker { display: none; }
+  .mc-clear-history-mobile > button { margin: .3rem; }
 }

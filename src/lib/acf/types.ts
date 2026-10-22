@@ -69,6 +69,10 @@ export interface AcfProofPointer {
 
 export interface AcfTeamViewV1 {
   view_version: 1;
+  /** ACF D8 is additive to view_version=1; absent/null for all historical v1 runs. */
+  schema?: 2 | null;
+  tasks?: Array<{ task_id: string; assignee: string; reviewer?: string | null; title?: string | null; status: string }>;
+  due?: Array<{ task_id: string; role: string }>;
   run_id: string;
   run_status: string;
   team_run_completed: boolean;
@@ -77,7 +81,7 @@ export interface AcfTeamViewV1 {
   replay_matches_record: boolean | null;
   next_safe_action: string | null;
   reentry_point: Record<string, unknown> | null;
-  participants: Array<{role?: string;agent_id?: string;session_ref?: string;loop_role?: string|null;identity?: string}>;
+  participants: Array<{role?: string;agent_id?: string;session_ref?: string;loop_role?: string|null;identity?: string;tags?: string[]}>;
   turns: Array<{seq?:number;role?:string;outcome?:string;message_id?:string|null;decision_id?:string|null;agent_id?:string|null;session_ref?:string|null;conversation_ref?:string|null}>;
   in_flight: unknown | null;
   loop: Record<string, unknown> | null;
@@ -90,6 +94,9 @@ export interface AcfTeamViewV1 {
   directed_steps?: number;
   lineage?: AcfLineage | null;
   steps?: { used: number; max: number | null; open: number[] };
+  /** ACF §14 FreeRoom window; status and budget are owned by ACF. */
+  collaboration?: { window_id: string; order: string[]; rounds: number; posted: number; total: number;
+    status: "OPEN" | "RUNNING" | "ENDED" | "BLOCKED" | string; reason?: string | null; messages?: unknown[] } | null;
 }
 
 /** One operator message said during an intervention (posting.intervention_messages + its text). */

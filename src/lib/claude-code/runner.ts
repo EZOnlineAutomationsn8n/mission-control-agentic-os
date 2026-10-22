@@ -62,6 +62,56 @@ async function nativeClaudeSessionSnapshot(sessionId: string): Promise<NativeCla
   return { filePath: null, size: 0, mtimeMs: 0 };
 }
 
+// MC-CLAUDE-CONTINUOUS-CONVERSATION (ACF-MC-CONTINUOUS-CONVERSATION-RECOVERY-20261020-001):
+// a failed route that only appended the operator's own prompt (and session metadata) to the native transcript has
+// executed nothing: no assistant output, no tool call, no tool result. Rerouting is then safe and preserves
+// exactly-once. Any assistant/tool entry, or an unreadable change, keeps the strict suppression.
+async function nativeChangeWasPromptOnly(
+  before: NativeClaudeSessionSnapshot,
+  after: NativeClaudeSessionSnapshot
+): Promise<boolean> {
+  if (!after.filePath || (before.filePath && before.filePath !== after.filePath)) return false;
+  if (after.size < before.size) return false;
+  let appended: string;
+  try {
+    const handle = await fs.open(after.filePath, "r");
+    try {
+      const length = after.size - (before.filePath ? before.size : 0);
+      if (length <= 0 || length > 2 * 1024 * 1024) return false;
+      const buffer = Buffer.alloc(length);
+      await handle.read(buffer, 0, length, before.filePath ? before.size : 0);
+      appended = buffer.toString("utf8");
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return false;
+  }
+  const lines = appended.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (lines.length === 0) return false;
+  for (const line of lines) {
+    let entry: { type?: unknown; message?: { role?: unknown; content?: unknown } };
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      return false;
+    }
+    const kind = typeof entry.type === "string" ? entry.type : "";
+    if (!kind) return false; // an entry of unknown kind is never assumed harmless
+    // Assistant TEXT (an answer or the CLI's own API-error message) has no side effects; observed live 2026-10-20:
+    // the CLI writes provider errors as assistant text. Only a tool call or tool result means work was executed.
+    const content = entry.message?.content;
+    if (Array.isArray(content) && content.some((part) => {
+      const t = (part as { type?: unknown })?.type;
+      return t === "tool_use" || t === "tool_result";
+    })) return false;
+    // Any other entry type is CLI session metadata (custom-title, agent-name, queue-operation, attachment,
+    // atis-latch, last-prompt, cost-state, summary, ...; observed live 2026-10-20). Only assistant output or a tool
+    // call/result means something was executed.
+  }
+  return true;
+}
+
 function nativeClaudeSessionChanged(
   before: NativeClaudeSessionSnapshot,
   after: NativeClaudeSessionSnapshot
@@ -141,20 +191,21 @@ export async function runClaudeCodeTurn(options: {
       cliPayload: {},
     };
   }
+  // Only a HARD preflight failure demotes a route. A short preflight timeout (8 s) only means the free model was
+  // slow; the real turn gives each route CLAUDE_CODE_ROUTE_TIMEOUT_MS (45 s). The operator route order stays 1..N.
   const preflightFailures = new Set(
     routeReadiness.attempts
-      .filter((attempt) => attempt.outcome !== "completed")
+      .filter((attempt) => attempt.outcome === "failed")
       .map((attempt) => attempt.transportModelAlias)
   );
-  const routes = [
-    routeReadiness.transportModelAlias,
-    ...FALLBACK_MODEL_ROUTES.filter(
-      (route) => route !== routeReadiness.transportModelAlias && !preflightFailures.has(route)
-    ),
-  ];
+  const routes = FALLBACK_MODEL_ROUTES.filter(
+    (route) => route === routeReadiness.transportModelAlias || !preflightFailures.has(route)
+  );
   const attempts = [...routeAttempts];
-  const totalTimeoutMs = Number(process.env.CLAUDE_CODE_TIMEOUT_MS || 180_000);
-  const perRouteTimeoutMs = Number(process.env.CLAUDE_CODE_ROUTE_TIMEOUT_MS || 45_000);
+  // Free FCC routes regularly need 40-60 s for a turn (observed live 2026-10-20: an answer landed at 45.0 s and was
+  // cut off). Defaults widened; both stay overridable by environment.
+  const totalTimeoutMs = Number(process.env.CLAUDE_CODE_TIMEOUT_MS || 300_000);
+  const perRouteTimeoutMs = Number(process.env.CLAUDE_CODE_ROUTE_TIMEOUT_MS || 120_000);
   const startedAt = Date.now();
   let createSession = options.create;
   let lastPayload: ClaudeCliPayload = {};
@@ -221,6 +272,10 @@ export async function runClaudeCodeTurn(options: {
       const nativeAfter = await nativeClaudeSessionSnapshot(options.session.claudeSessionId);
       if (nativeClaudeSessionChanged(nativeBefore, nativeAfter)) {
         createSession = false;
+        if (await nativeChangeWasPromptOnly(nativeBefore, nativeAfter)) {
+          lastError = `${detail}; the route recorded only the prompt (nothing executed), next route tried`;
+          continue;
+        }
         retrySuppressed = true;
         lastError = `${detail}; retry suppressed because the persistent Claude Code session changed during the failed route`;
         break;
@@ -256,6 +311,11 @@ export async function runClaudeCodeTurn(options: {
       // session untouched. Replaying the same prompt after Claude already appended it
       // can duplicate tool work and triggers Claude's resume/continuation machinery.
       const nativeAfter = await nativeClaudeSessionSnapshot(options.session.claudeSessionId);
+      if (nativeClaudeSessionChanged(nativeBefore, nativeAfter) && await nativeChangeWasPromptOnly(nativeBefore, nativeAfter)) {
+        createSession = false;
+        lastError = `${resultText || "Claude Code CLI turn failed"}; the route recorded only the prompt (nothing executed), next route tried`;
+        continue;
+      }
       if (nativeClaudeSessionChanged(nativeBefore, nativeAfter)) {
         retrySuppressed = true;
         lastError = `${resultText || "Claude Code CLI turn failed"}; retry suppressed because the persistent Claude Code session changed during the failed route`;
