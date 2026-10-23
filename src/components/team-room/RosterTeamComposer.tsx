@@ -246,6 +246,13 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
           <span className={"rounded border px-1.5 py-0.5 text-[10px] "+(a.route==="ENABLED"?"text-ok":"text-warn")}>{a.route}</span>
         </header>
         <p className={"mt-1 text-[11px] "+(choice.selected?"text-cyan-200":"text-muted")}>{choice.selected?"● GESELECTEERD · DRAFT":a.can_join_now?"● Kandidaat beschikbaar":"● Niet bindbaar zonder sessiecontrole"}</p>
+        {a.agent_id===CLAUDE_AGENT && choice.selected && claudeDiagnostic && <p className="mt-1 break-words text-warn"
+            data-testid="acf-claude-route-diagnostic" role="status">
+          Werkplaatsdiagnose: {claudeDiagnostic.code} · {claudeDiagnostic.proof.detail}
+          <span className="block">Bewezen modelalias: {claudeDiagnostic.proof.triedAliases.join(", ")||"niet geregistreerd"}</span>
+          <span className="block">Bewezen routepogingen: {claudeDiagnostic.proof.triedRoutes.join(", ")||"niet afzonderlijk geregistreerd"}</span>
+          <span className="block">Herstelstatus: {claudeDiagnostic.status} · {claudeDiagnostic.note}</span>
+        </p>}
         <details className="mc-team-composer-card-details mt-2 rounded border border-border/50 p-1.5" data-testid={"agent-details-"+a.agent_id}>
           <summary className="cursor-pointer text-[11px] text-cyan-200">Sessies, waarom niet & functies</summary>
         {a.why_not&&<p className="mt-2 break-words text-warn" data-testid={"why-not-"+a.agent_id}>{a.why_not}</p>}
@@ -258,13 +265,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
         {chosen && <div className="mt-1 break-words">
           <p className={ok?"text-ok":"text-warn"}>{verdict}{canPin(chosen)?" · uses your own "+(a.label??a.agent_id)+" pane":""}</p>
           <p className="mt-0.5 text-muted">{chosen.reason}{chosen.live?.reason?" · "+chosen.live.reason:""}</p>
-          {a.agent_id===CLAUDE_AGENT && claudeDiagnostic && <p className="mt-1 break-words text-warn"
-              data-testid="acf-claude-route-diagnostic">
-            Exacte code (MC-sessieregistry): {claudeDiagnostic.code} · {claudeDiagnostic.proof.detail}
-            <span className="block">Werkelijk herkende FCC-aliassen: {claudeDiagnostic.proof.triedAliases.join(", ")||"geen volledige pogingregistratie"}</span>
-            <span className="block">Bewezen routepogingen: {claudeDiagnostic.proof.triedRoutes.join(", ")||"niet vastgelegd"}</span>
-            <span className="block">Herstelstatus: {claudeDiagnostic.status} · {claudeDiagnostic.note}</span>
-          </p>}
+
           {chosen.last_error&&<p className="mt-1 break-words text-warn">
             {a.agent_id===CLAUDE_AGENT?(()=>{
               const proof=classifyClaudeError(chosen.last_error);

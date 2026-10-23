@@ -3179,6 +3179,20 @@ html[data-mc-panel-focus-id="acf-reading-pane"] .acf-shell-focus-overlay { z-ind
   .mc-app-shell > .mc-sidebar { position: relative !important; top: auto !important; height: 100dvh !important; }
   .mc-app-shell > .flex-1 { height: 100dvh; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 }
+/* Werkplaats ACF Claude recovery: restore the existing mobile drawer as an
+   overlay, not a 288px flex item. Real Chromium at 390px measured a main area
+   only 62.96875px wide because the aside computed position was relative.
+   Desktop >=1280px retains its certified fixed-viewport sidebar. */
+@media (max-width: 1279px) {
+  .mc-app-shell > .mc-sidebar {
+    position: fixed !important;
+    inset: 0 auto 0 0;
+    width: 18rem;
+    height: 100dvh;
+    flex: none;
+  }
+}
+
 /* Slim scrollbars everywhere; the sidebar scrollbar only shows while hovering it */
 * { scrollbar-width: thin; scrollbar-color: rgba(103,217,244,.28) transparent; }
 *::-webkit-scrollbar { width: 6px; height: 6px; }
