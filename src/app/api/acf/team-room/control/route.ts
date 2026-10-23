@@ -17,6 +17,7 @@ export async function GET(request: Request) {
  * | { verb: "team-intervene", args: { run_id, reason } }
  * | { verb: "team-say", args: { run_id, to, text, kind?, reply? } }
  * | { verb: "team-resume", args: { run_id, abandon_owed_replies? } }
+ * | { verb: "team-stop", args: { run_id, reason? } }  // schema2 terminal cancel-run, no in-flight step
  * | { verb: "team-rebind", args: { run_id, role, session_ref, agent_id? } }
  * | { verb: "team-continue", args: { run_id (= predecessor), instruction } }
  * The operator claim (`by` / `created_by`) and every binding are filled on the server, never by the browser.

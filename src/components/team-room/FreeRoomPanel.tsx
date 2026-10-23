@@ -34,6 +34,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
   // UI-only operator work chunk. The durable ACF run and its history live in ACF,
   // not in this component. A timeout/error never starts an automatic retry.
   const [uncertain, setUncertain] = useState(false);
+  const [confirmStop, setConfirmStop] = useState(false);
   const selected = recipients.includes("TEAM") ? members.map(p => p.handle) : recipients.filter(r => members.some(p => p.handle === r));
   const owed = run.teamView?.intervention?.open?.owed ?? [];
   const collaboration = run.teamView?.collaboration;
@@ -143,7 +144,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     try {
       const latest = await readView(run.runId);
       if (!readFreeRoomState(latest, "collaboration").mayResume) {
-        setNote("Hervatten geweigerd: geen actuele ACF-interventiepauze zonder openstaande antwoorden.");
+        setNote("Hervatten geweigerd: ACF bevestigt geen hervatbare pauze zonder openstaande antwoorden.");
         return;
       }
       const result = await callControl("team-resume", { run_id: run.runId, abandon_owed_replies: false });
@@ -152,6 +153,31 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
         : "Niet hervat: " + refusalText(result));
     } catch (e) { setNote("Hervatstatus onbekend: " + String(e)); setUncertain(true); }
     finally { setBusy(null); await refresh(run.runId); }
+  }
+
+  async function stopRoom() {
+    if (disabled || processing || uncertain || run.teamView?.in_flight || !["ACTIVE", "PAUSED"].includes(run.runState) || !confirmStop) return;
+    setBusy("free-room-stop");
+    try {
+      const current = await readView(run.runId);
+      if (!current || current.in_flight || !["ACTIVE", "PAUSED"].includes(current.run_status)) {
+        setNote("Stop geweigerd: ACF meldt geen actuele, veilig afsluitbare run.");
+        return;
+      }
+      const result = await callControl("team-stop", { run_id: run.runId,
+        reason: "Operator Dennis beëindigt het vrije teamgesprek" });
+      if (result.ok) {
+        setNote("ACF-run definitief geannuleerd; geschiedenis blijft in het bestaande ACF-journal.");
+      } else {
+        setNote("Stop niet bevestigd: " + refusalText(result));
+        if (isUncertainTurnOutcome(result.code)) setUncertain(true);
+      }
+    } catch(e) {
+      setNote("Stopstatus onbekend: " + String(e) + ". Controleer ACF voordat je opnieuw handelt.");
+      setUncertain(true);
+    } finally {
+      setBusy(null); setConfirmStop(false); await refresh(run.runId);
+    }
   }
 
   async function inspectEvidence() {
@@ -245,12 +271,24 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
         <button type="button" data-testid="free-room-pause" className="mc-button mc-button-secondary" disabled={!canPause} onClick={()=>void pauseRoom()}>Pauzeer</button>
         <button type="button" data-testid="free-room-resume" className="mc-button mc-button-secondary" disabled={!canResume || uncertain} onClick={()=>void resumeRoom()}>Hervat</button>
         <button type="button" data-testid="free-room-inspect" className="mc-button mc-button-secondary" disabled={processing} onClick={()=>void inspectEvidence()}>Controleer ACF-status</button>
+        <button type="button" data-testid="free-room-stop" className="mc-button mc-button-secondary"
+          disabled={locked || uncertain} onClick={()=>setConfirmStop(true)}>Stop</button>
         {availableWindow && <button type="button" data-testid="free-room-continue" className="mc-button mc-button-primary"
           disabled={locked || uncertain} onClick={()=>void continueWindow()}>
           {availableWindow === "replies" ? "Open antwoorden ophalen" : "Verder met dit venster"} ({FREE_ROOM_STEPS_PER_CLICK} max.)
         </button>}
       </div>
-      <p className="mt-1 text-[11px] text-muted">Pauzeren gebruikt ACF team-intervene; hervatten gebruikt team-resume. Er is nog geen gecertificeerde definitieve Stop- of automatische no-progress/consensusfunctie voor deze Free Room. Een onbekende beurt wordt nooit automatisch herhaald.</p>
+      {confirmStop && <div role="group" aria-label="Stop Free Room bevestigen" className="mt-2 rounded-md border border-warn p-3 text-xs" data-testid="free-room-stop-confirm">
+        <p>Wil je deze ACF-run definitief beëindigen? Het gesprek en bewijs blijven bewaard. Een geannuleerde run wordt niet opnieuw geopend.</p>
+        <div className="mt-2 flex gap-2">
+          <button type="button" className="mc-button mc-button-secondary" onClick={()=>setConfirmStop(false)}>Annuleer</button>
+          <button type="button" data-testid="free-room-stop-confirm-button" className="mc-button mc-button-primary"
+            disabled={locked || uncertain} onClick={()=>void stopRoom()}>Bevestig stoppen</button>
+        </div>
+      </div>}
+      <p className="mt-1 text-[11px] text-muted">Pauzeren gebruikt ACF team-intervene; hervatten gebruikt team-resume.
+        Stoppen gebruikt na jouw bevestiging de bestaande ACF cancel-run. Bij een onbekende beurtuitkomst wordt niets opnieuw verzonden.
+        Automatische consensus wordt pas getoond als ACF dit met bewijs bevestigt.</p>
       {uncertain && <p role="alert" className="mt-2 text-xs text-warn" data-testid="free-room-uncertain">
         Onbekende beurtuitkomst: nieuwe dispatch geblokkeerd. ACF journal/reconciliatie door de operator controleren; een readback alleen heft dit niet op.
       </p>}

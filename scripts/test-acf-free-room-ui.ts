@@ -64,3 +64,41 @@ test("Samenwerken never reaches ACF mutation if rounds, members or schema are in
  assert.equal(result.ok,false);if(!result.ok)assert.equal(result.code,"D8_SCHEMA_REQUIRED");
  assert.equal(v1.calls.some(c=>c.verb==="team-collaborate"),false);
 });
+
+test("Free Room Stop maps only schema2 safe run to existing durable ACF cancel-run", async () => {
+  const called: Array<{verb:string,args:Record<string,unknown>}> = [];
+  const executor: AcfRunner = async argv => {
+    const verb=argv[0], args=JSON.parse(argv[4]) as Record<string,unknown>;
+    called.push({verb,args});
+    return JSON.stringify(verb==="team-view" ? {schema:2,run_status:"PAUSED",in_flight:null} :
+      {run_id:"RUN-X",run_status:"CANCELLED",last_seq:66});
+  };
+  const result=await runAcfControl("team-stop",{run_id:"RUN-X",reason:"Operator confirms stop"},executor,lister,agents);
+  assert.equal(result.ok,true);
+  assert.deepEqual(called.map(c=>c.verb),["team-view","cancel-run"]);
+  assert.deepEqual(called[1].args,{run_id:"RUN-X",by:"DENNIS",reason:"Operator confirms stop"});
+});
+test("Free Room Stop fail-closed for v1, in-flight, closed, invalid reason",async()=>{
+  for(const scenario of [
+    {schema:1,run_status:"ACTIVE",in_flight:null},
+    {schema:2,run_status:"ACTIVE",in_flight:{step:5}},
+    {schema:2,run_status:"CANCELLED",in_flight:null},
+  ]){
+    const seen:string[]=[];
+    const executor:AcfRunner=async argv=>{
+      seen.push(argv[0]);
+      return JSON.stringify(scenario);
+    };
+    const result=await runAcfControl("team-stop",{run_id:"RUN-X"},executor,lister,agents);
+    assert.equal(result.ok,false);
+    assert.deepEqual(seen,["team-view"]);
+  }
+  const seen:string[]=[];
+  const executor:AcfRunner=async argv=>{
+    seen.push(argv[0]);
+    return JSON.stringify({schema:2,run_status:"ACTIVE",in_flight:null});
+  };
+  const invalid=await runAcfControl("team-stop",{run_id:"RUN-X",reason:""},executor,lister,agents);
+  assert.equal(invalid.ok,false);
+  assert.deepEqual(seen,["team-view"]);
+});

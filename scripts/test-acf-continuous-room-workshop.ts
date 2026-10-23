@@ -74,3 +74,22 @@ test("re-entry after reload derives continuation exclusively from durable ACF vi
   assert.equal(availableWindowFromStore(base({collaboration:{window_id:"C1",status:"ENDED"}})),null);
   assert.equal(availableWindowFromStore(null),null);
 });
+
+test("automatic PAUSED_NO_PROGRESS state from ACF can resume the exact durable run", () => {
+  const paused = base({run_status: "PAUSED", collaboration: {
+    window_id:"C16", order:["hermes","openclaw"], rounds:4,
+    posted:6,total:8,status:"PAUSED_NO_PROGRESS",
+    reason:"two complete repeated rounds",
+  }});
+  const value = readFreeRoomState(paused, "collaboration");
+  assert.equal(value.kind, "paused");
+  assert.equal(value.mayStep, false);
+  assert.equal(value.mayResume, true);
+  assert.match(value.label,/twee rondes zonder voortgang/);
+  assert.equal(availableWindowFromStore(paused), null);
+  const notDurableProof=base({run_status:"PAUSED", collaboration:{
+    window_id:"C16", order:["hermes","openclaw"],rounds:4,
+    posted:6,total:8,status:"ACTIVE",
+  }});
+  assert.equal(readFreeRoomState(notDurableProof,"collaboration").mayResume,false);
+});

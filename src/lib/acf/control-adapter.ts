@@ -21,7 +21,7 @@ export const ACF_TEAM_ROOM_HOME = process.env.ACF_STATE_DIR || `${ACF_PROJECT_RO
 export const ACF_TEAM_ROOM_ROUTES = process.env.ACF_TEAM_ROOM_ROUTES || `${ACF_TEAM_ROOM_HOME}/participant_routes.json`;
 export const ACF_TEAM_CONTROL_VERBS = [
   "team-open", "team-open-participants", "team-task", "team-join", "team-step", "team-reconcile",
-  "team-intervene", "team-say", "team-collaborate", "team-resume", "team-rebind", "team-continue",
+  "team-intervene", "team-say", "team-collaborate", "team-resume", "team-stop", "team-rebind", "team-continue",
 ] as const;
 export type AcfControlVerb = (typeof ACF_TEAM_CONTROL_VERBS)[number];
 
@@ -375,7 +375,25 @@ export async function runAcfControl(verb: unknown, args: unknown, runner: AcfRun
   } else {
     const runId = typeof obj.run_id === "string" ? obj.run_id : "";
     if (!RUN_ID_RE.test(runId)) return bad(v, "run_id required");
-    if (v === "team-task") {
+    if (v === "team-stop") {
+      // Reuse ACF's existing durable core cancel-run verb; do NOT add a
+      // parallel orchestrator/session stop or stop an in-flight participant.
+      const current = await callAcf("team-view", { run_id: runId }, OTHER_TIMEOUT_MS, runner);
+      if (!current.ok) return { ok: false, verb: v, code: current.code, detail: current.detail };
+      if (current.answer.schema !== 2) return bad(v, "Stop via Free Room is only for schema-2 runs");
+      if (current.answer.in_flight) return { ok: false, verb: v, code: "TURN_OUTCOME_PENDING",
+        detail: "ACF still has an open journal turn; reconcile its outcome before closing the run" };
+      if (!["ACTIVE", "PAUSED"].includes(String(current.answer.run_status))) {
+        return { ok: false, verb: v, code: "RUN_NOT_OPEN", detail: "ACF does not report an active or paused run" };
+      }
+      const reason = obj.reason === undefined ? "Operator stopped the Free Room" : obj.reason;
+      if (typeof reason !== "string" || !reason.trim() || reason.length > LIMITS.reason ||
+          hasControlChars(reason)) return bad(v, "Stop reason: 1..300 characters, no control characters");
+      const stopped = await callAcf("cancel-run", { run_id: runId, by: OPERATOR,
+        reason: reason.trim() }, OTHER_TIMEOUT_MS, runner);
+      if (!stopped.ok) return { ok: false, verb: v, code: stopped.code, detail: stopped.detail };
+      return { ok: true, verb: v, result: stopped.answer };
+    } else if (v === "team-task") {
       const v2 = await requireV2Run(runId, runner);
       if (!v2.ok) return { ok: false, verb: v, code: v2.code, detail: v2.detail };
       const taskId = typeof obj.task_id === "string" ? obj.task_id : "";

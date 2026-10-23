@@ -27,8 +27,14 @@ export function readFreeRoomState(view: AcfTeamViewV1 | null, mode: FreeRoomPend
       detail: "ACF staat één gerichte beurt toe binnen de open operatorinterventie.",
       mayStep: true, mayResume: false,
     };
-    return { kind: "paused", label: "ACF gepauzeerd", detail: reason || "De run is gepauzeerd.",
-      mayStep: false, mayResume: open && owed === 0 };
+    // ACF's durable, automatic no-progress pause is a RUN_PAUSED without
+    // an operator intervention; only ACF may confirm that via its board.
+    const noProgressPause = view.run_status === "PAUSED" &&
+      view.collaboration?.status === "PAUSED_NO_PROGRESS";
+    return { kind: "paused",
+      label: noProgressPause ? "Pauze: twee rondes zonder voortgang" : "ACF gepauzeerd",
+      detail: reason || "De run is gepauzeerd.",
+      mayStep: false, mayResume: (open && owed === 0) || noProgressPause };
   }
   if (view.run_status !== "ACTIVE") return {
     kind: "ended", label: "ACF-run niet actief", detail: reason || "De run accepteert geen volgende beurt.",
