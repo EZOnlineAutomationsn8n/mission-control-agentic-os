@@ -198,3 +198,35 @@ test("real-agent bridge lifecycle is explicit, persisted, and audited", async ()
   assert.equal(failedStart.session.status, "error");
   assert.match(failedStart.error, /all available Claude Code agent routes failed/);
 });
+
+test("ACF werkplaats failed bootstrap preserves session and audits bounded route evidence", async () => {
+  const key = "acf-werkplaats-claude-code";
+  const url = "http://local/api/connectors/claude-code/session?sessionId=" + key;
+  process.env.TEST_CLAUDE_BOOTSTRAP_FAILURE = "1";
+  const failedResponse = await sessionRoute.POST(new Request(url, {
+    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"start"})
+  }));
+  delete process.env.TEST_CLAUDE_BOOTSTRAP_FAILURE;
+  assert.equal(failedResponse.status,502);
+  const failed = await failedResponse.json();
+  assert.equal(failed.session.status,"error");
+  const nativeId=failed.session.claudeSessionId;
+  assert.ok(nativeId);
+  const proofEvents=(await readAuditEvents()).filter(e=>e.actionType==="claude-code-session-start-route-proof");
+  assert.ok(proofEvents.length);
+  const proof=JSON.parse(proofEvents[0].resultSummary);
+  assert.equal(proof.sessionId,key);
+  assert.equal(proof.routeCount,12);
+  assert.equal(proof.attempts.length,12);
+  assert.equal(proof.attempts[0].routeNumber,1);
+  assert.equal(proof.attempts[11].routeNumber,12);
+  assert.ok(!proofEvents[0].resultSummary.includes("request_id=test"));
+  const repeat=await sessionRoute.POST(new Request(url,{
+    method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"start"})
+  }));
+  assert.equal(repeat.status,409);
+  assert.equal((await repeat.json()).error,"ACF_SESSION_EXISTS_NO_OVERWRITE");
+  const after=(await (await sessionRoute.GET(new Request(url))).json()).session;
+  assert.equal(after.claudeSessionId,nativeId);
+  assert.equal(after.status,"error");
+});

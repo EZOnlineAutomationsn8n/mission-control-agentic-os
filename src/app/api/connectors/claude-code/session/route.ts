@@ -4,6 +4,8 @@ import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { runClaudeCodeTurn } from "@/lib/claude-code/runner";
 import { createClaudeCodeSession, readClaudeCodeSession, stopClaudeCodeSession, updateClaudeCodeSession } from "@/lib/claude-code/session-store";
+import { classifyClaudeError, ACF_SESSION_PATTERN } from "@/lib/acf/werkplaats-session-recovery";
+import { FALLBACK_MODEL_ROUTES } from "@/lib/connectors/live/fcc-actions";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +43,17 @@ export async function POST(request: Request) {
 
   const existing = await readClaudeCodeSession(sessionId);
   if (existing?.active && existing.status !== "stopped") return NextResponse.json({ session: existing, alreadyActive: true });
+  // Fail closed on the ACF-only key: an old ERROR session is never replaced by
+  // a fresh native UUID. The isolated ACF preparation path uses a distinct
+  // bounded recovery key, leaving original transcripts and error history intact.
+  if (ACF_SESSION_PATTERN.test(sessionId) && existing) {
+    return NextResponse.json({ error: "ACF_SESSION_EXISTS_NO_OVERWRITE",
+      detail: "Existing ACF session/history cannot be overwritten or retried implicitly.",
+      session: existing }, { status: 409 });
+  }
 
   const session = await createClaudeCodeSession(sessionId);
+  let routeProof: {routeCount:number;attempts:Array<{routeNumber:number|null;transportModelAlias:string;outcome:string;errorCode:string;latencyMs:number|null}>;skippedRouteNumbers:number[]} | null = null;
   try {
     const bootstrap = await runClaudeCodeTurn({
       // Session preparation is read-only: plan mode permits inspection but does
@@ -52,6 +63,14 @@ export async function POST(request: Request) {
       create: true,
       prompt: "Initialize this Mission Control Claude Code session. Read CLAUDE.md and AGENTIC_OS_BUILD_POLICY.md from the current repository. Do not load runtime-specific AGENTS.md unless the current Dennis work order explicitly names it. Report your agent identity, exact working directory, repository first priority, and continuous-execution return conditions. Do not edit files.",
     });
+    routeProof = {
+      routeCount: bootstrap.routeCount ?? FALLBACK_MODEL_ROUTES.length,
+      attempts: (bootstrap.attempts ?? []).filter(a=>FALLBACK_MODEL_ROUTES.includes(a.transportModelAlias)).map(a=>({
+        routeNumber:a.routeNumber??null,transportModelAlias:a.transportModelAlias,outcome:a.outcome,
+        errorCode:classifyClaudeError(a.error).code,latencyMs:a.latencyMs??null,
+      })),
+      skippedRouteNumbers:bootstrap.skippedRouteNumbers??[],
+    };
     if (bootstrap.status !== "completed" || !bootstrap.text || !bootstrap.agentSessionId) {
       throw new Error(bootstrap.error || "Claude Code bootstrap did not complete");
     }
@@ -70,6 +89,11 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Claude Code session start failed";
     const failed = await updateClaudeCodeSession(sessionId, { status: "error", active: false, lastError: message });
+    if (routeProof) await appendAuditEvent({
+      timestamp: new Date().toISOString(), connectorId:"claude-code", actionType:"claude-code-session-start-route-proof",
+      status:"failed", resultSummary:JSON.stringify({sessionId,code:classifyClaudeError(message).code,...routeProof}),
+      ...auditInitiatorFields(initiator), source:"claude-code/session/route.ts:POST",
+    });
     await appendAuditEvent({
       timestamp: new Date().toISOString(), connectorId: "claude-code", actionType: "claude-code-session-start",
       status: "failed", resultSummary: message,

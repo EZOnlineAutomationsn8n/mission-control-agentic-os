@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AcfTeamRoomRun } from "@/lib/acf/types";
 import { agentLabel, refusalText, type CallControl } from "./OperatorDeck";
+import { CLAUDE_AGENT, LEGACY_SESSION, RECOVERY_SESSION, classifyClaudeError } from "@/lib/acf/werkplaats-session-recovery";
 
 export interface RosterSession {
   session_ref: string;
@@ -77,6 +78,10 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
   const [newTeamMode,setNewTeamMode]=useState(true);
   const [roster,setRoster]=useState<TeamRoster|null>(null);
   const [problem,setProblem]=useState("");
+  const [claudeDiagnostic,setClaudeDiagnostic]=useState<{
+    code:string; status:string; note:string;
+    proof:{code:string;detail:string;triedRoutes:number[];triedAliases:string[];recoverable:boolean}
+  }|null>(null);
 
   const [goal,setGoal]=useState("");
   const [criterion,setCriterion]=useState("");
@@ -112,13 +117,34 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     const id=window.setInterval(()=>{if(document.visibilityState==="visible")void loadRoster();},30000);
     return ()=>{window.clearTimeout(first);window.clearInterval(id);};
   },[loadRoster]);
+  const claudeSelected = choices[CLAUDE_AGENT]?.selected === true;
+  useEffect(()=>{
+    // Selection triggers a fresh READ ONLY diagnosis from the existing MC
+    // session registry; only the classified result enters the browser.
+    if(!claudeSelected) return;
+    let cancelled=false;
+    const controller=new AbortController();
+    fetch("/api/acf/team-room/prepare",{cache:"no-store",signal:controller.signal})
+      .then(async response=>response.ok?await response.json():null)
+      .then(result=>{if(!cancelled && result?.proof && typeof result.code==="string")setClaudeDiagnostic(result);})
+      .catch(()=>{if(!cancelled)setClaudeDiagnostic(null);});
+    return ()=>{cancelled=true;controller.abort();};
+  },[claudeSelected]);
   const rows=roster?.agents??[];
   const selectedRows=rows.filter(a=>choices[agentKey(a)]?.selected);
   const byKey=(key:string,update:Partial<TeamDraftChoice>)=>{
     onChoicesChange({...choices,[key]:{...({selected:false,session:"",functions:""} as TeamDraftChoice),...choices[key],...update}});setPreview(null);
   };
-  const selectedSession=(a:RosterAgent)=>choices[a.agent_id]?.session || a.suggested_session || "";
+  // An ERROR record is still an important diagnostic. Display it by default
+  // for Claude when ACF has no ELIGIBLE suggestion, but never treat it as
+  // bindable; all team creation remains guarded by the real ACF verdict.
+  const selectedSession=(a:RosterAgent)=>choices[a.agent_id]?.session || a.suggested_session ||
+    (a.agent_id===CLAUDE_AGENT && a.sessions.some(s=>s.session_ref===LEGACY_SESSION) ? LEGACY_SESSION : "");
   const sessionsReady=selectedRows.length>0 && selectedRows.every(a=>a.route==="ENABLED"&&a.sessions.some(s=>s.session_ref===selectedSession(a)&&selectable(s)));
+  const prepareClaude = selectedRows.some(a=>a.agent_id===CLAUDE_AGENT &&
+    !a.sessions.some(s=>s.session_ref===selectedSession(a)&&selectable(s))) &&
+    selectedRows.every(a=>a.route==="ENABLED" && (a.agent_id===CLAUDE_AGENT ||
+      a.sessions.some(s=>s.session_ref===selectedSession(a)&&selectable(s))));
   const validFunctions=selectedRows.every(a=>{const f=functionTags(choices[a.agent_id]?.functions||"");return f.length<=6&&f.every(tag=>validTag.test(tag))&&new Set(f).size===f.length;});
   const members=(rows.flatMap(a=>(a.member??[]).map(m=>({...m,agent_id:a.agent_id,label:a.label??agentLabel(a.agent_id)}))));
   const memberHandles=new Set(members.map(x=>x.handle));
@@ -129,14 +155,19 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
   const showCreate=!isV2||newTeamMode;
   const canJoin=Boolean(isV2&&roster?.can_join_running_run);
   const openPreview=()=>{
-    if(!selectedRows.length||selectedRows.length>8||!sessionsReady||!validFunctions)return;
+    if(!selectedRows.length||selectedRows.length>8||!(sessionsReady||prepareClaude)||!validFunctions)return;
     const taken=new Set<string>();
     const participants=selectedRows.map(a=>{
       const handle=newHandle(a.agent_id,taken);taken.add(handle);
-      return {handle,agent_id:a.agent_id,session_ref:selectedSession(a),roles:functionTags(choices[a.agent_id]?.functions??"")};
+      return {handle,agent_id:a.agent_id,
+        session_ref:prepareClaude&&a.agent_id===CLAUDE_AGENT?RECOVERY_SESSION:selectedSession(a),
+        roles:functionTags(choices[a.agent_id]?.functions??"")};
     });
     setPreview({verb:"team-open-participants",args:{goal:goal.trim(),success_criterion:criterion.trim(),participants},
-      description:"Nieuw v2-team registreren. Geen agentturn, geen prompt en geen nieuwe sessies.",range:"0 modelbeurten"});
+      description:prepareClaude
+        ? "Na Dennis' bevestiging: probeer precies één afgebakende ACF Claude-sessie voor te bereiden. Alleen bij ACF ELIGIBLE wordt het team geregistreerd; geen samenwerkingsbeurt. Geen bestaande sessie overschrijven."
+        : "Nieuw v2-team registreren. Geen agentturn, geen prompt en geen nieuwe sessies.",
+      range:prepareClaude?"Eenmalige sessiebootstrap alleen na gecertificeerde free-only FCC-gate; 0 samenwerkingsbeurten":"0 modelbeurten"});
   };
   const joinPreview=()=>{
     if(!runId||!canJoin||eligibleNew.length!==1||!sessionsReady||!validFunctions)return;
@@ -156,6 +187,22 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     const action=preview;if(!action||sending||busy)return;
     setPreview(null);setSending(true);setNote("");
     try{
+      if(action.verb==="team-open-participants" &&
+          (action.args.participants as Array<{agent_id:string;session_ref:string}>).some(
+            p=>p.agent_id===CLAUDE_AGENT&&p.session_ref===RECOVERY_SESSION)) {
+        const response=await fetch("/api/acf/team-room/prepare",{method:"POST",
+          headers:{"content-type":"application/json"},
+          body:JSON.stringify({agentId:CLAUDE_AGENT,operatorConfirmed:true})});
+        const prepared=await response.json() as {ok:boolean;code?:string;detail?:string;
+          proof?:{code:string;triedRoutes:number[];triedAliases:string[]};sessionRef?:string;};
+        await loadRoster();
+        if(!prepared.ok || prepared.sessionRef!==RECOVERY_SESSION){
+          setNote("Claude Code nog niet ELIGIBLE: "+(prepared.code??"UNKNOWN")+
+            (prepared.detail?" · "+prepared.detail:"")+
+            (prepared.proof?.triedRoutes?.length?" · pogingroutes: "+prepared.proof.triedRoutes.join(", "):" · routepogingen niet bewezen"));
+          return;
+        }
+      }
       const answer=await callControl(action.verb,action.args);
       if(!answer.ok){setNote("Niet uitgevoerd: "+refusalText(answer));return;}
       const id=action.verb==="team-open-participants"?String(answer.result?.run_id||""):runId;
@@ -211,7 +258,23 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
         {chosen && <div className="mt-1 break-words">
           <p className={ok?"text-ok":"text-warn"}>{verdict}{canPin(chosen)?" · uses your own "+(a.label??a.agent_id)+" pane":""}</p>
           <p className="mt-0.5 text-muted">{chosen.reason}{chosen.live?.reason?" · "+chosen.live.reason:""}</p>
-          {chosen.last_error&&<p className="mt-1 break-words text-warn">Laatste fout: {chosen.last_error}</p>}
+          {a.agent_id===CLAUDE_AGENT && claudeDiagnostic && <p className="mt-1 break-words text-warn"
+              data-testid="acf-claude-route-diagnostic">
+            Exacte code (MC-sessieregistry): {claudeDiagnostic.code} · {claudeDiagnostic.proof.detail}
+            <span className="block">Werkelijk herkende FCC-aliassen: {claudeDiagnostic.proof.triedAliases.join(", ")||"geen volledige pogingregistratie"}</span>
+            <span className="block">Bewezen routepogingen: {claudeDiagnostic.proof.triedRoutes.join(", ")||"niet vastgelegd"}</span>
+            <span className="block">Herstelstatus: {claudeDiagnostic.status} · {claudeDiagnostic.note}</span>
+          </p>}
+          {chosen.last_error&&<p className="mt-1 break-words text-warn">
+            {a.agent_id===CLAUDE_AGENT?(()=>{
+              const proof=classifyClaudeError(chosen.last_error);
+              return <>Foutcode: {proof.code} · {proof.detail}
+                <span className="block">Bewezen modelaliassen: {proof.triedAliases.join(", ")||"niet afzonderlijk geregistreerd"}</span>
+                <span className="block">Pogingroutes: {proof.triedRoutes.join(", ")||"niet afzonderlijk geregistreerd"}</span>
+                <span className="block">Herstelbaar: {proof.recoverable?"voorwaardelijk — SDK/FCC route moet werken":"niet automatisch"}</span>
+              </>;
+            })():<>Laatste fout: {chosen.last_error}</>}
+          </p>}
         </div>}
         <label className="mt-2 block">Functies (optioneel, komma&apos;s)
           <input className={style+" mt-1"} value={choice.functions} onChange={e=>byKey(a.agent_id,{functions:e.target.value})} placeholder="analyse, review"/>
@@ -226,6 +289,10 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     </div>
     {roster&&rows.length!==6&&<p className="mt-2 text-warn">De complete registry wordt verwacht; er zijn momenteel {rows.length} ACF-rosteritems. Controleer de live agentregistry voordat je een team opent.</p>}
     <p className="mt-2 text-xs text-muted">Geselecteerd: {selectedRows.length}/8 · sessiebindbaar: {sessionsReady?"ja":"nee"} · {selectedRows.length>8?"ACF maximum 8 deelnemers.":""}</p>
+    {prepareClaude&&<p role="status" className="mt-1 text-xs text-warn" data-testid="acf-claude-preparation">
+      Claude Code ontbreekt als ELIGIBLE. Bij bevestigen controleert de werkplaats eenmalig het voorbereidingspad.
+      De oorspronkelijke foutieve ACF-sessie blijft bewaard. Zonder bewezen free-only FCC-gate stopt dit vóór iedere providerstart.
+    </p>}
     <div className="mc-team-composer-workflow mt-4 space-y-2 rounded-lg border border-border p-3" data-testid="composer-workflow">
       {isV2&&<div className="flex flex-wrap gap-2" aria-label="Team aanmaken of huidige run uitbreiden">
         <button type="button" data-testid="composer-create-new" aria-pressed={newTeamMode} onClick={()=>{setNewTeamMode(true);setPreview(null);}}
@@ -240,7 +307,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
           <label className="mt-2 block text-xs">Succescriterium<input maxLength={400} className={style+" mt-1"} value={criterion} onChange={e=>setCriterion(e.target.value)}/></label>
         </details>
         <button type="button" className="mc-button mc-button-success disabled:opacity-40" onClick={openPreview}
-          disabled={Boolean(problem)||sending||!!busy||!selectedRows.length||selectedRows.length>8||!sessionsReady||!validFunctions}>
+          disabled={Boolean(problem)||sending||!!busy||!selectedRows.length||selectedRows.length>8||!(sessionsReady||prepareClaude)||!validFunctions}>
           Nieuw team · {selectedRows.length} deelnemer(s)
         </button>
       </>}
