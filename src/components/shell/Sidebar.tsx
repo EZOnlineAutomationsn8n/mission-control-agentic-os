@@ -151,9 +151,21 @@ export function Sidebar() {
     );
   }
 
+  // One global Mission Control Werkplaats version, with current page context.
+  // No page/component-specific version numbers or separate version registry.
+  const pageLabel = pathname === "/team-room"
+    ? "ACF Room"
+    : [...WORKSPACE, ...SELF, ...SYSTEM].find((item) => item.href === pathname)?.label
+      ?? (pathname.startsWith("/agents/") ? "Agent" : pathname.startsWith("/systems/") ? "Systeem" : "Mission Control");
+
   function section(title: string, items: NavItem[]) {
     const label = title === "Workspace" && werkplaats
-      ? <div className="mc-sidebar-section-label mc-werkplaats-label px-3 pb-1.5">WERKPLAATS <span className="mc-werkplaats-tag">test</span></div>
+      ? <div data-testid="mc-werkplaats-version" aria-label={`WERKPLAATS MISSION_CONTROL-V001 PAGINA: ${pageLabel}`}
+             className="mx-2 mb-1 rounded-lg border border-amber-400/50 bg-amber-400/5 px-3 py-2">
+          <div className="text-[15px] font-extrabold tracking-wide leading-tight text-amber-300">WERKPLAATS</div>
+          <div className="mt-1 text-[12px] font-bold mono text-foreground whitespace-nowrap">MISSION_CONTROL-V001</div>
+          <div className="mt-1 text-[11px] font-semibold text-amber-100/90">PAGINA: {pageLabel}</div>
+        </div>
       : <div className="mc-sidebar-section-label px-3 pb-1.5">{title}</div>;
     return <div className="px-2 pt-3">{label}{items.map(renderItem)}</div>;
   }

@@ -5,12 +5,10 @@ import { connectorRegistry } from "@/lib/connectors/registry";
 import type { AgentSystemState } from "@/lib/connectors/types";
 import { countBlockedActions, countReadyActions, isLiveRunning } from "@/lib/ui-helpers";
 import { usePanelFocus } from "@/components/shell/PanelFocus";
-import { useIsWerkplaats } from "@/components/shell/PreviewIdentity";
 import { startBoundedPoll } from "@/lib/cockpit/bounded-poll";
 
 export function TopBar() {
   const { focusedPanelId, focusedPanelLabel, restoreLayout } = usePanelFocus();
-  const werkplaats = useIsWerkplaats();
   const [states, setStates] = useState<AgentSystemState[]>([]);
   const [clock, setClock] = useState<string>("");
 
@@ -45,13 +43,6 @@ export function TopBar() {
 
   return (
     <header className={`mc-topbar ${focusedPanelId ? "mc-topbar-focus-mode" : ""} h-14 flex items-center pl-16 pr-3 xl:px-4 gap-1.5 sticky top-0 z-20 overflow-x-auto overflow-y-hidden`}>
-      {werkplaats && (
-        <div data-testid="mc-werkplaats-version" aria-label="WERKPLAATS MISSION_CONTROL-V038"
-             className="mc-top-metric mc-top-metric-warn flex-col !items-start !gap-0 !rounded-lg !py-1 shrink-0 leading-tight">
-          <span className="text-[10px] font-extrabold tracking-wide text-amber-300">WERKPLAATS</span>
-          <span className="text-[11px] font-bold mono text-foreground whitespace-nowrap">MISSION_CONTROL-V038</span>
-        </div>
-      )}
       {focusedPanelId && (
         <div className="mc-focus-topbar-state">
           <span className="text-[10px] font-semibold tracking-[0.12em] text-cyan-200">FOCUSED PANE</span>
