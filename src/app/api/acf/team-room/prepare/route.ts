@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { FALLBACK_MODEL_ROUTES } from "@/lib/connectors/live/fcc-actions";
+import { verifyFccFreeBinding } from "@/lib/acf/fcc-zero-cost-gate";
 import { readFile } from "node:fs/promises";
-import { appendAuditEvent } from "@/lib/audit-log-store";
 import { ACF_TEAM_ROOM_ROUTES, readAcfTeamRoster } from "@/lib/acf/control-adapter";
 import { CLAUDE_AGENT, LEGACY_SESSION, RECOVERY_SESSION, classifyClaudeError, planClaudeSession,
   type RosterAgent } from "@/lib/acf/werkplaats-session-recovery";
@@ -66,41 +67,24 @@ export async function POST(request:Request) {
   try {
     const plan=await inspect();
     if(plan.status==="READY")return NextResponse.json({ok:true,prepared:false,...plan},{headers});
-    if(plan.status!=="PREPARE_FRESH")
-      return NextResponse.json({ok:false,...plan},{status:409,headers});
-    // This external provider gate must be proven in the ACTUAL current FCC runtime;
-    // a route ending in ':free', a health 200, or a checkbox is not evidence.
-    if(process.env.MC_ACF_FCC_ZERO_CREDIT_GUARD_CERTIFIED!=="1")
-      return NextResponse.json({ok:false,
-        ...plan,code:"FCC_FREE_ONLY_GUARD_UNVERIFIED",detail:"Geen modelstart zolang de actuele FCC runtime niet fail-closed gratis is gecertificeerd.",
-        attemptedRouteNumbers:[],recoverable:true},{status:409,headers});
-    const url=liveOrigin+"/api/connectors/claude-code/session?sessionId="+encodeURIComponent(RECOVERY_SESSION);
-    const probe=await fetch(url,{cache:"no-store",signal:AbortSignal.timeout(9000)});
-    if(!probe.ok)return NextResponse.json({ok:false,code:"MC_SESSION_INDEX_UNAVAILABLE"},{status:503,headers});
-    const existing=(await probe.json()) as {session?:{sessionKey?:string;status?:string}|null};
-    if(existing.session)return NextResponse.json({ok:false,code:"SESSION_KEY_ALREADY_EXISTS",
-      detail:"Recovery key already registered. Never overwrite its native session or history.",
-      sessionRef:RECOVERY_SESSION},{status:409,headers});
-    // Bounded operator-triggered single start, on the existing MC registry API;
-    // no proxy for arbitrary URLs, agent IDs, session keys, verbs or credentials.
-    const response=await fetch(url,{method:"POST",headers:{"content-type":"application/json"},
-      body:JSON.stringify({action:"start"}),signal:AbortSignal.timeout(180000)});
-    const started=(await response.json()) as {session?:{sessionKey?:string;status?:string};error?:string};
-    const proof=classifyClaudeError(started.error);
-    await appendAuditEvent({timestamp:new Date().toISOString(),connectorId:"acf-claude-werkplaats",
-      actionType:"session-prepare",actor:"operator",
-      status:response.ok?"completed":"failed",
-      resultSummary:JSON.stringify({sessionRef:RECOVERY_SESSION,code:proof.code,
-        triedRoutes:proof.triedRoutes,triedAliases:proof.triedAliases,attempted:1,providerCalls:"operator-initiated"}),
-      source:"api/acf/team-room/prepare/route.ts"});
-    if(!response.ok)return NextResponse.json({ok:false,code:proof.code,proof,sessionRef:RECOVERY_SESSION,
-      detail:"Claude-start mislukt; originele sessie en pogingen blijven geregistreerd. Geen retry."},
-      {status:502,headers});
-    const updated=await inspect();
-    if(updated.status!=="READY"||updated.sessionRef!==RECOVERY_SESSION)
-      return NextResponse.json({ok:false,...updated,code:"ACF_REGISTRATION_NOT_ELIGIBLE"},
+    if(plan.status!=="REPAIR_EXISTING")
+      return NextResponse.json({ok:false,...plan,code:"ACF_EXISTING_SESSION_REQUIRED"},
         {status:409,headers});
-    return NextResponse.json({ok:true,prepared:true,...updated},{headers});
+    // The fixed Free Room key is kept. No extra native session key and no
+    // bootstrap prompt. The actual Claude CLI runtime must first prove both:
+    // SDK accepted model=sonnet/haiku and FCC route-specific zero pricing.
+    // An environment toggle is NOT a price certificate.
+    // Current runtime supplies no signed or independently verified pricing
+    // snapshot. Explicit null is intentional and cannot be bypassed by merely
+    // setting MC_ACF_FCC_ZERO_CREDIT_GUARD_CERTIFIED=1.
+    const cost = verifyFccFreeBinding(FALLBACK_MODEL_ROUTES[10], null);
+    return NextResponse.json({ok:false,...plan,code:cost.code,
+      nativeResumeCertified:false,
+      detail:"Bestaande acf-werkplaats-claude-code blijft geregistreerd. "
+        +"De SDK-compatibele alias sonnet mapte in de actuele FCC-configuratie naar "
+        +"operatorroute 11, maar een actuele onafhankelijke zero-price-attestatie "
+        +"en same-session Claude-resume ontbreken. Geen prompt, retry of nieuwe sessie.",
+      attemptedRouteNumbers:[],recoverable:true},{status:409,headers});
   } catch(error) {
     return NextResponse.json({ok:false,code:"PREPARATION_OUTCOME_UNKNOWN",
       detail:error instanceof Error?error.name:"Runtime response unavailable",

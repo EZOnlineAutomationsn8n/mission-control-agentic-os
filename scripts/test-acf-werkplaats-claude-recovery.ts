@@ -7,12 +7,12 @@ function agent(sessions:RosterAgent["sessions"],patch:Partial<RosterAgent>={}):R
  return {agent_id:"claude-code",route:"ENABLED",can_join_now:false,
   suggested_session:null,sessions,...patch};
 }
-test("legacy bad Claude Code session preserved; recovery is a new ACF-only key",()=>{
+test("legacy failed Claude Code session is the recovery target, no new key",()=>{
  const a=agent([{session_ref:LEGACY_SESSION,status:"error",verdict:"EXCLUDED_ERROR",
    last_error:'[claude-code:unrecognized_model] {"model":"claude-3-freecc-no-thinking/open_router/poolside/laguna-xs-2.1:free"}'}]);
  const decision=planClaudeSession(a);
- assert.equal(decision.status,"PREPARE_FRESH");
- assert.equal(decision.sessionRef,RECOVERY_SESSION);
+ assert.equal(decision.status,"REPAIR_EXISTING");
+ assert.equal(decision.sessionRef,LEGACY_SESSION);
  assert.equal(a.sessions[0].session_ref,LEGACY_SESSION);
  assert.equal(decision.proof.code,"CLAUDE_CLI_UNRECOGNIZED_MODEL");
  assert.deepEqual(decision.proof.triedRoutes,[]);
@@ -38,6 +38,11 @@ test("starting/running session cannot trigger a concurrent bootstrap",()=>{
 test("unbound/disconnected roster cannot create phantom session",()=>{
  assert.equal(planClaudeSession(null).status,"UNKNOWN");
  assert.equal(planClaudeSession(agent([],{route:"DISABLED"})).status,"UNKNOWN");
+});
+test("missing ACF session never produces a phantom recovery key",()=>{
+ const decision=planClaudeSession(agent([]));
+ assert.equal(decision.status,"BLOCKED");
+ assert.equal(decision.sessionRef,null);
 });
 test("route classification is proof-only; do not invent unobserved attempts",()=>{
  const proof=classifyClaudeError("all configured model routes failed");

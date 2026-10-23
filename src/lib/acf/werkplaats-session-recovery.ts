@@ -36,5 +36,10 @@ export function planClaudeSession(agent:RosterAgent|null) {
  const proof=classifyClaudeError((recovery||old)?.last_error||(recovery||old)?.reason);
  if(recovery)return {status:"BLOCKED" as const,sessionRef:recovery.session_ref,proof,note:"Recovery-key bestaat. Geen overwrite of onbegrensde retry."};
  if(old&&["starting","running"].includes(old.status))return {status:"BLOCKED" as const,sessionRef:old.session_ref,proof,note:"Een beurt of sessiestart is mogelijk in uitvoering."};
- return {status:"PREPARE_FRESH" as const,sessionRef:RECOVERY_SESSION,proof,note:"Nieuwe ACF-only sessie; originele key en geschiedenis blijven bestaan."};
+ // Dennis explicitly chose to preserve and repair the registered ACF identity,
+ // not silently fork a new native or roster session.
+ if(old)return {status:"REPAIR_EXISTING" as const,sessionRef:LEGACY_SESSION,proof,
+   note:"Bestaande ACF-sessie behouden; herstel alleen met bewezen gratis SDK/FCC-binding en zonder native-history reset."};
+ return {status:"BLOCKED" as const,sessionRef:null,proof,
+   note:"Geen bestaande ACF-registratie aangetroffen. Maak niet stilzwijgend een tweede sessie."};
 }

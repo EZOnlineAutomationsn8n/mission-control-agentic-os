@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { AcfTeamRoomRun } from "@/lib/acf/types";
 import { agentLabel, refusalText, type CallControl } from "./OperatorDeck";
-import { CLAUDE_AGENT, LEGACY_SESSION, RECOVERY_SESSION, classifyClaudeError } from "@/lib/acf/werkplaats-session-recovery";
+import { CLAUDE_AGENT, LEGACY_SESSION, classifyClaudeError } from "@/lib/acf/werkplaats-session-recovery";
 
 export interface RosterSession {
   session_ref: string;
@@ -160,7 +160,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     const participants=selectedRows.map(a=>{
       const handle=newHandle(a.agent_id,taken);taken.add(handle);
       return {handle,agent_id:a.agent_id,
-        session_ref:prepareClaude&&a.agent_id===CLAUDE_AGENT?RECOVERY_SESSION:selectedSession(a),
+        session_ref:prepareClaude&&a.agent_id===CLAUDE_AGENT?LEGACY_SESSION:selectedSession(a),
         roles:functionTags(choices[a.agent_id]?.functions??"")};
     });
     setPreview({verb:"team-open-participants",args:{goal:goal.trim(),success_criterion:criterion.trim(),participants},
@@ -189,14 +189,14 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     try{
       if(action.verb==="team-open-participants" &&
           (action.args.participants as Array<{agent_id:string;session_ref:string}>).some(
-            p=>p.agent_id===CLAUDE_AGENT&&p.session_ref===RECOVERY_SESSION)) {
+            p=>p.agent_id===CLAUDE_AGENT&&p.session_ref===LEGACY_SESSION)) {
         const response=await fetch("/api/acf/team-room/prepare",{method:"POST",
           headers:{"content-type":"application/json"},
           body:JSON.stringify({agentId:CLAUDE_AGENT,operatorConfirmed:true})});
         const prepared=await response.json() as {ok:boolean;code?:string;detail?:string;
           proof?:{code:string;triedRoutes:number[];triedAliases:string[]};sessionRef?:string;};
         await loadRoster();
-        if(!prepared.ok || prepared.sessionRef!==RECOVERY_SESSION){
+        if(!prepared.ok || prepared.sessionRef!==LEGACY_SESSION){
           setNote("Claude Code nog niet ELIGIBLE: "+(prepared.code??"UNKNOWN")+
             (prepared.detail?" · "+prepared.detail:"")+
             (prepared.proof?.triedRoutes?.length?" · pogingroutes: "+prepared.proof.triedRoutes.join(", "):" · routepogingen niet bewezen"));
