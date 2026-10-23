@@ -25,7 +25,7 @@ test("Free Room opens with no goal and no criterion, no implied turn",async()=>{
  assert.equal(result.ok,true);
  assert.deepEqual(h.calls.map(c=>c.verb),["team-open-participants"]);
  assert.equal("goal" in h.calls[0].args,false);
- assert.equal(h.calls[0].args.max_turns,24);
+ assert.equal("max_turns" in h.calls[0].args,false);
  assert.equal("success_criteria" in h.calls[0].args,false);
  assert.equal("goal" in buildD8OpenSpec("",members,"","RUN-X"),false);
 });

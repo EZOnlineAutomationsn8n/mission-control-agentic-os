@@ -81,7 +81,9 @@ export function validateD8Participants(value: unknown, enabled: string[]): D8Par
 export function buildD8OpenSpec(goal: string, participants: D8Participant[], successCriterion: string, runId = newRunId()) {
   return {
     run_id: runId, ...(goal.trim() ? { goal: goal.trim() } : {}), project: "ACF", created_by: OPERATOR,
-    participants, routes_file: ACF_TEAM_ROOM_ROUTES, max_turns: 24,
+    participants, routes_file: ACF_TEAM_ROOM_ROUTES,
+    // Schema-2 FREE rooms use durable C<n> work windows; never set a
+    // misleading lifetime cap from the browser (ACF owns bounded task/v1 rules).
     ...(successCriterion.trim() ? { success_criteria: [oneLine(successCriterion, LIMITS.criterion)] } : {}),
   };
 }

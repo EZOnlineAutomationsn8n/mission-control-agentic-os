@@ -38,7 +38,7 @@ test("opens THREE unique participants with optional and shared functions, no liv
   assert.equal((calls[0].args.participants as unknown[]).length,3);
   assert.deepEqual((calls[0].args.participants as typeof participants)[0].roles,["builder","analyst"]);
   assert.equal(calls[0].args.created_by,"DENNIS");
-  assert.equal(calls[0].args.max_turns,24);
+  assert.equal("max_turns" in calls[0].args,false);
 });
 
 test("D8 opening refuses unknown MC session without creating any run",async()=>{

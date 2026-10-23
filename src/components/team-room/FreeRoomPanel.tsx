@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import type { AcfTeamRoomRun, AcfTeamViewV1 } from "@/lib/acf/types";
 import { agentLabel, refusalText, type CallControl, type ControlAnswer, type WaitForStep } from "./OperatorDeck";
+import { FREE_ROOM_STEPS_PER_CLICK, availableWindowFromStore, isUncertainTurnOutcome, readFreeRoomState,
+  type FreeRoomPendingKind } from "@/lib/acf/continuous-room-policy";
 
 type Props = {
   run: AcfTeamRoomRun;
@@ -29,6 +31,9 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
   const [topic, setTopic] = useState("");
   const [note, setNote] = useState("");
   const [thinking, setThinking] = useState("");
+  // UI-only operator work chunk. The durable ACF run and its history live in ACF,
+  // not in this component. A timeout/error never starts an automatic retry.
+  const [uncertain, setUncertain] = useState(false);
   const selected = recipients.includes("TEAM") ? members.map(p => p.handle) : recipients.filter(r => members.some(p => p.handle === r));
   const owed = run.teamView?.intervention?.open?.owed ?? [];
   const collaboration = run.teamView?.collaboration;
@@ -36,6 +41,11 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
   const locked = disabled || processing || !(["ACTIVE", "PAUSED"].includes(run.runState)) || Boolean(run.teamView?.in_flight);
   const byHandle = new Map(members.map(m => [m.handle, m]));
   const ordered = [...run.messages].sort((a, b) => a.sequence - b.sequence);
+  const status = readFreeRoomState(run.teamView, collaboration ? "collaboration" : "replies");
+  // Store-derived continuation survives browser reload and pane replacement.
+  const availableWindow = availableWindowFromStore(run.teamView);
+  const canPause = !disabled && !processing && !run.teamView?.in_flight && run.runState === "ACTIVE";
+  const canResume = !disabled && !processing && status.mayResume && run.runState === "PAUSED";
 
   function choose(handle: string) {
     if (handle === "TEAM") { setRecipients(["TEAM"]); return; }
@@ -44,45 +54,118 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     setRecipients(next.length === members.length ? ["TEAM"] : next);
   }
 
-  async function settle(mode: "replies" | "collaboration") {
-    // Per ACF: each owed reply and each collaboration turn has exactly one journalled step.
-    // No automatic retries of a failed or unknown turn.
-    const ceiling = mode === "replies" ? 40 : 32;
-    for (let step = 0; step < ceiling; step++) {
+  async function settle(mode: FreeRoomPendingKind) {
+    // Bounded *per-click* work. It is never a terminal cap on room history.
+    // No hidden server/browser infinite loop, no new backend scheduling.
+    for (let step = 0; step < FREE_ROOM_STEPS_PER_CLICK; step++) {
       const view = await readView(run.runId);
-      if (!view) throw Error("ACF team-view unavailable; no extra turn was started");
-      const pending = view.intervention?.open?.owed ?? [];
+      const state = readFreeRoomState(view, mode);
+      if (state.kind === "ended") {
+        setThinking(""); setNote(state.label + ". " + state.detail);
+        await refresh(run.runId); return;
+      }
+      if (state.kind !== "ready") {
+        setThinking("");
+        setNote(state.label + ": " + state.detail + " Geen automatische retry.");
+        if (state.kind === "pending" || state.kind === "unknown") setUncertain(true);
+        await refresh(run.runId); return;
+      }
+      if (!view) return;
       if (mode === "replies") {
-        if (!pending.length) { setThinking(""); setNote("Alle gevraagde antwoorden zijn binnen."); await refresh(run.runId); return; }
-        const target = pending[0].to;
-        setThinking((byHandle.get(target)?.agent ? agentLabel(byHandle.get(target)?.agent) : target) + " denkt na…");
+        const target = view.intervention?.open?.owed?.[0]?.to ?? null;
+        setThinking((byHandle.get(target ?? "")?.agent ? agentLabel(byHandle.get(target ?? "")?.agent) : (target ?? "Agent")) + " denkt na…");
       } else {
-        const status = view.collaboration?.status ?? null;
-        if (status === "ENDED") { setThinking(""); setNote("Samenwerken klaar."); await refresh(run.runId); return; }
-        if (status === "BLOCKED") { setThinking(""); setNote("Samenwerken geblokkeerd: " + (view.collaboration?.reason ?? view.next_safe_action ?? "ACF meldt een geblokkeerde beurt") + ". Geen retry."); await refresh(run.runId); return; }
-        if (!view.collaboration || status === null) throw Error("ACF heeft geen samenwerkingsvenster bevestigd");
-        const next = view.collaboration.order[(view.collaboration.posted ?? 0) % view.collaboration.order.length];
-        setThinking((byHandle.get(next)?.agent ? agentLabel(byHandle.get(next)?.agent) : (next ?? "Agent")) + " denkt na…");
+        const group = view.collaboration;
+        const next = group?.order?.length ? group.order[(group.posted ?? 0) % group.order.length] : null;
+        setThinking((byHandle.get(next ?? "")?.agent ? agentLabel(byHandle.get(next ?? "")?.agent) : (next ?? "Agent")) + " denkt na…");
       }
       const started = await callControl("team-step", { run_id: run.runId });
       if (!started.ok) {
-        if (started.code === "INTERVENTION_NOTHING_OWED") { setThinking(""); setNote("Geen antwoorden meer open."); await refresh(run.runId); return; }
-        throw Error("Beurt niet gestart: " + refusalText(started));
+        if (started.code === "INTERVENTION_NOTHING_OWED") {
+          setThinking(""); setNote("Geen antwoorden meer open.");
+          await refresh(run.runId); return;
+        }
+        if (isUncertainTurnOutcome(started.code)) setUncertain(true);
+        throw Error("Beurt niet gestart: " + refusalText(started) + ". Controleer de ACF-journal voordat je verdergaat.");
       }
       const finished: ControlAnswer | null = await waitForStep(run.runId);
-      if (!finished) throw Error("Beurtstatus onbekend. Niet opnieuw gestart; controleer eerst ACF Evidence.");
+      if (!finished) {
+        setUncertain(true);
+        throw Error("Beurtstatus onbekend. Geen retry: controleer het ACF-journal en eventuele late respons.");
+      }
       if (!finished.ok) {
-        if (finished.code === "INTERVENTION_NOTHING_OWED") { setThinking(""); await refresh(run.runId); return; }
-        throw Error("Beurt gestopt: " + refusalText(finished) + ". Geen automatische retry.");
+        if (finished.code === "INTERVENTION_NOTHING_OWED") {
+          setThinking(""); await refresh(run.runId); return;
+        }
+        if (isUncertainTurnOutcome(finished.code)) setUncertain(true);
+        throw Error("ACF meldde: " + refusalText(finished) + ". Geen automatische retry.");
       }
       await refresh(run.runId);
     }
-    throw Error("Beveiligingslimiet van automatische beurten bereikt; controleer ACF voordat je doorgaat");
+    // Safe yield. An operator can choose the next bounded chunk explicitly.
+    setThinking("");
+    setNote("Werkvenster van " + FREE_ROOM_STEPS_PER_CLICK + " beurten afgerond. Kamer en geschiedenis blijven behouden. Controleer de voortgang en kies zelf 'Volgende reeks' om door te gaan.");
+    await refresh(run.runId);
+  }
+
+  async function continueWindow() {
+    if (locked || uncertain || !availableWindow) return;
+    const view = await readView(run.runId);
+    const mode = availableWindowFromStore(view);
+    const state = readFreeRoomState(view, mode ?? "collaboration");
+    if (!state.mayStep || !mode) {
+      setNote(state.label + ": " + state.detail);
+        await refresh(run.runId);
+      return;
+    }
+    setBusy("free-room-continue"); setNote("");
+    try { await settle(mode); }
+    catch (e) { setNote("Vervolg gestopt: " + String(e) + ". Geen retry."); }
+    finally { setThinking(""); setBusy(null); await refresh(run.runId); }
+  }
+
+  async function pauseRoom() {
+    if (!canPause) return;
+    setBusy("free-room-pause"); setThinking("");
+    try {
+      const result = await callControl("team-intervene", { run_id: run.runId,
+        reason: "Operator pauzeert de Free Room om voortgang en bewijs te beoordelen" });
+      setNote(result.ok
+        ? "ACF-pauze aangevraagd. De bestaande run en geschiedenis blijven bewaard."
+        : "Pauze niet bevestigd: " + refusalText(result));
+    } catch (e) { setNote("Pauzestatus onbekend: " + String(e)); setUncertain(true); }
+    finally { setBusy(null); await refresh(run.runId); }
+  }
+
+  async function resumeRoom() {
+    if (!canResume || uncertain) return;
+    setBusy("free-room-resume");
+    try {
+      const latest = await readView(run.runId);
+      if (!readFreeRoomState(latest, "collaboration").mayResume) {
+        setNote("Hervatten geweigerd: geen actuele ACF-interventiepauze zonder openstaande antwoorden.");
+        return;
+      }
+      const result = await callControl("team-resume", { run_id: run.runId, abandon_owed_replies: false });
+      setNote(result.ok
+        ? "ACF-pauze opgeheven. Er worden niet vanzelf extra agentbeurten gestart."
+        : "Niet hervat: " + refusalText(result));
+    } catch (e) { setNote("Hervatstatus onbekend: " + String(e)); setUncertain(true); }
+    finally { setBusy(null); await refresh(run.runId); }
+  }
+
+  async function inspectEvidence() {
+    const latest = await readView(run.runId);
+    if (!latest) { setNote("ACF-team-view niet bereikbaar. Geen agentbeurt opnieuw verzonden."); return; }
+    const phase = readFreeRoomState(latest, latest.collaboration ? "collaboration" : "replies");
+    setNote("ACF-readback: " + phase.label + ". " + phase.detail +
+      (uncertain ? " Een eerdere beurt heeft een onbekende uitkomst; alleen een bevestigde journalreconciliatie kan dit vrijgeven." : ""));
+    await refresh(run.runId);
   }
 
   async function send() {
     const message = text.trim();
-    if (locked || selected.length < 1 || !message || message.length > limit || owed.length) return;
+    if (locked || uncertain || selected.length < 1 || !message || message.length > limit || owed.length) return;
     setBusy("free-room-send"); setNote(""); setThinking("");
     try {
       const to: string | string[] = recipients.includes("TEAM") || selected.length === members.length ? "TEAM" : selected;
@@ -97,7 +180,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
   }
 
   async function collaborate() {
-    if (locked || owed.length || members.length < 2 || collaboration && collaboration.status !== "ENDED" && collaboration.status !== "BLOCKED") return;
+    if (locked || uncertain || owed.length || members.length < 2 || collaboration && collaboration.status !== "ENDED" && collaboration.status !== "BLOCKED") return;
     setBusy("free-room-collaborate"); setNote(""); setThinking("");
     try {
       const result = await callControl("team-collaborate", {
@@ -140,19 +223,37 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
       </label>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-muted">{selected.length} ontvanger(s) · {owed.length} antwoord(en) open</span>
-        <button type="button" data-testid="free-room-send" className="mc-button mc-button-success" disabled={locked || Boolean(owed.length) || selected.length<1 || !text.trim()} onClick={()=>void send()}>{busy==="free-room-send" ? "Antwoorden ophalen…" : "Verstuur"}</button>
+        <button type="button" data-testid="free-room-send" className="mc-button mc-button-success" disabled={locked || uncertain || Boolean(owed.length) || selected.length<1 || !text.trim()} onClick={()=>void send()}>{busy==="free-room-send" ? "Antwoorden ophalen…" : "Verstuur"}</button>
       </div>
     </section>
 
     <section className="rounded-lg border border-border bg-background/30 p-3" aria-label="Samenwerken">
       <h3 className="text-sm font-semibold">Samenwerken</h3>
-      <p className="mt-1 text-xs text-muted">Uitsluitend na je aparte klik praten de agenten met elkaar. ACF begrenst het aantal beurten en stopt bij fouten.</p>
+      <p className="mt-1 text-xs text-muted">Rondes zijn één begrensd uitvoeringsvenster, geen levenslange limiet voor de kamer. Beurten blijven afzonderlijk gelogd. Alleen ACF kan een echte pauze, blokkade of consensus bevestigen.</p>
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <label className="text-xs">Rondes <select data-testid="free-room-rounds" className="mt-1 block rounded border border-border bg-background p-2" value={rounds} onChange={e=>setRounds(Number(e.target.value))}>{[1,2,3,4].map(n=><option key={n} value={n}>{n}</option>)}</select></label>
         <label className="min-w-[140px] flex-1 text-xs">Onderwerp (optioneel)<input data-testid="free-room-topic" maxLength={4000} className="mt-1 w-full rounded border border-border bg-background p-2 text-xs" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Waarover spreken jullie?"/></label>
-        <button type="button" data-testid="free-room-collaborate" className="mc-button mc-button-primary" disabled={locked || owed.length>0 || members.length<2 || Boolean(collaboration && collaboration.status!=="ENDED" && collaboration.status!=="BLOCKED")} onClick={()=>void collaborate()}>{busy==="free-room-collaborate" ? "Samenwerken loopt…" : "Samenwerken"}</button>
+        <button type="button" data-testid="free-room-collaborate" className="mc-button mc-button-primary" disabled={locked || uncertain || owed.length>0 || members.length<2 || Boolean(collaboration && collaboration.status!=="ENDED" && collaboration.status!=="BLOCKED")} onClick={()=>void collaborate()}>{busy==="free-room-collaborate" ? "Samenwerken loopt…" : "Samenwerken"}</button>
       </div>
       {collaboration && <p className="mt-2 text-xs" data-testid="free-room-collab-status">ACF venster {collaboration.window_id} · {collaboration.status} · {collaboration.posted}/{collaboration.total} beurten{collaboration.reason ? " · " + collaboration.reason : ""}</p>}
+      <div className="mt-3 rounded-md border border-border/70 bg-panel-2/50 p-2 text-xs" data-testid="free-room-durable-state">
+        <strong>{status.label}</strong> · {status.detail}
+        {run.teamView?.next_safe_action && <span className="block break-words">ACF next_safe_action: {run.teamView.next_safe_action}</span>}
+        {run.teamView?.in_flight ? <span className="block text-warn">Journal heeft een open beurt: niet opnieuw versturen.</span> : null}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-2" aria-label="Veilige Free Room bediening">
+        <button type="button" data-testid="free-room-pause" className="mc-button mc-button-secondary" disabled={!canPause} onClick={()=>void pauseRoom()}>Pauzeer</button>
+        <button type="button" data-testid="free-room-resume" className="mc-button mc-button-secondary" disabled={!canResume || uncertain} onClick={()=>void resumeRoom()}>Hervat</button>
+        <button type="button" data-testid="free-room-inspect" className="mc-button mc-button-secondary" disabled={processing} onClick={()=>void inspectEvidence()}>Controleer ACF-status</button>
+        {availableWindow && <button type="button" data-testid="free-room-continue" className="mc-button mc-button-primary"
+          disabled={locked || uncertain} onClick={()=>void continueWindow()}>
+          {availableWindow === "replies" ? "Open antwoorden ophalen" : "Verder met dit venster"} ({FREE_ROOM_STEPS_PER_CLICK} max.)
+        </button>}
+      </div>
+      <p className="mt-1 text-[11px] text-muted">Pauzeren gebruikt ACF team-intervene; hervatten gebruikt team-resume. Er is nog geen gecertificeerde definitieve Stop- of automatische no-progress/consensusfunctie voor deze Free Room. Een onbekende beurt wordt nooit automatisch herhaald.</p>
+      {uncertain && <p role="alert" className="mt-2 text-xs text-warn" data-testid="free-room-uncertain">
+        Onbekende beurtuitkomst: nieuwe dispatch geblokkeerd. ACF journal/reconciliatie door de operator controleren; een readback alleen heft dit niet op.
+      </p>}
     </section>
     {disabled && <p role="status" className="text-xs text-warn">Bediening geblokkeerd: conceptselectie of verouderde ACF-status. Bevestig eerst je selectie en controleer actuele run-status.</p>}
     {note && <p className="rounded border border-border bg-panel-2 p-2 text-xs" role="status" data-testid="free-room-status">{note}</p>}
