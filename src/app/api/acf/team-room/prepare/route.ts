@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { FALLBACK_MODEL_ROUTES } from "@/lib/connectors/live/fcc-actions";
-import { verifyFccFreeBinding } from "@/lib/acf/fcc-zero-cost-gate";
+import { readOfficialUatCatalog } from "@/lib/acf/official-openrouter-pricing";
 import { readFile } from "node:fs/promises";
 import { ACF_TEAM_ROOM_ROUTES, readAcfTeamRoster } from "@/lib/acf/control-adapter";
 import { CLAUDE_AGENT, LEGACY_SESSION, RECOVERY_SESSION, classifyClaudeError, planClaudeSession,
@@ -53,9 +52,28 @@ async function restrictedStage():Promise<boolean> {
       routes.routes?.[CLAUDE_AGENT]?.base_url===liveOrigin;
   } catch {return false;}
 }
+async function nativeReadiness():Promise<{status:string;registered:boolean;nativeIdPresent:boolean;active:boolean}>{
+ try{
+   // Existing fixed same-host registry. Never starts/resets a native session.
+   const response=await fetch(liveOrigin+"/api/connectors/claude-code/session?sessionId="+
+     encodeURIComponent(LEGACY_SESSION),{cache:"no-store",signal:AbortSignal.timeout(8500)});
+   if(!response.ok)return {status:"UNAVAILABLE",registered:false,nativeIdPresent:false,active:false};
+   const j=await response.json() as {session?:{sessionKey?:string;status?:string;claudeSessionId?:string;active?:boolean}};
+   const a=j.session;
+   return {status:a?.status??"NOT_REGISTERED",registered:a?.sessionKey===LEGACY_SESSION,
+     nativeIdPresent:Boolean(a?.claudeSessionId),active:a?.active===true};
+ }catch{return {status:"UNKNOWN",registered:false,nativeIdPresent:false,active:false};}
+}
 export async function GET() {
   if(!await restrictedStage())return NextResponse.json({ok:false,code:"NOT_ISOLATED_ACF_WERKPLAATS"},{status:403,headers});
-  return NextResponse.json({ok:true,agentId:CLAUDE_AGENT,...await inspect()},{headers});
+  const [plan,catalog,native]=await Promise.all([inspect(),readOfficialUatCatalog(),nativeReadiness()]);
+  // Catalog evidence is model-price evidence, not a provider-spend control or
+  // an ACF session-state mutation. READY requires a genuinely operable native
+  // session and runtime-enforced no-paid-route policy, neither inferred here.
+  return NextResponse.json({ok:true,agentId:CLAUDE_AGENT,...plan,
+    uatReadiness:plan.status==="READY"&&native.status==="idle"&&native.active?
+        "BLOCKED_RUNTIME_COST_ENFORCEMENT_UNVERIFIED":"BLOCKED_NATIVE_SESSION_NOT_IDLE",
+    readyForDennisUat:false,dennisUatPass:false,catalog,native}, {headers});
 }
 export async function POST(request:Request) {
   if(!await restrictedStage())return NextResponse.json({ok:false,code:"NOT_ISOLATED_ACF_WERKPLAATS"},{status:403,headers});
@@ -74,16 +92,16 @@ export async function POST(request:Request) {
     // bootstrap prompt. The actual Claude CLI runtime must first prove both:
     // SDK accepted model=sonnet/haiku and FCC route-specific zero pricing.
     // An environment toggle is NOT a price certificate.
-    // Current runtime supplies no signed or independently verified pricing
-    // snapshot. Explicit null is intentional and cannot be bypassed by merely
-    // setting MC_ACF_FCC_ZERO_CREDIT_GUARD_CERTIFIED=1.
-    const cost = verifyFccFreeBinding(FALLBACK_MODEL_ROUTES[10], null);
-    return NextResponse.json({ok:false,...plan,code:cost.code,
-      nativeResumeCertified:false,
-      detail:"Bestaande acf-werkplaats-claude-code blijft geregistreerd. "
-        +"De SDK-compatibele alias sonnet mapte in de actuele FCC-configuratie naar "
-        +"operatorroute 11, maar een actuele onafhankelijke zero-price-attestatie "
-        +"en same-session Claude-resume ontbreken. Geen prompt, retry of nieuwe sessie.",
+    const [catalog,native]=await Promise.all([readOfficialUatCatalog(),nativeReadiness()]);
+    const code=catalog.status!=="CATALOG_SAFE_TEXT_ONLY"?
+      catalog.code:"ACF_EXISTING_NATIVE_SESSION_ERROR_NOT_STAGED";
+    return NextResponse.json({ok:false,...plan,code,
+      nativeResumeCertified:false,readyForDennisUat:false,dennisUatPass:false,catalog,native,
+      detail:catalog.status!=="CATALOG_SAFE_TEXT_ONLY"?
+        "Officiële catalogusprijs kan niet worden gevalideerd: geen providerbeurt gestart.":
+        "Officiële tekstmodel- en endpointprijs is nul, maar de bestaande Claude-sessie "+
+        "staat niet idle/active en de productie-runtime handhaaft nog geen geverifieerde "+
+        "no-paid FCC-only policy. Geen production session-statusmutatie of modelprompt.",
       attemptedRouteNumbers:[],recoverable:true},{status:409,headers});
   } catch(error) {
     return NextResponse.json({ok:false,code:"PREPARATION_OUTCOME_UNKNOWN",
