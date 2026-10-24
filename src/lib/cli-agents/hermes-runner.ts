@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
-import {stageNativeExecEnvironment} from "./stage-native-free-gate";
+import {stageNativeExecEnvironment,stageNativeExecWorkspace} from "./stage-native-free-gate";
 
 const execFileAsync = promisify(execFile);
 const HERMES_BINARY = process.env.HERMES_AGENT_BINARY || "/usr/local/bin/hermes";
@@ -17,7 +17,7 @@ export function hermesStagePinnedArgs():string[]{
 }
 
 
-async function readHermesRuntimeMetadata(session: CliAgentSession, runtimeEnv:NodeJS.ProcessEnv): Promise<{
+async function readHermesRuntimeMetadata(session: CliAgentSession, runtimeEnv:NodeJS.ProcessEnv, effectiveCwd:string): Promise<{
   agentRuntime: string;
   installedVersion: string | null;
   provider: string | null;
@@ -27,7 +27,7 @@ async function readHermesRuntimeMetadata(session: CliAgentSession, runtimeEnv:No
 }> {
   try {
     const options = {
-      cwd: session.workspace,
+      cwd: effectiveCwd,
       env: runtimeEnv,
       timeout: 30_000,
       maxBuffer: 1024 * 1024,
@@ -37,7 +37,7 @@ async function readHermesRuntimeMetadata(session: CliAgentSession, runtimeEnv:No
       execFileAsync(HERMES_BINARY, ["--version"], options),
       execFileAsync(HERMES_BINARY, ["config", "get", "model.default"], options),
       execFileAsync(HERMES_BINARY, ["config", "get", "model.provider"], options),
-      fs.readFile(`${session.workspace}/runtime-evidence/live-host.json`, "utf8")
+      fs.readFile(`${effectiveCwd}/runtime-evidence/live-host.json`, "utf8")
         .catch(() => fs.readFile("/usr/local/lib/hermes-agent/install-stamp.json", "utf8"))
         .catch(() => ""),
     ]);
@@ -74,7 +74,10 @@ export async function runHermesTurn(options: {
   prompt: string;
   create: boolean;
 }): Promise<ConnectorConversationResult> {
-  const nativeEnv=process.env.MC_PREVIEW==="1"
+  const preview=process.env.MC_PREVIEW==="1";
+  const effectiveCwd=preview
+    ?await stageNativeExecWorkspace("hermes"):options.session.workspace;
+  const nativeEnv=preview
     ?await stageNativeExecEnvironment("hermes",options.session.sessionKey):{...process.env};
   const args = [
     "chat", "-q", options.prompt, "-Q",
@@ -90,13 +93,13 @@ export async function runHermesTurn(options: {
 
   const [turnResult, runtimeMetadata] = await Promise.all([
     execFileAsync(HERMES_BINARY, args, {
-      cwd: options.session.workspace,
+      cwd: effectiveCwd,
       env: nativeEnv,
       timeout: Number(process.env.HERMES_AGENT_TIMEOUT_MS || 600_000),
       maxBuffer: 20 * 1024 * 1024,
       encoding: "utf8",
     }),
-    readHermesRuntimeMetadata(options.session,nativeEnv),
+    readHermesRuntimeMetadata(options.session,nativeEnv,effectiveCwd),
   ]);
   const { stdout, stderr } = turnResult;
   const output = `${String(stdout)}\n${String(stderr)}`;
@@ -120,7 +123,7 @@ export async function runHermesTurn(options: {
     runtimeVerifiedAt: runtimeMetadata.runtimeVerifiedAt,
     responseProvenance: "Hermes Agent CLI chat --source mission-control -> persistent Hermes runtime session",
     agentSessionId: runtimeSessionId,
-    workspace: options.session.workspace,
+    workspace: effectiveCwd,
     sessionState: "idle",
     executionMode: options.session.executionMode,
     permissionMode: options.session.permissionMode,

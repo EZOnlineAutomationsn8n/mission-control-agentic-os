@@ -4,6 +4,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import {createHash} from "node:crypto";
 import { readOfficialUatCatalog, type CatalogReadiness } from "@/lib/acf/official-openrouter-pricing";
 import { stageNativeKeyPresent, readStageNativeKey } from "./stage-native-secret";
 
@@ -59,6 +60,54 @@ async function readBoundedStageFile(p:string,max=16384):Promise<string|null>{
  try{const s=await fs.lstat(p);if(!s.isFile()||s.isSymbolicLink()||s.size>max)return null;return await fs.readFile(p,"utf8");}
  catch{return null;}
 }
+/** The installed Hermes source, not an assumed CLI default, defines these
+ * semantics. Any source revision changes the signature and fails closed.
+ * fallback_config merges both fallback keys; tools_config honors explicit
+ * empty CLI lists; model_tools subtracts disabled 'all' at tool granularity.
+ * This does not certify auxiliary/external provider costs.
+ */
+const HERMES_POLICY_SOURCE_SHA:Record<string,string>={
+ "hermes_cli/fallback_config.py":"d593fee4db54c24233a3482de2b5178d3aba62dfea0f8bf4e4613f3a0e8880a3",
+ "hermes_cli/tools_config.py":"ee1db982256a787c868f059fbf41d709418e208844181cff598e12ee2db89aa5",
+ "hermes_cli/cli_init_mixin.py":"19831c5bb89546fba86f63bacae9eff56c4447143c483197e9209e58ecb1f896",
+ "hermes_cli/config_effective.py":"2b04bdd2714fccea19ab169467f1a0f1420c67cd3d0a0d11f79d12f308c8d9a8",
+ "model_tools.py":"d0581bcb05ebe0a714a8cf98dd134c8c6c6a516c89816ef5ed13d48d6186afab",
+ "toolsets.py":"9b204c4a6b80d9141b9403cb8662031fb3e52430406d2c49a30d78116d440efc",
+};
+let hermesPolicyCodeCache:{when:number;verified:boolean}|null=null;
+async function hermesInstalledPolicySourceVerified():Promise<boolean>{
+ if(hermesPolicyCodeCache&&Date.now()-hermesPolicyCodeCache.when<30000)
+   return hermesPolicyCodeCache.verified;
+ const root="/usr/local/lib/hermes-agent";
+ const verified=(await Promise.all(Object.entries(HERMES_POLICY_SOURCE_SHA).map(async([name,expected])=>{
+   try{
+     const data=await fs.readFile(path.join(root,name));
+     return createHash("sha256").update(data).digest("hex")===expected;
+   }catch{return false;}
+ }))).every(Boolean);
+ hermesPolicyCodeCache={when:Date.now(),verified};
+ return verified;
+}
+const HERMES_STAGE_CONFIG_SAFE=[
+ "model:",
+ "  provider: openrouter",
+ "  default: nvidia/nemotron-3-ultra-550b-a55b:free",
+ "fallback_providers: []",
+ "fallback_model: []",
+ "platform_toolsets:",
+ "  cli: []",
+ "agent:",
+ "  disabled_toolsets:",
+ "    - all",
+ "  max_turns: 1",
+ "mcp_servers: {}",
+].join("\n");
+export function hermesExplicitNoFallbackNoToolsConfig(text:string):boolean{
+ const normalized=text.split(/\r?\n/).map(line=>line.replace(/\s+$/,""))
+   .filter(line=>line.trim()&&!line.trimStart().startsWith("#")).join("\n");
+ return normalized===HERMES_STAGE_CONFIG_SAFE;
+}
+
 export async function inspectNativeStageTransport(agentId:StageNativeAgent,sessionKey:string):Promise<StageTransportStatus>{
  const root=process.env.GAOS_STAGE_NATIVE_ROOT||"";
  const stage=process.env.MC_PREVIEW==="1"&&process.env.GAOS_STAGE_NATIVE_ISOLATED==="1"&&
@@ -77,7 +126,15 @@ export async function inspectNativeStageTransport(agentId:StageNativeAgent,sessi
    model=m?.[1]??null;
    exact=model===STAGE_NATIVE_MODEL.replace(/^openrouter\//,"");
    provider=p?.[1]==="openrouter";
-   fall=false;tools=false;isolated=false; // Hermes native toolsets/fallbacks not yet certified
+   const pinned=await hermesInstalledPolicySourceVerified();
+   const nativePolicy=text!=null&&hermesExplicitNoFallbackNoToolsConfig(text);
+   const privateCwd=await regularPrivateDir(path.join(ownHome,"workspace-mission-control"));
+   // The observed installed-source hashes + exact isolated config prove no
+   // configured fallback routes and no model-exposed toolsets. Other auxiliary
+   // external-cost hooks are NOT certified and remain a separate deny gate.
+   fall=Boolean(nativePolicy&&pinned);
+   tools=Boolean(nativePolicy&&pinned);
+   isolated=Boolean(nativePolicy&&pinned&&privateCwd&&process.env.HERMES_HOME===ownHome);
  }
  if(dirs&&agentId==="openclaw"){
    const text=await readBoundedStageFile(path.join(ownHome,"openclaw.json"));
@@ -107,7 +164,8 @@ export async function inspectNativeStageTransport(agentId:StageNativeAgent,sessi
   stage,stageSession:/^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(sessionKey),
   profileIsolated:Boolean(dirs),nativeModelExact:exact,providerExact:provider,
   fallbackEmpty:fall,nativeToolsDisabled:tools,stageCredential:credential,
-  transportIsolated:isolated,catalogTextFree:Boolean(free),extraToolFeesDisabled:tools,
+  transportIsolated:isolated,catalogTextFree:Boolean(free),
+  extraToolFeesDisabled:agentId==="hermes"?false:tools,
  };
  const decision=assessStageNativeFree(evidence);
  // Distinguish a not-proven Hermes native fallback/tool default from a
@@ -120,6 +178,22 @@ export async function inspectNativeStageTransport(agentId:StageNativeAgent,sessi
   gateway:isolated?"EMBEDDED_STAGE":"UNVERIFIED",
   catalogStatus:price?.status??"CATALOG_UNVERIFIED",catalogCode:price?.code??"NO_CATALOG_PROOF",
   checkedAt:price?.checkedAt??null,...truthful,providerCalls:0};
+}
+
+/** Always execute native stage children in the isolated stage working dir.
+ * A legacy session.workspace value is presentation metadata, not authority.
+ */
+export async function stageNativeExecWorkspace(agentId:StageNativeAgent):Promise<string>{
+ const root=process.env.GAOS_STAGE_NATIVE_ROOT||"";
+ if(process.env.MC_PREVIEW!=="1"||process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1"||
+    !path.isAbsolute(root)||!path.resolve(root).endsWith("/.stage-achtergrond/.preview-native-home"))
+   throw new Error("NATIVE_STAGE_WORKSPACE_MODE_UNVERIFIED");
+ const own=path.join(root,agentId);
+ const cwd=path.join(own,"workspace-mission-control");
+ if(!(await regularPrivateDir(root))||!(await regularPrivateDir(own))||
+    !(await regularPrivateDir(cwd)))
+   throw new Error("NATIVE_STAGE_WORKSPACE_ISOLATION_UNVERIFIED");
+ return cwd;
 }
 
 /** Called again *inside* the native runner, not just at an HTTP route.

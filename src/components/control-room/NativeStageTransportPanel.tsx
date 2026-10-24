@@ -42,8 +42,11 @@ export function NativeStageTransportPanel({agentId}:{agentId:Agent}){
   <div>Modus: <strong>FREE_ONLY</strong> · Bron: eigen stage-profiel + officiële catalogus</div>
   <div>Model: <span className="mono">{status?.configuredModel||"niet bevestigd"}</span></div>
   <div>Stagecredential: {status?.stageCredentialConfigured?"veilig opgeslagen":"ontbreekt"} ·
-   Toolblokkade: {status?.toolsVerifiedDisabled?"bewezen":"niet bewezen"} ·
+   {agentId==="hermes"?"Reguliere modeltoolsets":"Native tools"}:
+   {status?.toolsVerifiedDisabled?"uitgeschakeld":"niet bewezen"} ·
    Fallback: {status?.effectiveFallbacks||"onbekend"}</div>
+  {agentId==="hermes" && <div className="text-warn">Aanvullende externe kostenroutes nog niet gecertificeerd;
+   geen modelverzoeken toegestaan zolang deze blokkade bestaat.</div>}
   <div>Officiële prijsgate: {status?.catalogCode||"wordt gecontroleerd"} ·
    Transport: {status?.gateway||"onbekend"}</div>
   <div role="status" className={status?.canSend?"text-ok":"text-warn"}>
