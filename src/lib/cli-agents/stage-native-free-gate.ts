@@ -20,7 +20,7 @@ export type StageTransportCode=
   "NATIVE_PROFILE_UNVERIFIED"|"STAGE_PROVIDER_MODEL_MISMATCH"|
   "STAGE_FALLBACK_NOT_EMPTY"|"NATIVE_TOOLS_OR_FEES_UNVERIFIED"|
   "STAGE_NATIVE_KEY_MISSING"|"STAGE_NATIVE_TRANSPORT_UNAVAILABLE"|
-  "OPENROUTER_ENDPOINT_PRICE_NOT_VERIFIED";
+  "OPENROUTER_ENDPOINT_PRICE_NOT_VERIFIED"|"HERMES_NATIVE_POLICY_UNVERIFIED";
 export function assessStageNativeFree(e:StageFreeEvidence):{canSend:boolean;code:StageTransportCode}{
  const blocked=(code:StageTransportCode)=>({canSend:false,code});
  if(!e.stage)return blocked("NOT_ISOLATED_STAGE");
@@ -110,12 +110,16 @@ export async function inspectNativeStageTransport(agentId:StageNativeAgent,sessi
   transportIsolated:isolated,catalogTextFree:Boolean(free),extraToolFeesDisabled:tools,
  };
  const decision=assessStageNativeFree(evidence);
+ // Distinguish a not-proven Hermes native fallback/tool default from a
+ // fallback known to be nonempty. No rewrite of this decision to READY.
+ const truthful=agentId==="hermes"&&dirs&&exact&&provider&&(!fall||!tools||!isolated)
+   ?{canSend:false,code:"HERMES_NATIVE_POLICY_UNVERIFIED" as const}:decision;
  return {agentId,stageSource:"STAGE_NATIVE_PROFILE_AND_OFFICIAL_CATALOG",costMode:"FREE_ONLY",
   configuredModel:model,stageCredentialConfigured:credential,configVerified:Boolean(dirs&&exact&&provider),
   effectiveFallbacks:fall?"NONE":"UNKNOWN_OR_NONEMPTY",toolsVerifiedDisabled:tools,
   gateway:isolated?"EMBEDDED_STAGE":"UNVERIFIED",
   catalogStatus:price?.status??"CATALOG_UNVERIFIED",catalogCode:price?.code??"NO_CATALOG_PROOF",
-  checkedAt:price?.checkedAt??null,...decision,providerCalls:0};
+  checkedAt:price?.checkedAt??null,...truthful,providerCalls:0};
 }
 
 /** Called again *inside* the native runner, not just at an HTTP route.

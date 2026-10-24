@@ -7,6 +7,15 @@ import {stageNativeExecEnvironment} from "./stage-native-free-gate";
 
 const execFileAsync = promisify(execFile);
 const HERMES_BINARY = process.env.HERMES_AGENT_BINARY || "/usr/local/bin/hermes";
+/** Only documented installed flags; not a claim of tool-free execution.
+ * Until native --toolsets and fallback semantics are certified, the separate
+ * stage pre-dispatch gate must continue to deny provider dispatch.
+ */
+export function hermesStagePinnedArgs():string[]{
+  return ["--provider","openrouter","--model","nvidia/nemotron-3-ultra-550b-a55b:free",
+    "--max-turns","1"];
+}
+
 
 async function readHermesRuntimeMetadata(session: CliAgentSession, runtimeEnv:NodeJS.ProcessEnv): Promise<{
   agentRuntime: string;
@@ -71,7 +80,8 @@ export async function runHermesTurn(options: {
     "chat", "-q", options.prompt, "-Q",
     "--source", "mission-control",
     "--pass-session-id",
-    "--max-turns", process.env.HERMES_AGENT_MAX_TURNS || "90",
+    ...(process.env.MC_PREVIEW==="1"?hermesStagePinnedArgs():
+      ["--max-turns",process.env.HERMES_AGENT_MAX_TURNS||"90"]),
   ];
   if (!options.create) {
     if (!options.session.runtimeSessionId) throw new Error("Hermes runtime session ID is missing");
