@@ -184,6 +184,9 @@ export function AgentConversationPanel({
   const composerInput = useRef<HTMLTextAreaElement>(null);
   const speechRecognition = useRef<SpeechRecognitionLike | null>(null);
   const scrollSurface = useRef<HTMLDivElement>(null);
+  // A replaced pane binding must not be overwritten by an older late read.
+  // This is UI request bookkeeping only, never session ownership.
+  const loadEpoch = useRef(0);
 
   const target = (requestedTargetId ? getCockpitAgentTarget(requestedTargetId) : undefined) ?? getCockpitAgentByApiId(agentId);
   const routePresentation = target ? getCockpitRoutePresentation(target) : null;
@@ -204,27 +207,56 @@ export function AgentConversationPanel({
   const assignmentLabel = session?.assignmentPath?.split("/").at(-1)?.replace(/\.md$/i, "") ?? "not assigned";
 
   const loadState = useCallback(async () => {
+    const epoch = ++loadEpoch.current;
+    const isCurrent = () => epoch === loadEpoch.current;
     try {
-      const [historyResponse, sessionResponse, runtimeResponse] = await Promise.all([
-        fetch(historyEndpoint, { cache: "no-store" }),
-        fetch(sessionEndpoint, { cache: "no-store" }),
-        fetch("/api/cockpit/runtime-truth", { cache: "no-store" }),
-      ]);
-      const historyData = (await historyResponse.json()) as { entries?: AgentConversationEntry[]; error?: string };
-      const sessionData = (await sessionResponse.json()) as { session?: AgentSessionView | null; error?: string };
-      const runtimeData = runtimeResponse.ok
-        ? await runtimeResponse.json() as { runtimes?: RuntimeTruthView[] }
-        : { runtimes: [] as RuntimeTruthView[] };
-      if (!historyResponse.ok) throw new Error(historyData.error ?? `history returned HTTP ${historyResponse.status}`);
-      if (!sessionResponse.ok) throw new Error(sessionData.error ?? `session returned HTTP ${sessionResponse.status}`);
-      setEntries(historyData.entries ?? []);
-      setSession(sessionData.session ?? null);
-      setRuntimeTruth(runtimeData.runtimes?.find((entry) => entry.targetId === target?.id) ?? null);
+      // A real persisted session is the primary operator truth. Never make
+      // this READY/PREPARED state wait on the optional runtime diagnostics.
+      const response = await fetch(sessionEndpoint, { cache: "no-store" });
+      const data = await response.json() as { session?: AgentSessionView | null; error?: string };
+      if (!response.ok) throw new Error(data.error ?? `session returned HTTP ${response.status}`);
+      if (!isCurrent()) return;
+      setSession(data.session ?? null);
       setLoadError(null);
-    } catch (error) {
-      setLoadError(error instanceof Error ? error.message : `${label} session state unavailable`);
-    } finally {
       setLoading(false);
+      // History belongs to the session, not to the pane. Read it independently
+      // after the selected session was established; never lose the session on
+      // a transient history or optional-diagnostic failure.
+      try {
+        const historyResponse = await fetch(historyEndpoint, { cache: "no-store" });
+        const historyData = await historyResponse.json() as { entries?: AgentConversationEntry[]; error?: string };
+        if (!historyResponse.ok) throw new Error(historyData.error ?? `history returned HTTP ${historyResponse.status}`);
+        if (isCurrent()) setEntries(historyData.entries ?? []);
+      } catch (error) {
+        if (isCurrent()) setLoadError(error instanceof Error ? error.message : "Session history unavailable");
+      }
+      if (!isCurrent()) return;
+      // A PREPARED native session has not executed. There is no live runtime
+      // observation to look up; preserve UNKNOWN rather than invent readiness.
+      if (!data.session || data.session.status === "prepared") {
+        setRuntimeTruth(null);
+        return;
+      }
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6_000);
+      try {
+        const runtimeResponse = await fetch("/api/cockpit/runtime-truth", {
+          cache: "no-store", signal: controller.signal,
+        });
+        if (runtimeResponse.ok) {
+          const runtimeData = await runtimeResponse.json() as { runtimes?: RuntimeTruthView[] };
+          if (isCurrent()) setRuntimeTruth(runtimeData.runtimes?.find((entry) => entry.targetId === target?.id) ?? null);
+        }
+      } catch {
+        // Optional evidence unavailable; neither session nor history are reset.
+        if (isCurrent()) setRuntimeTruth(null);
+      } finally {
+        clearTimeout(timeout);
+      }
+    } catch (error) {
+      if (isCurrent()) setLoadError(error instanceof Error ? error.message : `${label} session state unavailable`);
+    } finally {
+      if (isCurrent()) setLoading(false);
     }
   }, [historyEndpoint, label, sessionEndpoint, target?.id]);
 

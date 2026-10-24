@@ -91,3 +91,14 @@ test("cold-browser registry has bounded extended wait ahead of four pane transpo
  assert.ok(source.includes('intervalMs: 5_000, timeoutMs: 30_000'));
  assert.ok(source.includes("setSessionRegistryLoaded(true)"));
 });
+
+test("persisted sessions appear before optional runtime-truth diagnostics",()=>{
+ const content=read(path.join(stage,"src/components/control-room/AgentConversationPanel.tsx"));
+ assert.ok(content.includes("setSession(data.session ?? null);"));
+ assert.ok(content.indexOf("setSession(data.session ?? null);")<content.indexOf('fetch("/api/cockpit/runtime-truth"'));
+ assert.ok(content.includes('data.session.status === "prepared"'));
+ assert.ok(content.includes("loadEpoch.current"));
+ assert.ok(content.includes("isCurrent()"));
+ assert.ok(content.includes("6_000"));
+ assert.ok(!content.includes("const [historyResponse, sessionResponse, runtimeResponse] = await Promise.all"));
+});
