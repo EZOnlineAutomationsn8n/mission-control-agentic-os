@@ -1311,6 +1311,28 @@ export function TeamRoomView() {
 
       {mode !== "discuss" && <PreparedMode mode={mode} />}
 
+      {/* ACF run export and six-seat session registry are separate read
+          surfaces. If an existing run export temporarily fails, do not hide
+          the independently available session roster. Reuse the SAME composer
+          with mutations disabled; no second registry or orchestrator. */}
+      {mode === "discuss" && Boolean(refreshError) &&
+       !(display?.availability === "empty" || (display?.availability === "available" && selected && discussion)) && (
+        <section className="mx-4 my-3 rounded-xl border border-warn/40 p-3"
+          aria-label="ACF sessierooster bij ontbrekende runexport"
+          data-testid="acf-roster-read-degraded">
+          <p className="text-sm text-warn" role="status">
+            ACF-runexport tijdelijk niet beschikbaar. Het afzonderlijke ACF-sessierooster
+            blijft leesbaar; nieuwe teams, joins en modelbeurten blijven geblokkeerd
+            totdat de canonieke runstatus weer beschikbaar is.
+          </p>
+          <RosterTeamComposer run={null} busy="ACF_RUN_EXPORT_UNAVAILABLE"
+            callControl={callControl}
+            onSelectRun={(id)=>{setDraftChoices({});setSelectedRunId(id);void refresh(id);}}
+            refresh={async id=>{await refresh(id);}}
+            choices={draftChoices} onChoicesChange={setDraftChoices}/>
+        </section>
+      )}
+
       {mode === "discuss" && (display?.availability === "empty" || (display?.availability === "available" && selected && discussion)) && (
         <TeamRoomShell
           key={selected?.runId ?? "empty"}

@@ -102,3 +102,15 @@ test("persisted sessions appear before optional runtime-truth diagnostics",()=>{
  assert.ok(content.includes("6_000"));
  assert.ok(!content.includes("const [historyResponse, sessionResponse, runtimeResponse] = await Promise.all"));
 });
+
+test("ACF transient run export failure preserves the SAME read-only roster without enabling mutation",()=>{
+ const view=read(path.join(stage,"src/components/team-room/TeamRoomView.tsx"));
+ const composer=read(path.join(stage,"src/components/team-room/RosterTeamComposer.tsx"));
+ assert.ok(view.includes('data-testid="acf-roster-read-degraded"'));
+ assert.ok(view.includes('busy="ACF_RUN_EXPORT_UNAVAILABLE"'));
+ assert.ok(view.includes('Boolean(refreshError)'));
+ assert.ok(view.includes("RosterTeamComposer run={null}"));
+ assert.ok(composer.includes("disabled={Boolean(problem)||sending||!!busy"));
+ assert.ok(composer.includes("if(!action||sending||busy)return"));
+ assert.ok(view.includes('display?.availability === "available" && selected && discussion'));
+});
