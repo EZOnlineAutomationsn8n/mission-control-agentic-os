@@ -15,7 +15,7 @@ fi
 [[ "$(git -C "$ROOT" branch --show-current)" == main ]] || { echo "FOUT: bron staat niet op main"; exit 5; }
 git -C "$ROOT" diff --quiet HEAD -- src package.json next.config.ts || { echo "FOUT: TEKENING is niet schoon in broncode"; exit 5; }
 git -C "$ROOT" worktree add -b "$BRANCH" "$STAGE" main
-mkdir -m 700 -p "$STAGE/data" "$STAGE/.preview-acf-home" "$STAGE/.preview-ops" "$STAGE/.preview-omi"
+mkdir -m 700 -p "$STAGE/data" "$STAGE/.preview-acf-home" "$STAGE/.preview-ops" "$STAGE/.preview-omi" "$STAGE/.preview-native-home" "$STAGE/.preview-native-home/hermes" "$STAGE/.preview-native-home/openclaw" "$STAGE/.preview-native-home/hermes/workspace-mission-control" "$STAGE/.preview-native-home/openclaw/workspace-mission-control"
 python3 "$ROOT/scripts/werkplaats/werkplaats-routes.py" "$STAGE/.preview-acf-home/participant_routes.json"
 chmod 600 "$STAGE/.preview-acf-home/participant_routes.json"
 # Fixture ACF store (isolated validation run, never model turns) so the werkplaats Team Room renders instead of STORE_NOT_FOUND.

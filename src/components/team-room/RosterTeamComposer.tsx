@@ -36,6 +36,8 @@ export interface RosterAgent {
 export interface TeamRoster {
   roster_version: 1;
   source: string;
+  environment?: "WERKPLAATS" | "LIVE";
+  provenance?: "STAGE_OWN_SESSION_REGISTRY" | "LIVE_OWN_SESSION_REGISTRY";
   agents: RosterAgent[];
   run_id: string | null;
   run_schema: number | null;
@@ -231,7 +233,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
         <p className="mt-1 text-xs text-muted">Alle geregistreerde agents · eigen sessies · optionele functies · geen vaste bouwer/reviewer-zetels.</p></div>
       <button type="button" className="mc-button mc-button-secondary mc-button-sm" onClick={()=>void loadRoster()}>Status vernieuwen</button>
     </div>
-    <p className="mt-2 text-xs text-muted">ACF-roster: {roster?.source??"laden"} · {rows.length} agents · alleen Dennis activeert werk.</p>
+    <p className="mt-2 text-xs text-muted">Omgeving: <strong data-testid="acf-roster-environment">{roster?.environment??"ONBEKEND"}</strong> · ACF-roster: {roster?.source??"laden"} · {rows.length} agents · alleen Dennis activeert werk.</p>
     {problem && <p className="mt-2 text-xs text-warn" role="alert">Status niet actueel: {problem}. Vorige gegevens zijn mogelijk stale; teamacties geblokkeerd.</p>}
     <div className="mc-team-composer-agent-grid mt-3" aria-label="Volledige agent registry in Team Room" data-testid="team-roster">
     {rows.map(a=>{
@@ -248,6 +250,10 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
           </label>
           <span className={"rounded border px-1.5 py-0.5 text-[10px] "+(a.route==="ENABLED"?"text-ok":"text-warn")}>{a.route}</span>
         </header>
+        <p className="mt-1 text-[11px] text-muted" data-testid={"roster-provenance-"+a.agent_id}>
+          {roster?.environment==="WERKPLAATS"?"WERKPLAATS · eigen stagesessies":
+           roster?.environment==="LIVE"?"LIVE · eigen productiesessies":"Omgeving onbekend · status niet bewezen"}
+        </p>
         <p className={"mt-1 text-[11px] "+(choice.selected?"text-cyan-200":"text-muted")}>{choice.selected?"● GESELECTEERD · DRAFT":a.can_join_now?"● Kandidaat beschikbaar":"● Niet bindbaar zonder sessiecontrole"}</p>
         {a.agent_id===CLAUDE_AGENT && choice.selected && claudeDiagnostic && <p className="mt-1 break-words text-warn"
             data-testid="acf-claude-route-diagnostic" role="status">

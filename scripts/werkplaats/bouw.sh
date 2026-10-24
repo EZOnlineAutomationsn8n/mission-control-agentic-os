@@ -9,6 +9,12 @@ STAGE="$ROOT/.stage-$NAME"
 [[ "$(git -C "$STAGE" branch --show-current)" == "werkplaats/$NAME" ]] || { echo "FOUT: niet de juiste werkplaats-tak"; exit 3; }
 [[ "$STAGE" != "$ROOT" ]] || { echo "FOUT: no-build-in-LIVE"; exit 4; }
 [[ -f "$STAGE/.preview-acf-home/participant_routes.json" ]] || { echo "FOUT: geïsoleerde routes ontbreken"; exit 4; }
+# The build must be attributable to one committed source tree. Otherwise a
+# later Dennis-governed promotion cannot prove what has been tested.
+git -C "$STAGE" diff --quiet HEAD -- src scripts package.json next.config.ts ||
+  { echo "FOUT: commit de stagecode eerst; build-provenance is anders ambigu"; exit 6; }
+git -C "$STAGE" diff --cached --quiet -- src scripts package.json next.config.ts ||
+  { echo "FOUT: staged maar niet vastgelegde bronwijzigingen"; exit 6; }
 cd "$STAGE"
 echo "BOUW: uitsluitend in werkplaats $STAGE."
 unset MC_ALLOW_LIVE_BUILD
@@ -16,4 +22,9 @@ npm run build
 ./node_modules/.bin/tsc --noEmit
 npm run lint
 [[ -s .next/BUILD_ID ]] || { echo "FOUT: geen build-ID"; exit 5; }
+mkdir -m 700 -p .werkplaats-release-source
+cat .next/BUILD_ID > .werkplaats-release-source/BUILD_ID
+git rev-parse HEAD > .werkplaats-release-source/SOURCE_COMMIT
+chmod 600 .werkplaats-release-source/BUILD_ID .werkplaats-release-source/SOURCE_COMMIT
+echo "BRONBEWIJS: $(cat .werkplaats-release-source/SOURCE_COMMIT) -> $(cat .werkplaats-release-source/BUILD_ID)"
 echo "KLAAR: werkplaats $NAME, build $(cat .next/BUILD_ID). LIVE niet gewijzigd."

@@ -24,6 +24,9 @@ if [[ -n "$STATUS_RECEIPT" ]] && grep -Eq '^preview pids/cwd:' "$STATUS_RECEIPT"
  exit 8
 fi
 send_request stop 'mc-preview-stop'
-send_request start "mc-preview-start .stage-$NAME agents"
+# Stage-native selection must not silently rewire to LIVE production connectors.
+[[ -d "$STAGE/.preview-native-home/hermes" && -d "$STAGE/.preview-native-home/openclaw" ]] ||
+  { echo "FOUT: stage-native homes ontbreken; geen productieproxy"; exit 9; }
+send_request start "mc-preview-start .stage-$NAME native-stage"
 echo "Kijk op https://werkplaats.mc.vireonhq.cloud"
 echo "DNS/TLS moet bestaan voor de publieke link. Interne Apps Browser: http://shared-agentic-sandbox:3331/team-room"
