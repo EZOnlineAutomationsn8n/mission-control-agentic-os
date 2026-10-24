@@ -5,7 +5,9 @@ let expiresAt=0;
 export async function readManusLiveStatus():Promise<ManusStatus> {
   const now=Date.now();
   if(cached && now<expiresAt) return cached;
-  cached=getManusStatus(fetch);
+  cached=getManusStatus(process.env.MC_PREVIEW==="1" ? undefined : fetch);
   expiresAt=now+60_000;
   return cached;
 }
+
+export function clearManusStatusCache(){cached=null;expiresAt=0;}

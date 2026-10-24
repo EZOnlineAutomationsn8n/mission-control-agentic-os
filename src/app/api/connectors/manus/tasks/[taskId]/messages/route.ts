@@ -8,6 +8,7 @@ export async function GET(_:Request,ctx:{params:Promise<{taskId:string}>}){
 }
 
 export async function POST(req:Request,ctx:{params:Promise<{taskId:string}>}){
+  if(process.env.MC_PREVIEW==="1")return NextResponse.json({ok:false,error:"MANUS_STAGE_FOLLOWUP_REQUIRES_SEPARATE_CREDIT_AND_OPERATOR_GATE"},{status:403});
   let payload:unknown;
   try{payload=await req.json();}catch{return NextResponse.json({ok:false,error:"INVALID_JSON"},{status:400});}
   const {taskId}=await ctx.params;

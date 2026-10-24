@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import {stageManusKeyPath} from "./manus-stage-setup";
 
 export const MANUS_V2_BASE = "https://api.manus.ai/v2/";
 const DEFAULT_KEY_PATH = "/workspace/runtime-data/secrets/manus-api-key";
@@ -21,8 +22,9 @@ function asRecord(value: unknown): Json {
 
 export async function readManusApiKey(): Promise<{ status: ManusKeyStatus; secret: string | null }> {
   // Existing MC preview isolation must remain effective even after a real Manus key is installed.
-  if(process.env.MC_PREVIEW==="1")return {status:"missing",secret:null};
-  const file = process.env.MANUS_API_KEY_FILE || DEFAULT_KEY_PATH;
+  const stageFile = process.env.MC_PREVIEW==="1" ? stageManusKeyPath() : null;
+  if(process.env.MC_PREVIEW==="1" && !stageFile) return {status:"missing",secret:null};
+  const file = stageFile || process.env.MANUS_API_KEY_FILE || DEFAULT_KEY_PATH;
   if(!path.isAbsolute(file)) return {status:"invalid-permissions",secret:null};
   let info;
   try { info=await fs.lstat(/* turbopackIgnore: true */ file); }

@@ -3,6 +3,7 @@ import {submitManusTask,ManusConnectorError} from "@/lib/connectors/live/manus-v
 import {appendAuditEvent,readAuditEvents} from "@/lib/audit-log-store";
 export const dynamic="force-dynamic";
 export async function POST(req:Request){
+  if(process.env.MC_PREVIEW==="1")return NextResponse.json({ok:false,error:"MANUS_STAGE_TASKS_REQUIRE_SEPARATE_CREDIT_AND_OPERATOR_GATE"},{status:403});
   let body:unknown;
   try{body=await req.json();}catch{return NextResponse.json({ok:false,error:"INVALID_JSON"},{status:400});}
   try{

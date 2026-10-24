@@ -14,6 +14,28 @@ export function ManusOperatorPanel(){
   const [followupApproved,setFollowupApproved]=useState(false);
   const [recentTasks,setRecentTasks]=useState<Array<{task_id:string;accepted_at:string}>>([]);
   const [busy,setBusy]=useState(false);
+  const [stageKey,setStageKey]=useState("");
+  const [stageMessage,setStageMessage]=useState("");
+  const [stageBusy,setStageBusy]=useState(false);
+  const stageSaveOrVerify=async(action:"save"|"verify")=>{
+    if(stageBusy)return;
+    setStageBusy(true);setStageMessage("");
+    try {
+      const resp=await fetch("/api/connectors/manus/setup?action="+action,{
+        method:"POST",headers:{"content-type":"application/json"},
+        body:action==="save"?JSON.stringify({key:stageKey}):"{}",
+        cache:"no-store",credentials:"same-origin",
+      });
+      const answer=await resp.json();
+      setStageMessage(action==="save"
+        ?(resp.ok?"Sleutel uitsluitend in de Werkplaats bewaard. Klik nu 'Verbinding controleren'.":"Niet opgeslagen: "+String(answer.error||answer.result||resp.status))
+        :(resp.ok?"Manus-authenticatie bevestigd. Taken blijven credit-gated.":"Nog niet verbonden: "+String(answer.error||answer.reason||resp.status)));
+      if(action==="save"&&resp.ok)setStageKey("");
+      await refresh();
+    } catch {setStageMessage("De beveiligde Werkplaatsverbinding is niet beschikbaar.");}
+    finally {setStageBusy(false);}
+  };
+
   const refresh=async()=>{
     try{const r=await fetch("/api/connectors/manus/status",{cache:"no-store"});setStatus(r.ok?await r.json() as ManusStatus:null);}
     catch{setStatus(null);}
@@ -79,6 +101,26 @@ export function ManusOperatorPanel(){
   };
   return <section className="mt-5 rounded-xl border border-border p-3 space-y-3 max-w-2xl" aria-label="Manus API v2 connection and tasks">
     <div className="font-semibold text-sm">Manus API v2 · operator control</div>
+    <div className="rounded-xl border border-cyan-500/50 p-3 space-y-2" aria-label="Manus veilige Werkplaats-koppeling">
+      <div className="font-semibold text-sm">Manus verbinden · Werkplaats</div>
+      <p className="text-xs text-muted">Gebruik een afzonderlijke Manus development API-key. De sleutel blijft server-side in de geïsoleerde Werkplaats en wordt nooit in de chat of browseropslag bewaard. Geen betaalde taak wordt gestart.</p>
+      <label className="block text-xs">API-sleutel
+        <input type="password" autoComplete="off" spellCheck={false}
+          value={stageKey} onChange={e=>setStageKey(e.target.value)}
+          placeholder="Plak hier je Manus API-key" maxLength={4096}
+          className="mt-1 block w-full rounded border border-border bg-panel px-2 py-2"/>
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={stageBusy||stageKey.length<16}
+          onClick={()=>void stageSaveOrVerify("save")}
+          className="rounded bg-cyan-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40">1. Veilig opslaan</button>
+        <button type="button" disabled={stageBusy}
+          onClick={()=>void stageSaveOrVerify("verify")}
+          className="rounded border border-cyan-500 px-3 py-2 text-xs font-semibold disabled:opacity-40">2. Verbinding controleren</button>
+      </div>
+      {stageMessage&&<p role="status" className="text-xs text-warn">{stageMessage}</p>}
+    </div>
+
     <div className="text-xs text-muted" role="status">
       Connection: <strong>{status?.connection??"unknown"}</strong> — {status?.reason??"Status unavailable"}.
       {" "}Credentials remain server-side. A task may consume Manus credits.
