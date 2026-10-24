@@ -17,6 +17,24 @@ export function ManusOperatorPanel(){
   const [stageKey,setStageKey]=useState("");
   const [stageMessage,setStageMessage]=useState("");
   const [stageBusy,setStageBusy]=useState(false);
+  // Operator-triggered clipboard paste bypasses Android/Chrome credential autofill.
+  // No clipboard content is sent anywhere until Dennis explicitly presses Save.
+  const pasteManusKeyFromClipboard=async()=>{
+    if(stageBusy)return;
+    setStageMessage("");
+    try{
+      if(!navigator.clipboard?.readText)throw new Error("CLIPBOARD_UNAVAILABLE");
+      const clipboardValue=(await navigator.clipboard.readText()).trim();
+      if(!clipboardValue || clipboardValue.length>4096 || /\\s/.test(clipboardValue)){
+        setStageMessage("Klembord heeft geen bruikbare API-sleutel. Kopieer eerst je nieuwe sleutel in Manus.");
+        return;
+      }
+      setStageKey(clipboardValue);
+      setStageMessage("Sleutel uit klembord lokaal ingevuld. Controleer dat dit de nieuwe Manus-sleutel is; nog niets opgeslagen.");
+    }catch{
+      setStageMessage("Klembord niet toegestaan. Kopieer de sleutel in Manus, tik lang in het veld en kies Plakken; negeer de n8n-autofill.");
+    }
+  };
   const stageSaveOrVerify=async(action:"save"|"verify")=>{
     if(stageBusy)return;
     setStageBusy(true);setStageMessage("");
@@ -110,6 +128,19 @@ export function ManusOperatorPanel(){
           placeholder="Plak hier je Manus API-key" maxLength={4096}
           className="mt-1 block w-full rounded border border-border bg-panel px-2 py-2"/>
       </label>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" disabled={stageBusy}
+          onClick={()=>void pasteManusKeyFromClipboard()}
+          className="rounded border border-cyan-500 px-3 py-2 text-xs font-semibold disabled:opacity-40">
+          Plak Manus-sleutel uit klembord
+        </button>
+        <button type="button" disabled={stageBusy||stageKey.length===0}
+          onClick={()=>{setStageKey("");setStageMessage("Invoerveld leeggemaakt; geen sleutel opgeslagen.");}}
+          className="rounded border border-border px-3 py-2 text-xs disabled:opacity-40">
+          Leegmaken
+        </button>
+      </div>
+      <p className="text-xs text-muted">Tik niet op de n8n Cloud Key-suggestie van Android. Kopieer eerst de nieuwe sleutel uit Manus; daarna gebruik je de klembordknop. Alleen jij kunt hierna Veilig opslaan bevestigen.</p>
       <div className="flex flex-wrap gap-2">
         <button type="button" disabled={stageBusy||stageKey.length<16}
           onClick={()=>void stageSaveOrVerify("save")}
