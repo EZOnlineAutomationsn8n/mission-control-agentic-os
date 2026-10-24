@@ -154,6 +154,7 @@ export function ManusOperatorPanel(){
 
     <div className="text-xs text-muted" role="status">
       Connection: <strong>{status?.connection??"unknown"}</strong> — {status?.reason??"Status unavailable"}.
+      {connected&&status?.lastCheckedAt&&<span> Last verified: {new Date(status.lastCheckedAt).toLocaleString("nl-NL")}.</span>}
       {" "}Credentials remain server-side. A task may consume Manus credits.
     </div>
     {!connected&&<p className="text-xs text-warn">

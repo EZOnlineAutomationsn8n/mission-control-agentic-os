@@ -1,7 +1,8 @@
 import {NextResponse} from "next/server";
 import {writeStageManusSecret,validateWerkplaatsOperator} from "@/lib/connectors/live/manus-stage-setup";
 import {clearManusStatusCache} from "@/lib/connectors/live/manus-status";
-import {getManusStatus} from "@/lib/connectors/live/manus-v2";
+import {getManusStatus,readManusApiKey} from "@/lib/connectors/live/manus-v2";
+import {recordManusStageVerification} from "@/lib/connectors/live/manus-stage-auth";
 
 export const dynamic = "force-dynamic";
 const headers = {"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"};
@@ -12,7 +13,18 @@ export async function POST(req:Request){
   if(action==="verify"){
     // This is only user.me, a read-only provider authentication check; never task.create.
     const status = await getManusStatus(fetch);
-    return NextResponse.json({ok:status.connection==="connected",connection:status.connection,reason:status.reason},{headers});
+    if(status.connection!=="connected"){
+      clearManusStatusCache();
+      return NextResponse.json({ok:false,connection:status.connection,reason:status.reason},{headers});
+    }
+    // Only persist a successful provider user.me verification, bound to the stage key.
+    const credential=await readManusApiKey();
+    if(credential.status!=="configured" || !credential.secret ||
+      !(await recordManusStageVerification(credential.secret))){
+      return NextResponse.json({ok:false,reason:"MANUS_VERIFIED_BUT_STAGE_EVIDENCE_NOT_SAVED"},{status:503,headers});
+    }
+    clearManusStatusCache();
+    return NextResponse.json({ok:true,connection:"connected",reason:"MANUS_AUTHENTICATED_VIA_USER_ME_STAGE_LAST_VERIFIED"},{headers});
   }
   if(action!=="save")return NextResponse.json({ok:false,error:"UNKNOWN_ACTION"},{status:400,headers});
   const contentLength = Number(req.headers.get("content-length")||0);
