@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import type { AcfTeamRoomRun, AcfTeamViewV1 } from "@/lib/acf/types";
+import { deriveEvidenceGroupReport, type EvidenceKind } from "@/lib/acf/evidence-group-report";
 import { agentLabel, refusalText, type CallControl, type ControlAnswer, type WaitForStep } from "./OperatorDeck";
 import { FREE_ROOM_STEPS_PER_CLICK, availableWindowFromStore, isUncertainTurnOutcome, readFreeRoomState,
   type FreeRoomPendingKind } from "@/lib/acf/continuous-room-policy";
@@ -35,6 +36,8 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
   // not in this component. A timeout/error never starts an automatic retry.
   const [uncertain, setUncertain] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
+  const [showEvidenceReport, setShowEvidenceReport] = useState(false);
+  const report = useMemo(() => deriveEvidenceGroupReport(run), [run]);
   const selected = recipients.includes("TEAM") ? members.map(p => p.handle) : recipients.filter(r => members.some(p => p.handle === r));
   const owed = run.teamView?.intervention?.open?.owed ?? [];
   const collaboration = run.teamView?.collaboration;
@@ -292,6 +295,70 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
       {uncertain && <p role="alert" className="mt-2 text-xs text-warn" data-testid="free-room-uncertain">
         Onbekende beurtuitkomst: nieuwe dispatch geblokkeerd. ACF journal/reconciliatie door de operator controleren; een readback alleen heft dit niet op.
       </p>}
+    </section>
+    <section className="rounded-lg border border-border bg-background/30 p-3" aria-label="Bewijsrapport groepsgesprek" data-testid="free-room-evidence-report">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold">Groepsrapport · bewijs uit het ACF-journal</h3>
+          <p className="mt-1 text-xs text-muted">Geen automatisch oordeel of verzonnen consensus. Deelnemers moeten aantoonbaar de hele discussie kunnen lezen vóór echte UAT.</p>
+        </div>
+        <button type="button" className="mc-button mc-button-secondary mc-button-sm"
+          data-testid="free-room-evidence-report-toggle" aria-expanded={showEvidenceReport}
+          onClick={() => setShowEvidenceReport(v => !v)}>
+          {showEvidenceReport ? "Sluit bewijsrapport" : "Toon bewijsrapport"}
+        </button>
+      </div>
+      {showEvidenceReport && <div className="mt-3 space-y-4 text-xs" data-testid="free-room-evidence-report-body">
+        <p className="rounded border border-warn/50 p-2" role="status">
+          {report.snapshotReplayVerified ? "ACF-journalreplay bevestigd." : "ACF-journalreplay niet bevestigd."}
+          {" "}Volledige gedeelde context per agent: NIET AANGETOOND.
+          {" "}Groepsconsensus: {report.consensusStatus}.
+          {" "}Dit is een voorlopig, uitsluitend brongebonden rapport, geen UAT-certificaat.
+        </p>
+        <div>
+          <strong>Wat is besproken?</strong>
+          <p className="mt-1">Doel in ACF: {report.goal || "Geen doel vastgelegd"} · {report.sourceMessages.length} geregistreerde berichten</p>
+          <ol className="mt-2 space-y-2">
+            {report.sourceMessages.map(m => <li key={m.messageId} className="rounded border border-border/70 p-2 whitespace-pre-wrap break-words">
+              <strong>#{m.sequence} {m.messageId} · {m.from} → {m.to}</strong>
+              {m.inReplyTo ? " · antwoord op " + m.inReplyTo : ""}
+              <p className="mt-1 whitespace-pre-wrap break-words">{m.body}</p>
+            </li>)}
+            {!report.sourceMessages.length && <li>Geen geregistreerde groepsbijdragen.</li>}
+          </ol>
+        </div>
+        <div>
+          <strong>Wie sprak met wie? (geen inhoudelijke acceptatie)</strong>
+          <p className="mt-1">{report.participantTurns.map(p => p.role + ": " + p.turns + " bronherleidbare beurt(en)").join(" · ") || "Geen deelnemers"}</p>
+          <p>{report.peerResponses.length} bronherleidbare directe deelnemersberichten; aantallen zijn geen bewijs van werkelijk overleg.</p>
+        </div>
+        {([
+          ["AGREEMENT", "Expliciet uitgesproken overeenstemming — nog geen consensus"],
+          ["OBJECTION", "Uitgesproken bezwaren en meningsverschillen"],
+          ["REVISION", "Herziene standpunten en correcties"],
+          ["OPEN", "Expliciet openstaande vragen"],
+          ["CONCLUSION", "Door deelnemers genoemde conclusies — geen vastgesteld groepsbesluit"],
+          ["POSITION", "Overige expliciete standpunten"],
+        ] as [EvidenceKind,string][]).map(([kind,heading]) => {
+          const relevant = report.evidence.filter(e => e.kind === kind);
+          return <div key={kind} data-testid={"free-room-evidence-" + kind.toLowerCase()}>
+            <strong>{heading}</strong>
+            {relevant.length ? <ul className="mt-1 space-y-2">
+              {relevant.map((e,i) => <li key={e.messageId + "-" + kind + "-" + i} className="rounded border border-border/70 p-2">
+                <p className="whitespace-pre-wrap break-words">{e.statement}</p>
+                <p className="mt-1 text-muted">Bron {e.messageId} · #{e.sequence} · {e.from} · {e.agentId} · sessie {e.sessionRef} · gesprek {e.conversationRef}</p>
+              </li>)}
+            </ul> : <p className="mt-1 text-muted">Niet expliciet onderbouwd in de zichtbare bronberichten. Geen uitspraak of akkoord ingevuld.</p>}
+          </div>;
+        })}
+        <div>
+          <strong>Bewijsgrenzen</strong>
+          <ul className="mt-1 list-disc space-y-1 pl-4">
+            {report.caveats.map(c => <li key={c}>{c}</li>)}
+          </ul>
+          <p className="mt-2">Rapport uit ACF-run {report.runId}. Een individuele claim of akkoord is nooit bewijs van groepsconsensus.</p>
+        </div>
+      </div>}
     </section>
     {disabled && <p role="status" className="text-xs text-warn">Bediening geblokkeerd: conceptselectie of verouderde ACF-status. Bevestig eerst je selectie en controleer actuele run-status.</p>}
     {note && <p className="rounded border border-border bg-panel-2 p-2 text-xs" role="status" data-testid="free-room-status">{note}</p>}
