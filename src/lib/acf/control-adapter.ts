@@ -175,48 +175,35 @@ const defaultRunner: AcfRunner = async (args, timeoutMs) => {
 };
 
 /**
- * Reconcile only Codex/Gemini ACF Werkplaats candidates from the existing
- * STAGE session registry. Preserve legacy preview status reads for all other
- * agents; no production Codex/Gemini personal sessions may enter the stage
- * team roster, and a PREPARED session is not marked ELIGIBLE by ACF.
+ * Stage roster has a single canonical owner: its own existing session registry.
+ * A live session index is never acceptable as stage readiness evidence,
+ * even when a production-owned key begins with "acf-werkplaats-".
  */
 export function reconcileStageCliCandidates(
-  remote: Array<Record<string, unknown>>,
+  _liveReadOnly: Array<Record<string, unknown>>,
   stage: Array<Record<string, unknown>>,
   pattern: string,
 ): Array<Record<string, unknown>> {
   const re = new RegExp(pattern);
-  const localOnly = new Set(["codex","gemini"]);
-  const eligibleName = (item:Record<string,unknown>) => re.test(String(item.sessionId??""));
-  const preserved = remote.filter(item => eligibleName(item) && !localOnly.has(String(item.agentId??"")));
-  const local = stage.filter(item => eligibleName(item) && localOnly.has(String(item.agentId??"")));
-  return [...preserved,...local];
+  return stage.filter(item => re.test(String(item.sessionId ?? "")));
 }
 
 const defaultLister: SessionLister = async () => {
-  // Existing Werkplaats: preserve the bounded live-session status reads for
-  // unrelated legacy agents. Gemini/Codex use their own STAGE session store
-  // and STAGE 3331 ask routes, so never import production CLI sessions.
-  if (process.env.MC_PREVIEW === "1") {
-    try {
-      const { readFile } = await import("node:fs/promises");
-      const routes = JSON.parse(await readFile(ACF_TEAM_ROOM_ROUTES, "utf8")) as {
-        session_ref_pattern?: string; session_index?: { base_url?: string; path?: string; timeout_seconds?: number };
-      };
-      const pattern = routes.session_ref_pattern ?? "";
-      const index = routes.session_index;
-      if (pattern.startsWith("^acf-werkplaats-") && index?.base_url && index.path) {
-        const res = await fetch(index.base_url + index.path, { cache: "no-store",
-          signal: AbortSignal.timeout((index.timeout_seconds ?? 15) * 1000) });
-        const body = (await res.json()) as { sessions?: Array<Record<string, unknown>> };
-        const {listCockpitSessions} = await import("@/lib/cockpit/session-registry");
-        const stageSessions=(await listCockpitSessions()) as unknown as Array<Record<string,unknown>>;
-        return reconcileStageCliCandidates(body.sessions??[],stageSessions,pattern);
-      }
-    } catch { /* fall back to the preview's own (empty) store */ }
-  }
   const { listCockpitSessions } = await import("@/lib/cockpit/session-registry");
-  return (await listCockpitSessions()) as unknown as Array<Record<string, unknown>>;
+  const sessions = (await listCockpitSessions()) as unknown as Array<Record<string, unknown>>;
+  if (process.env.MC_PREVIEW !== "1") return sessions;
+  // Never let an unavailable or malformed stage route file silently fall
+  // back to a LIVE index or an unbounded personal-session list.
+  try {
+    const routes = JSON.parse(await readFile(ACF_TEAM_ROOM_ROUTES, "utf8")) as {
+      session_ref_pattern?: string;
+    };
+    const pattern = routes.session_ref_pattern;
+    if (typeof pattern !== "string" || !pattern.startsWith("^acf-werkplaats-")) return [];
+    return reconcileStageCliCandidates([], sessions, pattern);
+  } catch {
+    return [];
+  }
 };
 
 function parseAnswer(raw: string): Record<string, unknown> {

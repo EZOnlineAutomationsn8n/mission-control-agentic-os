@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { lstat } from "node:fs/promises";
+import path from "node:path";
 import { appendAuditEvent } from "@/lib/audit-log-store";
 import { promptWithAttachments, resolveAttachments } from "@/lib/attachments/store";
 import { executeConversationRequest, type ConnectorConversationResult } from "@/lib/agent-conversations/service";
@@ -45,6 +47,43 @@ function bootstrapPrompt(agentId: CliAgentId): string {
 export function codexUsesChatGptSubscriptionAuth(stdout: string): boolean {
   return /^Logged in using ChatGPT\s*$/m.test(stdout.trim()) &&
     !/api.key|pay.as.you.go|openai_api_key/i.test(stdout);
+}
+
+/**
+ * No model request on Start. The owner-controlled Werkplaats must provide
+ * separate stage native home, and the executable must pass a real version
+ * check before a PREPARED stage session is recorded.
+ */
+async function stageNativePreflight(agentId: "hermes" | "openclaw"): Promise<
+  { ok: true; binary: string; runtime: string } | { ok: false; error: string }
+> {
+  const root=process.env.GAOS_STAGE_NATIVE_ROOT;
+  if (process.env.MC_PREVIEW !== "1" || process.env.GAOS_STAGE_NATIVE_ISOLATED !== "1" ||
+    !root || !path.isAbsolute(root) || !path.resolve(root).includes("/.stage-achtergrond/.preview-native-home")) {
+    return {ok:false,error:"STAGE_NATIVE_PROFILE_ISOLATION_NOT_PROVEN"};
+  }
+  const home=path.join(root,agentId);
+  try {
+    for (const dir of [root,home]) {
+      const st=await lstat(dir);
+      if (!st.isDirectory() || st.isSymbolicLink() || (st.mode & 0o077)!==0)
+        return {ok:false,error:"STAGE_NATIVE_PROFILE_PERMISSIONS_INVALID"};
+    }
+    const bin=agentId==="hermes"?process.env.HERMES_AGENT_BINARY:process.env.OPENCLAW_AGENT_BINARY;
+    if (!bin || !path.isAbsolute(bin) || bin.startsWith("/nonexistent/"))
+      return {ok:false,error:"STAGE_NATIVE_EXECUTABLE_DISABLED"};
+    const env={...process.env,HOME:home,
+      ...(agentId==="openclaw"?{OPENCLAW_STATE_DIR:home}:{}),
+    };
+    const {stdout,stderr}=await promisify(execFile)(bin,["--version"],{
+      cwd:process.cwd(),env,timeout:15000,encoding:"utf8",maxBuffer:1000000,
+    });
+    const version=(String(stdout)+" "+String(stderr)).trim().split("\n")[0].slice(0,100);
+    if(!version)return {ok:false,error:"STAGE_NATIVE_VERSION_NOT_REPORTED"};
+    return {ok:true,binary:bin,runtime:agentId+" "+version};
+  }catch{
+    return {ok:false,error:"STAGE_NATIVE_EXECUTABLE_PREFLIGHT_FAILED"};
+  }
 }
 
 function sessionKey(request: Request): string {
@@ -101,6 +140,23 @@ export async function changeCliAgentSession(request: Request, agentId: CliAgentI
     return NextResponse.json({error:"GEMINI_ZERO_COST_AUTH_AND_MODEL_UNVERIFIED",
       detail:"Gemini CLI is installed; CLI auth mode, actual model behind auto, and cost-free quota remain unverified. No session reset or provider call."},
       {status:409});
+  }
+  if (process.env.MC_PREVIEW==="1" && (agentId==="hermes" || agentId==="openclaw")) {
+    if (existing) return NextResponse.json({error:"STAGE_SESSION_ALREADY_EXISTS_NO_RESET",
+      session:existing},{status:409});
+    if (!key.startsWith("acf-werkplaats-")) return NextResponse.json({
+      error:"STAGE_NATIVE_SESSION_KEY_MUST_BE_ACF_WORKSHOP"},{status:400});
+    const probe=await stageNativePreflight(agentId);
+    if (!probe.ok) return NextResponse.json({error:probe.error,modelCalls:0},{status:409});
+    await createCliAgentSession(agentId,key);
+    const prepared=await updateCliAgentSession(agentId,key,{
+      status:"prepared",active:true,lastError:null,agentRuntime:probe.runtime,
+    });
+    return NextResponse.json({session:prepared,prepared:true,modelCalls:0,
+      nativeExecutableVerified:true,stageOwnNativeHome:true,
+      freeProviderRouteVerified:false,
+      canSendModelTurn:false,
+      note:"Native stage executable and own isolated profile verified; actual free transport/auth and first native turn not proven."});
   }
   // WORKPLAATS ONLY: Codex subscription auth is checked without model traffic.
   // The operator's first actual prompt opens the native thread, rather than
@@ -199,6 +255,13 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "invalid attachments" }, { status: 400 });
   }
+  // A prepared native stage is NOT a zero-cost transport authorization.
+  // Stop before any provider call until a genuine stage-native price, auth
+  // and independent gateway proof is in the actual executable path.
+  if (process.env.MC_PREVIEW==="1" &&
+      (agentId==="hermes" || agentId==="openclaw"))
+    return NextResponse.json({error:"STAGE_NATIVE_FREE_TRANSPORT_NOT_VERIFIED",
+      agentId,providerCalls:0,costGate:"DENY_UNVERIFIED"},{status:409});
   const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
 
   const session = await readCliAgentSession(agentId, key);

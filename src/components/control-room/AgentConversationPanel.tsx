@@ -540,6 +540,12 @@ export function AgentConversationPanel({
 
       {/* Terminal panes: everything below the header is ONE scroll surface (notices, turns, composer). */}
       <div ref={terminal ? scrollSurface : undefined} className={terminal ? "flex-1 min-h-0 overflow-y-auto pr-1 space-y-2.5" : "space-y-3"} data-conversation-stream={terminal ? "true" : undefined}>
+      {session?.status==="prepared" && (agentId==="hermes"||agentId==="openclaw") && <p role="status" data-testid="stage-native-prepared"
+        className="rounded border border-warn/40 p-2 text-xs text-warn">
+        Werkplaats-native CLI gecontroleerd met eigen geïsoleerd profiel. De sessie is voorbereid,
+        maar de provider- en gratis transportgrens is nog niet bewezen.
+        Modelverzoeken zijn geblokkeerd; ACF mag deze sessie nog niet ELIGIBLE noemen.
+      </p>}
       {session?.status==="prepared" && agentId==="codex" && <p role="status" data-testid="codex-staged-prepared"
         className="rounded border border-accent/40 p-2 text-xs text-accent">
         Codex Werkplaats-sessie voorbereid zonder modelaanvraag. ChatGPT CLI-login is geverifieerd;

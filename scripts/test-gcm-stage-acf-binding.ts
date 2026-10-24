@@ -5,7 +5,7 @@ import {reconcileStageCliCandidates} from "../src/lib/acf/control-adapter";
 const pattern="^acf-werkplaats-[a-zA-Z0-9_-]{1,48}$";
 const session=(agentId:string,sessionId:string,status="idle")=>({agentId,sessionId,status,active:true,executionMode:"on-demand-cli"});
 
-test("Gemini/Codex stage sessions exclusively from own stage registry",()=>{
+test("All six stage agents derive from ONLY own stage registry",()=>{
  const remote=[
   session("hermes","acf-werkplaats-hermes"),
   session("openclaw","acf-werkplaats-openclaw"),
@@ -22,17 +22,18 @@ test("Gemini/Codex stage sessions exclusively from own stage registry",()=>{
  ];
  const result=reconcileStageCliCandidates(remote,stage,pattern);
  assert.deepEqual(result.map(s=>[s.agentId,s.sessionId,s.status]),[
-  ["hermes","acf-werkplaats-hermes","idle"],
-  ["openclaw","acf-werkplaats-openclaw","idle"],
-  ["claude-code","acf-werkplaats-claude-code","error"],
   ["codex","acf-werkplaats-codex","prepared"],
   ["gemini","acf-werkplaats-gemini","error"],
+  ["hermes","acf-werkplaats-hermes","error"],
  ]);
 });
-test("No phantom production Codex/Gemini readiness if local stage has no candidate",()=>{
+test("No phantom production readiness for Hermes/OpenClaw/Claude/Codex/Gemini",()=>{
  assert.deepEqual(reconcileStageCliCandidates([
   session("codex","acf-werkplaats-codex"),
-  session("gemini","acf-werkplaats-gemini")],[],pattern),[]);
+  session("gemini","acf-werkplaats-gemini"),
+  session("hermes","acf-werkplaats-hermes"),
+  session("openclaw","acf-werkplaats-openclaw"),
+  session("claude-code","acf-werkplaats-claude-code")],[],pattern),[]);
 });
 test("ACF stage 'prepared' is not a fake idle eligible session",()=>{
  const r=reconcileStageCliCandidates([],[
