@@ -21,7 +21,8 @@ export const ACF_TEAM_ROOM_HOME = process.env.ACF_STATE_DIR || `${ACF_PROJECT_RO
 export const ACF_TEAM_ROOM_ROUTES = process.env.ACF_TEAM_ROOM_ROUTES || `${ACF_TEAM_ROOM_HOME}/participant_routes.json`;
 export const ACF_TEAM_CONTROL_VERBS = [
   "team-open", "team-open-participants", "team-task", "team-join", "team-step", "team-reconcile",
-  "team-intervene", "team-say", "team-collaborate", "team-resume", "team-stop", "team-rebind", "team-continue",
+  "team-intervene", "team-say", "team-collaborate", "team-resume", "team-stop",
+  "team-reconcile-late", "team-consensus-propose", "team-rebind", "team-continue",
 ] as const;
 export type AcfControlVerb = (typeof ACF_TEAM_CONTROL_VERBS)[number];
 
@@ -383,8 +384,8 @@ export async function runAcfControl(verb: unknown, args: unknown, runner: AcfRun
     const runId = typeof obj.run_id === "string" ? obj.run_id : "";
     if (!RUN_ID_RE.test(runId)) return bad(v, "run_id required");
     if (v === "team-stop") {
-      // Reuse ACF's existing durable core cancel-run verb; do NOT add a
-      // parallel orchestrator/session stop or stop an in-flight participant.
+      // Use ACF Pass 1A's own team-stop. The same ACF core writes the
+      // terminal state and owns in-flight/no-retry protections.
       const current = await callAcf("team-view", { run_id: runId }, OTHER_TIMEOUT_MS, runner);
       if (!current.ok) return { ok: false, verb: v, code: current.code, detail: current.detail };
       if (current.answer.schema !== 2) return bad(v, "Stop via Free Room is only for schema-2 runs");
@@ -396,7 +397,7 @@ export async function runAcfControl(verb: unknown, args: unknown, runner: AcfRun
       const reason = obj.reason === undefined ? "Operator stopped the Free Room" : obj.reason;
       if (typeof reason !== "string" || !reason.trim() || reason.length > LIMITS.reason ||
           hasControlChars(reason)) return bad(v, "Stop reason: 1..300 characters, no control characters");
-      const stopped = await callAcf("cancel-run", { run_id: runId, by: OPERATOR,
+      const stopped = await callAcf("team-stop", { run_id: runId, by: OPERATOR,
         reason: reason.trim() }, OTHER_TIMEOUT_MS, runner);
       if (!stopped.ok) return { ok: false, verb: v, code: stopped.code, detail: stopped.detail };
       return { ok: true, verb: v, result: stopped.answer };
@@ -436,6 +437,28 @@ export async function runAcfControl(verb: unknown, args: unknown, runner: AcfRun
       timeout = STEP_TIMEOUT_MS;
     } else if (v === "team-reconcile") {
       acfArgs = { run_id: runId, by: OPERATOR };
+    } else if (v === "team-reconcile-late") {
+      const v2 = await requireV2Run(runId, runner);
+      if (!v2.ok) return { ok: false, verb: v, code: v2.code, detail: v2.detail };
+      // READS the native session's recorded history; may reconcile into ACF's
+      // journal, but never sends another participant/model prompt.
+      acfArgs = { run_id: runId, by: OPERATOR };
+    } else if (v === "team-consensus-propose") {
+      const v2 = await requireV2Run(runId, runner);
+      if (!v2.ok) return { ok: false, verb: v, code: v2.code, detail: v2.detail };
+      const text = typeof obj.text === "string" ? obj.text.trim() : "";
+      if (!text || text.length > LIMITS.say || hasControlChars(text)) {
+        return bad(v, "Explicit operator consensus proposal required (1..6000 characters)");
+      }
+      const participants = obj.participants;
+      const handles = v2.participants.map(p => p.role);
+      if (participants !== undefined && (!Array.isArray(participants) || !participants.length ||
+        new Set(participants).size !== participants.length ||
+        participants.some(p => typeof p !== "string" || !handles.includes(p)))) {
+        return bad(v, "Consensus must name one or more distinct, bound participant handles");
+      }
+      acfArgs = { run_id: runId, by: OPERATOR, text,
+        ...(participants === undefined ? {} : { participants }) };
     } else if (v === "team-intervene") {
       const reason = typeof obj.reason === "string" ? obj.reason.trim() : "";
       if (!reason || reason.length > LIMITS.reason || hasControlChars(reason)) return bad(v, `Reason: one line, 1..${LIMITS.reason} characters`);

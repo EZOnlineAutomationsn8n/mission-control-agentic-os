@@ -30,6 +30,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
   const [text, setText] = useState("");
   const [rounds, setRounds] = useState(1);
   const [topic, setTopic] = useState("");
+  const [consensusText, setConsensusText] = useState("");
   const [note, setNote] = useState("");
   const [thinking, setThinking] = useState("");
   // UI-only operator work chunk. The durable ACF run and its history live in ACF,
@@ -158,6 +159,41 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     finally { setBusy(null); await refresh(run.runId); }
   }
 
+  async function reconcileLate() {
+    if (locked) return;
+    setBusy("free-room-reconcile-late");
+    try {
+      const result = await callControl("team-reconcile-late", {run_id:run.runId});
+      setNote(result.ok
+        ? "ACF heeft de native sessiegeschiedenis gecontroleerd en eventuele late antwoorden exact eenmaal verwerkt. Controleer de nieuwe journal-status."
+        : "Reconciliatie geweigerd: " + refusalText(result));
+      // Only a fresh ACF journal view can lift uncertainty. A successful
+      // reconcile invocation by itself does not prove a late turn is settled.
+      if (result.ok) {
+        const current = await readView(run.runId);
+        if (current && !current.in_flight && current.collaboration &&
+            Array.isArray(current.collaboration.open_pending) &&
+            current.collaboration.open_pending.length === 0) setUncertain(false);
+      }
+    } catch(e) { setUncertain(true); setNote("Late-resultstatus onbekend: " + String(e) + ". Geen automatische retry."); }
+    finally { setBusy(null); await refresh(run.runId); }
+  }
+
+  async function proposeConsensus() {
+    const text = consensusText.trim();
+    if (locked || uncertain || owed.length || selected.length < 1 || !text) return;
+    setBusy("free-room-consensus-propose");
+    try {
+      const result = await callControl("team-consensus-propose",
+        {run_id:run.runId,text,participants:selected});
+      if (result.ok) {
+        setNote("ACF heeft een expliciet consensusvoorstel geregistreerd. Alleen gerichte echte ACK-antwoorden kunnen consensus bewijzen; er worden geen modelbeurten automatisch gestart.");
+        setConsensusText("");
+      } else setNote("Geen consensusvoorstel verstuurd: " + refusalText(result));
+    } catch(e) { setNote("Consensusvoorstelstatus onbekend: " + String(e)); setUncertain(true); }
+    finally { setBusy(null); await refresh(run.runId); }
+  }
+
   async function stopRoom() {
     if (disabled || processing || uncertain || run.teamView?.in_flight || !["ACTIVE", "PAUSED"].includes(run.runState) || !confirmStop) return;
     setBusy("free-room-stop");
@@ -213,7 +249,8 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     setBusy("free-room-collaborate"); setNote(""); setThinking("");
     try {
       const result = await callControl("team-collaborate", {
-        run_id: run.runId, rounds, ...(topic.trim() ? { topic: topic.trim() } : {}),
+        run_id: run.runId, rounds, participants: selected,
+        ...(topic.trim() ? { topic: topic.trim() } : {}),
       });
       if (!result.ok) { setNote("Niet gestart: " + refusalText(result)); return; }
       setNote("Samenwerken gestart; ACF bepaalt de beurtvolgorde.");
@@ -262,7 +299,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
       <div className="mt-2 flex flex-wrap items-end gap-2">
         <label className="text-xs">Rondes <select data-testid="free-room-rounds" className="mt-1 block rounded border border-border bg-background p-2" value={rounds} onChange={e=>setRounds(Number(e.target.value))}>{[1,2,3,4].map(n=><option key={n} value={n}>{n}</option>)}</select></label>
         <label className="min-w-[140px] flex-1 text-xs">Onderwerp (optioneel)<input data-testid="free-room-topic" maxLength={4000} className="mt-1 w-full rounded border border-border bg-background p-2 text-xs" value={topic} onChange={e=>setTopic(e.target.value)} placeholder="Waarover spreken jullie?"/></label>
-        <button type="button" data-testid="free-room-collaborate" className="mc-button mc-button-primary" disabled={locked || uncertain || owed.length>0 || members.length<2 || Boolean(collaboration && collaboration.status!=="ENDED" && collaboration.status!=="BLOCKED")} onClick={()=>void collaborate()}>{busy==="free-room-collaborate" ? "Samenwerken loopt…" : "Samenwerken"}</button>
+        <button type="button" data-testid="free-room-collaborate" className="mc-button mc-button-primary" disabled={locked || uncertain || owed.length>0 || selected.length<2 || Boolean(collaboration && collaboration.status!=="ENDED" && collaboration.status!=="BLOCKED")} onClick={()=>void collaborate()}>{busy==="free-room-collaborate" ? "Samenwerken loopt…" : "Samenwerken"}</button>
       </div>
       {collaboration && <p className="mt-2 text-xs" data-testid="free-room-collab-status">ACF venster {collaboration.window_id} · {collaboration.status} · {collaboration.posted}/{collaboration.total} beurten{collaboration.reason ? " · " + collaboration.reason : ""}</p>}
       <div className="mt-3 rounded-md border border-border/70 bg-panel-2/50 p-2 text-xs" data-testid="free-room-durable-state">
@@ -270,7 +307,26 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
         {run.teamView?.next_safe_action && <span className="block break-words">ACF next_safe_action: {run.teamView.next_safe_action}</span>}
         {run.teamView?.in_flight ? <span className="block text-warn">Journal heeft een open beurt: niet opnieuw versturen.</span> : null}
       </div>
+      <div className="mt-3 space-y-2 rounded border border-border/70 p-2" aria-label="Bewijsgericht consensusvoorstel">
+        <label className="block text-xs">Optioneel voorstel aan geselecteerde deelnemers
+          <textarea data-testid="free-room-consensus-input" rows={2} maxLength={6000}
+            value={consensusText} onChange={e=>setConsensusText(e.target.value)}
+            placeholder="Formuleer zelf de exacte stelling. Geen automatisch gegenereerde consensus."
+            className="mt-1 block w-full rounded border border-border bg-background p-2" />
+        </label>
+        <button type="button" className="mc-button mc-button-secondary mc-button-sm"
+          data-testid="free-room-consensus-submit"
+          disabled={locked || uncertain || Boolean(owed.length) || !consensusText.trim() || selected.length<1}
+          onClick={()=>void proposeConsensus()}>Vraag expliciet om ACK/NACK (geen agent-send)</button>
+        <p className="text-xs text-muted">ACF-consensus: {run.teamView?.consensus?.status ?? "NOT_PROVEN"}.
+          {run.teamView?.consensus?.answers ? " " + Object.entries(run.teamView.consensus.answers).map(([a,v])=>a+": "+v).join(" · ") : " Geen expliciete ACK-bewijsketen."}
+        </p>
+      </div>
       <div className="mt-2 flex flex-wrap gap-2" aria-label="Veilige Free Room bediening">
+        <button type="button" data-testid="free-room-reconcile-late" className="mc-button mc-button-secondary"
+          disabled={locked} onClick={()=>void reconcileLate()}>
+          Reconcile late antwoorden (zonder modelbeurt)
+        </button>
         <button type="button" data-testid="free-room-pause" className="mc-button mc-button-secondary" disabled={!canPause} onClick={()=>void pauseRoom()}>Pauzeer</button>
         <button type="button" data-testid="free-room-resume" className="mc-button mc-button-secondary" disabled={!canResume || uncertain} onClick={()=>void resumeRoom()}>Hervat</button>
         <button type="button" data-testid="free-room-inspect" className="mc-button mc-button-secondary" disabled={processing} onClick={()=>void inspectEvidence()}>Controleer ACF-status</button>
@@ -290,7 +346,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
         </div>
       </div>}
       <p className="mt-1 text-[11px] text-muted">Pauzeren gebruikt ACF team-intervene; hervatten gebruikt team-resume.
-        Stoppen gebruikt na jouw bevestiging de bestaande ACF cancel-run. Bij een onbekende beurtuitkomst wordt niets opnieuw verzonden.
+        Stoppen gebruikt na jouw bevestiging de bestaande ACF Pass 1A team-stop. Bij een onbekende beurtuitkomst wordt niets opnieuw verzonden.
         Automatische consensus wordt pas getoond als ACF dit met bewijs bevestigt.</p>
       {uncertain && <p role="alert" className="mt-2 text-xs text-warn" data-testid="free-room-uncertain">
         Onbekende beurtuitkomst: nieuwe dispatch geblokkeerd. ACF journal/reconciliatie door de operator controleren; een readback alleen heft dit niet op.

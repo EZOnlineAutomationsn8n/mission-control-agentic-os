@@ -96,7 +96,11 @@ export interface AcfTeamViewV1 {
   steps?: { used: number; max: number | null; open: number[] };
   /** ACF §14 FreeRoom window; status and budget are owned by ACF. */
   collaboration?: { window_id: string; order: string[]; rounds: number; posted: number; total: number;
-    status: "OPEN" | "RUNNING" | "ENDED" | "BLOCKED" | string; reason?: string | null; messages?: unknown[] } | null;
+    status: "OPEN" | "RUNNING" | "ENDED" | "BLOCKED" | string; reason?: string | null; messages?: unknown[];
+    open_pending?: Array<{turn_id:string;role:string;status?:string}>;
+    pending?: Array<{turn_id:string;role:string;status?:string}>; } | null;
+  consensus?: {status:"CONSENSUS_REACHED" | "NOT_REACHED" | string; consensus_id?:string;
+    answers?: Record<string,string>} | null;
 }
 
 /** One operator message said during an intervention (posting.intervention_messages + its text). */

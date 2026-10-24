@@ -65,7 +65,7 @@ test("Samenwerken never reaches ACF mutation if rounds, members or schema are in
  assert.equal(v1.calls.some(c=>c.verb==="team-collaborate"),false);
 });
 
-test("Free Room Stop maps only schema2 safe run to existing durable ACF cancel-run", async () => {
+test("Free Room Stop maps only schema2 safe run to existing Pass1A ACF team-stop", async () => {
   const called: Array<{verb:string,args:Record<string,unknown>}> = [];
   const executor: AcfRunner = async argv => {
     const verb=argv[0], args=JSON.parse(argv[4]) as Record<string,unknown>;
@@ -75,7 +75,7 @@ test("Free Room Stop maps only schema2 safe run to existing durable ACF cancel-r
   };
   const result=await runAcfControl("team-stop",{run_id:"RUN-X",reason:"Operator confirms stop"},executor,lister,agents);
   assert.equal(result.ok,true);
-  assert.deepEqual(called.map(c=>c.verb),["team-view","cancel-run"]);
+  assert.deepEqual(called.map(c=>c.verb),["team-view","team-stop"]);
   assert.deepEqual(called[1].args,{run_id:"RUN-X",by:"DENNIS",reason:"Operator confirms stop"});
 });
 test("Free Room Stop fail-closed for v1, in-flight, closed, invalid reason",async()=>{
