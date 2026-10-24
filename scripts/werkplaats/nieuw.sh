@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/../.." && pwd -P)"
+# This same helper can execute from the existing stage worktree before
+# promotion, or from main after Dennis has promoted the source. No clone.
+[[ "$(basename "$ROOT")" =~ ^\.stage- ]] && ROOT="$(dirname "$ROOT")"
 [[ $# -ge 1 ]] || { echo "FOUT: geef de naam van de werkplaats"; exit 2; }
 NAME="$1"
 if [[ ! "$NAME" =~ ^[a-z][a-z0-9-]{0,39}$ ]]; then echo "FOUT: gebruik naam met kleine letters, cijfers en streepjes"; exit 2; fi

@@ -8,6 +8,21 @@ if (process.argv.includes("build") && LIVE_DIRS.includes(process.cwd()) && proce
 }
 
 const nextConfig: NextConfig = {
+  // Environment state is NEVER part of a deployable server trace.
+  // Both rooms run this identical config while owning distinct runtime
+  // data, secret and preview directories. These files stay on their own
+  // disks; native agents read them only at execution time.
+  outputFileTracingExcludes: {
+    "/*": [
+      "./data/**/*",
+      "./.preview-acf-home/**/*",
+      "./.preview-native-home/**/*",
+      "./.preview-ops/**/*",
+      "./.preview-omi/**/*",
+      "./.werkplaats-release-source/**/*",
+      "./theme/**/*",
+    ],
+  },
   // This repository intentionally lives inside a protected parent checkout.
   // Pin Turbopack here so the parent's lockfile cannot widen tracing into the
   // legacy tree or produce misleading attachment-store trace warnings.

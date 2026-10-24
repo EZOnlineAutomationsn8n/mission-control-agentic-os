@@ -16,7 +16,7 @@ export function stageNativeKeyPath():string|null {
 export async function stageNativeKeyPresent():Promise<boolean>{
   const p=stageNativeKeyPath();if(!p)return false;
   try{
-    const st=await fs.lstat(p);
+    const st=await fs.lstat(/* turbopackIgnore: true */ p);
     return st.isFile()&&!st.isSymbolicLink()&&(st.mode&0o077)===0&&
       st.size>=20&&st.size<=4096;
   }catch{return false;}
@@ -26,7 +26,7 @@ export async function stageNativeKeyPresent():Promise<boolean>{
 export async function readStageNativeKey():Promise<string|null>{
   const p=stageNativeKeyPath();
   if(!p||!(await stageNativeKeyPresent()))return null;
-  const data=await fs.readFile(p,"utf8");
+  const data=await fs.readFile(/* turbopackIgnore: true */ p,"utf8");
   return /^[A-Za-z0-9._-]{20,4096}$/.test(data)?data:null;
 }
 
@@ -38,10 +38,10 @@ export async function saveStageNativeKey(input:unknown):Promise<string>{
   const d=path.dirname(p);
   try{
     await fs.mkdir(d,{recursive:true,mode:0o700});
-    const st=await fs.lstat(d);
+    const st=await fs.lstat(/* turbopackIgnore: true */ d);
     if(!st.isDirectory()||st.isSymbolicLink()||(st.mode&0o077)!==0)
       return "STAGE_SECRET_DIR_NOT_PRIVATE";
-    const old=await fs.lstat(p).catch((e:NodeJS.ErrnoException)=>{
+    const old=await fs.lstat(/* turbopackIgnore: true */ p).catch((e:NodeJS.ErrnoException)=>{
       if(e.code==="ENOENT")return null;
       throw e;
     });

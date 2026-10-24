@@ -53,11 +53,11 @@ async function catalog():Promise<CatalogReadiness>{
  cached={time:Date.now(),value};return value;
 }
 async function regularPrivateDir(p:string):Promise<boolean>{
- try{const s=await fs.lstat(p);return s.isDirectory()&&!s.isSymbolicLink()&&(s.mode&0o077)===0;}
+ try{const s=await fs.lstat(/* turbopackIgnore: true */ p);return s.isDirectory()&&!s.isSymbolicLink()&&(s.mode&0o077)===0;}
  catch{return false;}
 }
 async function readBoundedStageFile(p:string,max=16384):Promise<string|null>{
- try{const s=await fs.lstat(p);if(!s.isFile()||s.isSymbolicLink()||s.size>max)return null;return await fs.readFile(p,"utf8");}
+ try{const s=await fs.lstat(/* turbopackIgnore: true */ p);if(!s.isFile()||s.isSymbolicLink()||s.size>max)return null;return await fs.readFile(/* turbopackIgnore: true */ p,"utf8");}
  catch{return null;}
 }
 /** The installed Hermes source, not an assumed CLI default, defines these
@@ -81,7 +81,7 @@ async function hermesInstalledPolicySourceVerified():Promise<boolean>{
  const root="/usr/local/lib/hermes-agent";
  const verified=(await Promise.all(Object.entries(HERMES_POLICY_SOURCE_SHA).map(async([name,expected])=>{
    try{
-     const data=await fs.readFile(path.join(root,name));
+     const data=await fs.readFile(/* turbopackIgnore: true */ path.join(root,name));
      return createHash("sha256").update(data).digest("hex")===expected;
    }catch{return false;}
  }))).every(Boolean);
