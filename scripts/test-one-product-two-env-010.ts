@@ -64,3 +64,13 @@ test("promotable artifact excludes environment state and secret paths",()=>{
   assert.ok(content.includes("/* turbopackIgnore: true */"),"runtime profile reads must not be traced: "+m);
  }
 });
+
+test("Next instrumentation file-trace sanitizer operates only on isolated stage manifests",()=>{
+ const build=read(path.join(stage,"scripts/werkplaats/bouw.sh"));
+ const cleaner=read(path.join(stage,"scripts/werkplaats/sanitize-private-traces.py"));
+ assert.ok(build.includes('python3 scripts/werkplaats/sanitize-private-traces.py "$STAGE"'));
+ for(const d of ["data",".preview-native-home",".preview-acf-home",".werkplaats-release-source"])
+   assert.ok(cleaner.includes('"'+d+'"'));
+ assert.ok(cleaner.includes("INCOMPLETE_STAGE_BUILD"));
+ assert.ok(cleaner.includes("UNSAFE_STAGE_TRACE_STILL_PRESENT"));
+});

@@ -25,6 +25,10 @@ npm run build
 ./node_modules/.bin/tsc --noEmit
 npm run lint
 [[ -s .next/BUILD_ID ]] || { echo "FOUT: geen build-ID"; exit 5; }
+# Next 16 instrumentation file traces are not covered by route-scoped excludes.
+# Sanitise only generated .nft JSON references, never runtime private files.
+python3 scripts/werkplaats/sanitize-private-traces.py "$STAGE"
+
 mkdir -m 700 -p .werkplaats-release-source
 cat .next/BUILD_ID > .werkplaats-release-source/BUILD_ID
 git rev-parse HEAD > .werkplaats-release-source/SOURCE_COMMIT
