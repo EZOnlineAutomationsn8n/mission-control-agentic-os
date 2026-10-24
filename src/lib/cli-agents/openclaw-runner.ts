@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
+import {stageNativeExecEnvironment,STAGE_NATIVE_MODEL} from "./stage-native-free-gate";
 
 const execFileAsync = promisify(execFile);
 const OPENCLAW_BINARY = process.env.OPENCLAW_AGENT_BINARY || "/usr/bin/openclaw";
@@ -69,12 +70,16 @@ export async function runOpenClawTurn(options: {
   prompt: string;
 }): Promise<ConnectorConversationResult> {
   if (!options.session.runtimeSessionId) throw new Error("OpenClaw runtime session ID is missing");
+  const preview=process.env.MC_PREVIEW==="1";
+  const nativeEnv=preview
+    ?await stageNativeExecEnvironment("openclaw",options.session.sessionKey):{...process.env};
   const versionResult = await execFileAsync(OPENCLAW_BINARY, ["--version"], {
-    cwd: options.session.workspace, env: { ...process.env }, timeout: 20_000, maxBuffer: 1024 * 1024, encoding: "utf8",
+    cwd: options.session.workspace, env: nativeEnv, timeout: 20_000, maxBuffer: 1024 * 1024, encoding: "utf8",
   }).catch(() => null);
   const installedVersion = versionResult ? String(versionResult.stdout).trim() || null : null;
   const { stdout } = await execFileAsync(OPENCLAW_BINARY, [
     "agent",
+    ...(preview?["--local","--model",STAGE_NATIVE_MODEL]:[]),
     "--agent", process.env.OPENCLAW_AGENT_ID || "mission-control",
     "--session-id", options.session.runtimeSessionId,
     "--message", options.prompt,
@@ -82,7 +87,7 @@ export async function runOpenClawTurn(options: {
     "--timeout", process.env.OPENCLAW_AGENT_TIMEOUT_SECONDS || "600",
   ], {
     cwd: options.session.workspace,
-    env: { ...process.env },
+    env: nativeEnv,
     timeout: Number(process.env.OPENCLAW_AGENT_TIMEOUT_MS || 660_000),
     maxBuffer: 30 * 1024 * 1024,
     encoding: "utf8",

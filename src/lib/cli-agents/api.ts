@@ -13,6 +13,7 @@ import { runHermesTurn } from "./hermes-runner";
 import { runOpenClawTurn } from "./openclaw-runner";
 import { runGeminiTurn } from "./gemini-runner";
 import { runCodexTurn } from "./codex-runner";
+import {inspectNativeStageTransport} from "./stage-native-free-gate";
 import {
   createCliAgentSession,
   readCliAgentSession,
@@ -102,7 +103,12 @@ async function runAgentTurn(agentId: CliAgentId, session: CliAgentSession, promp
 export async function getCliAgentSession(request: Request, agentId: CliAgentId) {
   const key = sessionKey(request);
   if (!isValidConversationKey(key)) return NextResponse.json({ error: "invalid session identifier" }, { status: 400 });
-  return NextResponse.json({ session: await readCliAgentSession(agentId, key) });
+  const session=await readCliAgentSession(agentId,key);
+  if(process.env.MC_PREVIEW==="1"&&(agentId==="hermes"||agentId==="openclaw")) {
+    const transport=await inspectNativeStageTransport(agentId,key);
+    return NextResponse.json({session,transport});
+  }
+  return NextResponse.json({session});
 }
 
 export async function changeCliAgentSession(request: Request, agentId: CliAgentId) {
@@ -258,10 +264,14 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
   // A prepared native stage is NOT a zero-cost transport authorization.
   // Stop before any provider call until a genuine stage-native price, auth
   // and independent gateway proof is in the actual executable path.
-  if (process.env.MC_PREVIEW==="1" &&
-      (agentId==="hermes" || agentId==="openclaw"))
-    return NextResponse.json({error:"STAGE_NATIVE_FREE_TRANSPORT_NOT_VERIFIED",
-      agentId,providerCalls:0,costGate:"DENY_UNVERIFIED"},{status:409});
+  if(process.env.MC_PREVIEW==="1"&&(agentId==="hermes"||agentId==="openclaw")){
+    const verdict=await inspectNativeStageTransport(agentId,key);
+    if(!verdict.canSend)return NextResponse.json({
+      error:"STAGE_NATIVE_FREE_TRANSPORT_NOT_VERIFIED",
+      detail:verdict.code,transport:verdict,agentId,providerCalls:0,
+      costGate:"DENY_UNVERIFIED",
+    },{status:409});
+  }
   const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
 
   const session = await readCliAgentSession(agentId, key);

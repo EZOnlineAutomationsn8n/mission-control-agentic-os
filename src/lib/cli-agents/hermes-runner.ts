@@ -3,11 +3,12 @@ import { promises as fs } from "fs";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
+import {stageNativeExecEnvironment} from "./stage-native-free-gate";
 
 const execFileAsync = promisify(execFile);
 const HERMES_BINARY = process.env.HERMES_AGENT_BINARY || "/usr/local/bin/hermes";
 
-async function readHermesRuntimeMetadata(session: CliAgentSession): Promise<{
+async function readHermesRuntimeMetadata(session: CliAgentSession, runtimeEnv:NodeJS.ProcessEnv): Promise<{
   agentRuntime: string;
   installedVersion: string | null;
   provider: string | null;
@@ -18,7 +19,7 @@ async function readHermesRuntimeMetadata(session: CliAgentSession): Promise<{
   try {
     const options = {
       cwd: session.workspace,
-      env: { ...process.env },
+      env: runtimeEnv,
       timeout: 30_000,
       maxBuffer: 1024 * 1024,
       encoding: "utf8" as const,
@@ -64,6 +65,8 @@ export async function runHermesTurn(options: {
   prompt: string;
   create: boolean;
 }): Promise<ConnectorConversationResult> {
+  const nativeEnv=process.env.MC_PREVIEW==="1"
+    ?await stageNativeExecEnvironment("hermes",options.session.sessionKey):{...process.env};
   const args = [
     "chat", "-q", options.prompt, "-Q",
     "--source", "mission-control",
@@ -78,12 +81,12 @@ export async function runHermesTurn(options: {
   const [turnResult, runtimeMetadata] = await Promise.all([
     execFileAsync(HERMES_BINARY, args, {
       cwd: options.session.workspace,
-      env: { ...process.env },
+      env: nativeEnv,
       timeout: Number(process.env.HERMES_AGENT_TIMEOUT_MS || 600_000),
       maxBuffer: 20 * 1024 * 1024,
       encoding: "utf8",
     }),
-    readHermesRuntimeMetadata(options.session),
+    readHermesRuntimeMetadata(options.session,nativeEnv),
   ]);
   const { stdout, stderr } = turnResult;
   const output = `${String(stdout)}\n${String(stderr)}`;

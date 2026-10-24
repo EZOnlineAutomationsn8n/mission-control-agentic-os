@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { NativeStageTransportPanel } from "./NativeStageTransportPanel";
 import { PanelFocusButton } from "@/components/shell/PanelFocus";
 import type { AgentConversationEntry } from "@/lib/agent-conversations/types";
 import type { AttachmentReference } from "@/lib/attachments/types";
@@ -546,6 +547,9 @@ export function AgentConversationPanel({
         maar de provider- en gratis transportgrens is nog niet bewezen.
         Modelverzoeken zijn geblokkeerd; ACF mag deze sessie nog niet ELIGIBLE noemen.
       </p>}
+      {session?.status==="prepared" && (agentId==="hermes"||agentId==="openclaw") &&
+        sessionId.startsWith("acf-werkplaats-") &&
+        <NativeStageTransportPanel agentId={agentId}/>}
       {session?.status==="prepared" && agentId==="codex" && <p role="status" data-testid="codex-staged-prepared"
         className="rounded border border-accent/40 p-2 text-xs text-accent">
         Codex Werkplaats-sessie voorbereid zonder modelaanvraag. ChatGPT CLI-login is geverifieerd;
