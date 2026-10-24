@@ -84,7 +84,11 @@ export function TerminalWorkspace() {
   useEffect(() => startBoundedPoll(async (signal) => {
     try {
       const body = await fetchJsonBounded<{ sessions?: CockpitSessionSummary[]; error?: string }>(
-        "/api/cockpit/sessions", { signal }
+        // The registry is a prerequisite for four independent panes. On a
+        // cold browser the global cockpit can already hold ~34 concurrent
+        // GETs; do not abort its only session-read at the generic 8s limit.
+        // A bounded 28s initial/readback window remains fail-closed.
+        "/api/cockpit/sessions", { signal, timeoutMs: 28_000 }
       );
       if (!signal.aborted) {
         setSessions(body.sessions ?? []);
@@ -98,7 +102,7 @@ export function TerminalWorkspace() {
       );
       return false;
     }
-  }, { intervalMs: 5_000, timeoutMs: 8_000, maxBackoffMs: 30_000 }), []);
+  }, { intervalMs: 5_000, timeoutMs: 30_000, maxBackoffMs: 30_000 }), []);
 
   useEffect(() => {
     let cancelled = false;

@@ -84,3 +84,10 @@ test("free panes do not dispatch conversation bootstrap fetches until shared ses
  assert.ok(source.includes("startBoundedPoll"));
  assert.ok(!source.includes("window.location.reload()"));
 });
+
+test("cold-browser registry has bounded extended wait ahead of four pane transports",()=>{
+ const source=read(path.join(stage,"src/components/control-room/TerminalWorkspace.tsx"));
+ assert.ok(source.includes('"/api/cockpit/sessions", { signal, timeoutMs: 28_000 }'));
+ assert.ok(source.includes('intervalMs: 5_000, timeoutMs: 30_000'));
+ assert.ok(source.includes("setSessionRegistryLoaded(true)"));
+});
