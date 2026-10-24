@@ -74,3 +74,13 @@ test("Next instrumentation file-trace sanitizer operates only on isolated stage 
  assert.ok(cleaner.includes("INCOMPLETE_STAGE_BUILD"));
  assert.ok(cleaner.includes("UNSAFE_STAGE_TRACE_STILL_PRESENT"));
 });
+
+test("free panes do not dispatch conversation bootstrap fetches until shared session registry is confirmed",()=>{
+ const source=read(path.join(stage,"src/components/control-room/TerminalWorkspace.tsx"));
+ assert.ok(source.includes("sessionRegistryLoaded"));
+ assert.ok(source.includes("setSessionRegistryLoaded(true)"));
+ assert.ok(source.includes("sessionRegistryLoaded\n                  ? <TerminalSurface"));
+ assert.ok(source.includes("pane-registry-loading-"));
+ assert.ok(source.includes("startBoundedPoll"));
+ assert.ok(!source.includes("window.location.reload()"));
+});

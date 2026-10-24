@@ -74,6 +74,10 @@ export function TerminalWorkspace() {
   const [bindings, setBindings] = useState<PaneBinding[]>(DEFAULT_BINDINGS);
   const [activeSlot, setActiveSlot] = useState(0);
   const [sessions, setSessions] = useState<CockpitSessionSummary[]>([]);
+  // Registry before work panes: otherwise four child conversations start
+  // concurrent fetches before their independent stage session is discoverable.
+  // This controls mounting only; it does not own or create sessions.
+  const [sessionRegistryLoaded, setSessionRegistryLoaded] = useState(false);
   const [sessionDiscoveryError, setSessionDiscoveryError] = useState<string | null>(null);
   const [presentationHydrated, setPresentationHydrated] = useState(false);
 
@@ -84,6 +88,7 @@ export function TerminalWorkspace() {
       );
       if (!signal.aborted) {
         setSessions(body.sessions ?? []);
+        setSessionRegistryLoaded(true);
         setSessionDiscoveryError(null);
       }
       return !signal.aborted;
@@ -302,7 +307,13 @@ export function TerminalWorkspace() {
                   </div>
                 </div>
               </header>
-              <div className="flex-1 min-h-0"><TerminalSurface target={target} sessionId={binding.sessionId} /></div>
+              <div className="flex-1 min-h-0">
+                {sessionRegistryLoaded
+                  ? <TerminalSurface target={target} sessionId={binding.sessionId} />
+                  : <div className="p-4 text-xs text-muted" role="status" data-testid={"pane-registry-loading-"+(slotIndex+1)}>
+                      Sessieregister laden · geen agentdispatch totdat de eigen omgeving is bevestigd.
+                    </div>}
+              </div>
             </section>
             </FocusablePanel>
           );
