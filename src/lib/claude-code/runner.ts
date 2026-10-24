@@ -6,7 +6,7 @@ import path from "path";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { ClaudeCodeSession } from "./session-store";
-import { FALLBACK_MODEL_ROUTES, sendFccControlledPrompt } from "@/lib/connectors/live/fcc-actions";
+import { FALLBACK_MODEL_ROUTES, sendFccControlledPrompt, stageFccPreDispatchVerdict } from "@/lib/connectors/live/fcc-actions";
 import type { FccModelAttempt } from "@/lib/connectors/live/fcc-actions-types";
 
 const execFileAsync = promisify(execFile);
@@ -137,6 +137,11 @@ export async function runClaudeCodeTurn(options: {
   prompt: string;
   create: boolean;
 }): Promise<ClaudeCodeTurnResult> {
+  // This is the actual native child boundary. Even --version and route
+  // readiness are downstream; no preview may reach a provider or launcher
+  // while the FCC stage gateway guard is only offline-source certified.
+  const stageGuard=stageFccPreDispatchVerdict();
+  if(!stageGuard.canDispatch)throw new Error(stageGuard.code);
   const launcher = process.env.CLAUDE_CODE_LAUNCHER || DEFAULT_LAUNCHER;
   const launcherPrefix = process.env.CLAUDE_CODE_LAUNCHER_ARGS_JSON
     ? JSON.parse(process.env.CLAUDE_CODE_LAUNCHER_ARGS_JSON) as unknown

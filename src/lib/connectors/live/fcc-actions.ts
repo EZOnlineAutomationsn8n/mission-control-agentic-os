@@ -91,7 +91,22 @@ function preflightFailure(error: string): FccAskResult {
   };
 }
 
+/**
+ * Native-stage transport attestation: the existing FCC Python stage guard
+ * is tested as source, but has NOT been shown to protect the effective
+ * Claude CLI/FCC listener on this preview. Until the *running listener*
+ * supplies independently verifiable proof, refuse before ANY dispatch.
+ * This is not a second route catalog or a substitute for the FCC guard.
+ * LIVE has exactly its former behavior. No environment flag can self-attest.
+ */
+export function stageFccPreDispatchVerdict(): {canDispatch:boolean;code:string} {
+  if(process.env.MC_PREVIEW !== "1")return {canDispatch:true,code:"NOT_STAGE"};
+  return {canDispatch:false,code:"FCC_STAGE_NATIVE_GUARD_NOT_EFFECTIVE"};
+}
+
 export async function sendFccControlledPrompt(prompt: unknown): Promise<FccAskResult> {
+  const stageGate=stageFccPreDispatchVerdict();
+  if(!stageGate.canDispatch)return preflightFailure(stageGate.code);
   if (typeof prompt !== "string" || prompt.trim().length === 0) {
     return preflightFailure("prompt must be non-empty text");
   }

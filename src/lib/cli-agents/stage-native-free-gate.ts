@@ -64,7 +64,9 @@ async function readBoundedStageFile(p:string,max=16384):Promise<string|null>{
  * semantics. Any source revision changes the signature and fails closed.
  * fallback_config merges both fallback keys; tools_config honors explicit
  * empty CLI lists; model_tools subtracts disabled 'all' at tool granularity.
- * This does not certify auxiliary/external provider costs.
+ * Installed Hermes title_upgrade and compression are explicitly disabled
+ * below. This still does NOT certify every external auxiliary or reasoning
+ * fee; the effective dispatch gate retains its hard deny.
  */
 const HERMES_POLICY_SOURCE_SHA:Record<string,string>={
  "hermes_cli/fallback_config.py":"d593fee4db54c24233a3482de2b5178d3aba62dfea0f8bf4e4613f3a0e8880a3",
@@ -101,6 +103,15 @@ const HERMES_STAGE_CONFIG_SAFE=[
  "    - all",
  "  max_turns: 1",
  "mcp_servers: {}",
+ "compression:",
+ "  enabled: false",
+ "auxiliary:",
+ "  title_generation:",
+ "    enabled: false",
+ "    model_upgrade_enabled: false",
+ "memory:",
+ "  memory_enabled: false",
+ "  user_profile_enabled: false",
 ].join("\n");
 export function hermesExplicitNoFallbackNoToolsConfig(text:string):boolean{
  const normalized=text.split(/\r?\n/).map(line=>line.replace(/\s+$/,""))

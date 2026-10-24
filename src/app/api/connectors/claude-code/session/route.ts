@@ -3,9 +3,11 @@ import { appendAuditEvent } from "@/lib/audit-log-store";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { runClaudeCodeTurn } from "@/lib/claude-code/runner";
-import { createClaudeCodeSession, readClaudeCodeSession, stopClaudeCodeSession, updateClaudeCodeSession } from "@/lib/claude-code/session-store";
+import { createClaudeCodeSession, prepareClaudeAfcStageSession, readClaudeCodeSession, stopClaudeCodeSession, updateClaudeCodeSession } from "@/lib/claude-code/session-store";
 import { classifyClaudeError, ACF_SESSION_PATTERN } from "@/lib/acf/werkplaats-session-recovery";
 import { FALLBACK_MODEL_ROUTES } from "@/lib/connectors/live/fcc-actions";
+import { stageFccPreDispatchVerdict } from "@/lib/connectors/live/fcc-actions";
+import {validateWerkplaatsOperator} from "@/lib/connectors/live/manus-stage-setup";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,19 @@ export async function POST(request: Request) {
   if (!parsedInitiator.ok) return NextResponse.json({ error: parsedInitiator.error }, { status: 400 });
   const initiator = parsedInitiator.initiator;
 
+  if (action === "prepare-stage") {
+    if(process.env.MC_PREVIEW!=="1"||sessionId!=="acf-werkplaats-claude-code")
+      return NextResponse.json({error:"STAGE_PREPARE_NOT_ALLOWED"},{status:403});
+    const unauthorized=await validateWerkplaatsOperator(request);
+    if(unauthorized)return NextResponse.json({error:unauthorized},{status:403});
+    try{
+      const session=await prepareClaudeAfcStageSession(sessionId);
+      return NextResponse.json({session,nativeReady:false,
+        nativeGuard:stageFccPreDispatchVerdict().code,bootstrapTurns:0});
+    }catch(error){
+      return NextResponse.json({error:error instanceof Error?error.message:"PREPARE_FAILED"},{status:409});
+    }
+  }
   if (action === "stop") {
     const session = await stopClaudeCodeSession(sessionId);
     const audit = await appendAuditEvent({
@@ -39,8 +54,13 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ session, auditRecorded: audit.ok, auditError: audit.error ?? null });
   }
-  if (action !== "start") return NextResponse.json({ error: "action must be start or stop" }, { status: 400 });
+  if (action !== "start") return NextResponse.json({ error: "action must be start, stop or prepare-stage" }, { status: 400 });
 
+  // Reject BEFORE allocating, mutating, or bootstrapping a stage-native
+  // session. Prior offline FCC guard source cannot authorize provider calls.
+  const stageGuard=stageFccPreDispatchVerdict();
+  if(!stageGuard.canDispatch)return NextResponse.json({error:stageGuard.code,
+    detail:"No native startup or provider preflight performed; existing sessions preserved"},{status:409});
   const existing = await readClaudeCodeSession(sessionId);
   if (existing?.active && existing.status !== "stopped") return NextResponse.json({ session: existing, alreadyActive: true });
   // Fail closed on the ACF-only key: an old ERROR session is never replaced by

@@ -44,12 +44,24 @@ test("Hermes native source-pinned stage policy rejects fallback, tool and fee de
   "    - all",
   "  max_turns: 1",
   "mcp_servers: {}",
+  "compression:",
+  "  enabled: false",
+  "auxiliary:",
+  "  title_generation:",
+  "    enabled: false",
+  "    model_upgrade_enabled: false",
+  "memory:",
+  "  memory_enabled: false",
+  "  user_profile_enabled: false",
  ].join("\n");
  assert.equal(hermesExplicitNoFallbackNoToolsConfig(good),true);
  assert.equal(hermesExplicitNoFallbackNoToolsConfig(good.replace("fallback_model: []","fallback_model: bad")),false);
  assert.equal(hermesExplicitNoFallbackNoToolsConfig(good.replace("  cli: []","  cli: [web]")),false);
  assert.equal(hermesExplicitNoFallbackNoToolsConfig(good.replace("    - all","    - web")),false);
  assert.equal(hermesExplicitNoFallbackNoToolsConfig(good+"\nproviders: {}"),false);
+ assert.equal(hermesExplicitNoFallbackNoToolsConfig(good.replace("compression:\n  enabled: false","compression:\n  enabled: true")),false);
+ assert.equal(hermesExplicitNoFallbackNoToolsConfig(good.replace("model_upgrade_enabled: false","model_upgrade_enabled: true")),false);
+ assert.equal(hermesExplicitNoFallbackNoToolsConfig(good.replace("memory_enabled: false","memory_enabled: true")),false);
 });
 test("Native stage execution never follows legacy project-root cwd",async()=>{
  const folder=await mkdtemp(path.join(tmpdir(),"gaos-native-cwd-"));

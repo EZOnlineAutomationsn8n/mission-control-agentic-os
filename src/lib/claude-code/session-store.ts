@@ -5,7 +5,7 @@ import path from "path";
 import { databaseEnabled } from "@/lib/persistence/database";
 import { insertPersistedFixtureSession, listPersistedSessions, patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
 
-export type ClaudeCodeSessionStatus = "starting" | "idle" | "running" | "stopped" | "error";
+export type ClaudeCodeSessionStatus = "prepared" | "starting" | "idle" | "running" | "stopped" | "error";
 
 export interface ClaudeCodeSession {
   sessionKey: string;
@@ -129,4 +129,27 @@ export async function stopClaudeCodeSession(sessionKey: string): Promise<ClaudeC
   const current = await readClaudeCodeSession(sessionKey);
   if (!current) return null;
   return updateClaudeCodeSession(sessionKey, { active: false, status: "stopped", lastError: null });
+}
+
+
+/**
+ * ACF Werkplaats registration only. No Claude CLI is spawned, no FCC
+ * preflight occurs, and no native transcript is invented. The session is
+ * explicitly PREPARED and excluded from ACF ready-idle eligibility.
+ * Existing registration and native identity are never overwritten.
+ */
+export async function prepareClaudeAfcStageSession(sessionKey="acf-werkplaats-claude-code"):Promise<ClaudeCodeSession>{
+  if(process.env.MC_PREVIEW!=="1"||process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1"||
+    sessionKey!=="acf-werkplaats-claude-code"||databaseEnabled()||
+    !path.resolve(process.cwd()).endsWith("/.stage-achtergrond")||
+    path.resolve(dataDirectory())!==path.join(path.resolve(process.cwd()),"data")){
+    throw new Error("CLAUDE_ACF_STAGE_PREPARE_NOT_ISOLATED");
+  }
+  const existing=await readClaudeCodeSession(sessionKey);
+  if(existing)return existing;
+  const newSession=await createClaudeCodeSession(sessionKey);
+  return updateClaudeCodeSession(newSession.sessionKey,{
+    status:"prepared",active:true,
+    lastError:"FCC_STAGE_NATIVE_GUARD_NOT_EFFECTIVE; native bootstrap not run",
+  });
 }
