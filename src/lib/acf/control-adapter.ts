@@ -498,7 +498,11 @@ export async function runAcfControl(verb: unknown, args: unknown, runner: AcfRun
       if (participants !== undefined && (!Array.isArray(participants) || participants.length < 2
           || participants.some(x => typeof x !== "string" || !bound.includes(x))
           || new Set(participants).size !== participants.length)) return bad(v, "Samenwerken: choose at least 2 distinct bound participants");
-      acfArgs = { run_id: runId, by: OPERATOR, rounds,
+      const routingMode = obj.routing_mode === undefined ? "ROUND_ROBIN" : obj.routing_mode;
+      if (routingMode !== "ROUND_ROBIN" && routingMode !== "RESPONSIVE") {
+        return bad(v, "Samenwerken routing_mode: ROUND_ROBIN or RESPONSIVE");
+      }
+      acfArgs = { run_id: runId, by: OPERATOR, rounds, routing_mode: routingMode,
         ...(topic.trim() ? { topic: topic.trim() } : {}),
         ...(participants === undefined ? {} : { participants }) };
     } else if (v === "team-resume") {

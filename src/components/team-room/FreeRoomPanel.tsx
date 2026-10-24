@@ -249,11 +249,11 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     setBusy("free-room-collaborate"); setNote(""); setThinking("");
     try {
       const result = await callControl("team-collaborate", {
-        run_id: run.runId, rounds, participants: selected,
+        run_id: run.runId, rounds, participants: selected, routing_mode: "RESPONSIVE",
         ...(topic.trim() ? { topic: topic.trim() } : {}),
       });
       if (!result.ok) { setNote("Niet gestart: " + refusalText(result)); return; }
-      setNote("Samenwerken gestart; ACF bepaalt de beurtvolgorde.");
+      setNote("Responsief groepsgesprek gestart; ACF geeft waar mogelijk de aangesproken deelnemer de volgende beurt. Alle berichten en sessies blijven in dezelfde ACF-run.");
       await refresh(run.runId);
       await settle("collaboration");
     } catch(e) { setNote("Samenwerken gestopt: " + String(e) + ". Geen automatische retry."); }

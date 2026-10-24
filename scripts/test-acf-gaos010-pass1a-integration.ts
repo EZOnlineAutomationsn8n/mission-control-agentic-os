@@ -60,3 +60,20 @@ test("legacy v1 is forbidden on new Pass1A verbs",async()=>{
   assert.equal(r.ok,false);
   assert.deepEqual(calls,["team-view"]);
 });
+
+
+test("responsive collaboration honors operator selection and never invents agents",async()=>{
+  const s=stub();
+  const result=await runAcfControl("team-collaborate",
+    {run_id,rounds:3,routing_mode:"RESPONSIVE",participants:["claude-code","openclaw","hermes"]},s.runner);
+  assert.equal(result.ok,true);
+  assert.deepEqual(s.calls.map(c=>c.verb),["team-view","team-collaborate"]);
+  assert.deepEqual(s.calls[1].args,{run_id,by:"DENNIS",rounds:3,
+    routing_mode:"RESPONSIVE",participants:["claude-code","openclaw","hermes"]});
+});
+test("invalid adaptive mode never reaches collaboration mutation",async()=>{
+  const s=stub();
+  const result=await runAcfControl("team-collaborate",{run_id,routing_mode:"UNSAFE"},s.runner);
+  assert.equal(result.ok,false);
+  assert.deepEqual(s.calls.map(c=>c.verb),["team-view"]);
+});
