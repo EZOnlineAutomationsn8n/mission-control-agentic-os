@@ -24,6 +24,6 @@ if [[ -n "$STATUS_RECEIPT" ]] && grep -Eq '^preview pids/cwd:' "$STATUS_RECEIPT"
  exit 8
 fi
 send_request stop 'mc-preview-stop'
-send_request start "mc-preview-start .stage-$NAME"
+send_request start "mc-preview-start .stage-$NAME agents"
 echo "Kijk op https://werkplaats.mc.vireonhq.cloud"
 echo "DNS/TLS moet bestaan voor de publieke link. Interne Apps Browser: http://shared-agentic-sandbox:3331/team-room"
