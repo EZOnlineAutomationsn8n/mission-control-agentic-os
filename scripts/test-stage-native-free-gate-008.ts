@@ -12,26 +12,20 @@ const valid:StageFreeEvidence={
   stageCredential:true,transportIsolated:true,catalogTextFree:true,
   extraToolFeesDisabled:true,
 };
-test("Native free transport green condition is ONLY a completed strict proof",()=>{
- assert.equal(assessStageNativeFree(valid).canSend,true);
+test("Native stage gate uses session/auth/isolation, not price or fallback admissibility",()=>{
+ assert.equal(assessStageNativeFree({...valid,catalogTextFree:false,
+   fallbackEmpty:false,nativeToolsDisabled:false,extraToolFeesDisabled:false}).canSend,true);
 });
-test("Native free transport denies all unsafe branches",()=>{
- const samples:[keyof StageFreeEvidence,string][]=[
-  ["stage","NOT_ISOLATED_STAGE"],
-  ["stageSession","STAGE_SESSION_ID_INVALID"],
+test("Independent stage security boundaries still refuse before native dispatch",()=>{
+ for(const [key,code] of [
+  ["stage","NOT_ISOLATED_STAGE"],["stageSession","STAGE_SESSION_ID_INVALID"],
   ["profileIsolated","NATIVE_PROFILE_UNVERIFIED"],
   ["nativeModelExact","STAGE_PROVIDER_MODEL_MISMATCH"],
   ["providerExact","STAGE_PROVIDER_MODEL_MISMATCH"],
-  ["fallbackEmpty","STAGE_FALLBACK_NOT_EMPTY"],
-  ["nativeToolsDisabled","NATIVE_TOOLS_OR_FEES_UNVERIFIED"],
-  ["extraToolFeesDisabled","NATIVE_TOOLS_OR_FEES_UNVERIFIED"],
   ["stageCredential","STAGE_NATIVE_KEY_MISSING"],
   ["transportIsolated","STAGE_NATIVE_TRANSPORT_UNAVAILABLE"],
-  ["catalogTextFree","OPENROUTER_ENDPOINT_PRICE_NOT_VERIFIED"],
- ];
- for(const [k,code] of samples){
-  const v={...valid,[k]:false};
-  assert.deepEqual(assessStageNativeFree(v),{canSend:false,code},k);
+ ] as const){
+  assert.deepEqual(assessStageNativeFree({...valid,[key]:false}),{canSend:false,code});
  }
 });
 test("Stage OpenRouter credential never writes to production, no overwrites or key echo",async()=>{

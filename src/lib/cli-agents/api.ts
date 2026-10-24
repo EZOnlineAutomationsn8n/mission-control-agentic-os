@@ -139,12 +139,11 @@ export async function changeCliAgentSession(request: Request, agentId: CliAgentI
   const existing = await readCliAgentSession(agentId, key);
   if (existing?.active && existing.status !== "stopped") return NextResponse.json({ session: existing, alreadyActive: true });
 
-  // Gemini's effective "auto" backing model and unpaid account quota are
-  // not independently proven. In the isolated workshop even an operator
-  // Start must not issue the hidden Gemini bootstrap/model prompt.
+  // Gemini model selection is the operator's, but a separate stage login
+  // has not been verified. Do not inherit LIVE OAuth or bootstrap a model.
   if (process.env.MC_PREVIEW === "1" && agentId === "gemini") {
-    return NextResponse.json({error:"GEMINI_ZERO_COST_AUTH_AND_MODEL_UNVERIFIED",
-      detail:"Gemini CLI is installed; CLI auth mode, actual model behind auto, and cost-free quota remain unverified. No session reset or provider call."},
+    return NextResponse.json({error:"GEMINI_STAGE_NATIVE_AUTH_NOT_CONFIGURED",
+      detail:"Independent Werkplaats Gemini authentication is not registered. No model call or session mutation."},
       {status:409});
   }
   if (process.env.MC_PREVIEW==="1" && (agentId==="hermes" || agentId==="openclaw")) {
@@ -160,9 +159,9 @@ export async function changeCliAgentSession(request: Request, agentId: CliAgentI
     });
     return NextResponse.json({session:prepared,prepared:true,modelCalls:0,
       nativeExecutableVerified:true,stageOwnNativeHome:true,
-      freeProviderRouteVerified:false,
+      operatorModelConfigurationPreserved:true,
       canSendModelTurn:false,
-      note:"Native stage executable and own isolated profile verified; actual free transport/auth and first native turn not proven."});
+      note:"Native stage executable/profile registered. First native turn requires stage auth and operator prompt."});
   }
   // WORKPLAATS ONLY: Codex subscription auth is checked without model traffic.
   // The operator's first actual prompt opens the native thread, rather than
@@ -261,15 +260,14 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "invalid attachments" }, { status: 400 });
   }
-  // A prepared native stage is NOT a zero-cost transport authorization.
-  // Stop before any provider call until a genuine stage-native price, auth
-  // and independent gateway proof is in the actual executable path.
+  // Native stage isolation and stage credential are mandatory.
+  // Operator-configured primary/fallbacks are not price-certified by workers.
   if(process.env.MC_PREVIEW==="1"&&(agentId==="hermes"||agentId==="openclaw")){
     const verdict=await inspectNativeStageTransport(agentId,key);
     if(!verdict.canSend)return NextResponse.json({
-      error:"STAGE_NATIVE_FREE_TRANSPORT_NOT_VERIFIED",
+      error:"STAGE_NATIVE_TRANSPORT_NOT_READY",
       detail:verdict.code,transport:verdict,agentId,providerCalls:0,
-      costGate:"DENY_UNVERIFIED",
+      admission:"STAGE_AUTH_AND_ISOLATION",
     },{status:409});
   }
   const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
@@ -289,8 +287,8 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
     actionType: `${agentId}-agent-turn`,
     initiator: parsedInitiator.initiator ?? undefined,
     run: () => runAgentTurn(agentId, session, effectivePrompt,
-      process.env.MC_PREVIEW === "1" && agentId === "codex" &&
-      session.status === "prepared" && !session.runtimeSessionId),
+      process.env.MC_PREVIEW === "1" && session.status === "prepared" &&
+      (agentId === "hermes" || (agentId === "codex" && !session.runtimeSessionId))),
   });
   await updateCliAgentSession(agentId, key, {
     runtimeSessionId: persisted.entry.agentSessionId ?? session.runtimeSessionId,

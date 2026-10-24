@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
-import {stageNativeExecEnvironment,stageNativeExecWorkspace,STAGE_NATIVE_MODEL} from "./stage-native-free-gate";
+import {stageNativeExecEnvironment,stageNativeExecWorkspace} from "./stage-native-free-gate";
 
 const execFileAsync = promisify(execFile);
 const OPENCLAW_BINARY = process.env.OPENCLAW_AGENT_BINARY || "/usr/bin/openclaw";
@@ -81,7 +81,7 @@ export async function runOpenClawTurn(options: {
   const installedVersion = versionResult ? String(versionResult.stdout).trim() || null : null;
   const { stdout } = await execFileAsync(OPENCLAW_BINARY, [
     "agent",
-    ...(preview?["--local","--model",STAGE_NATIVE_MODEL]:[]),
+    ...(preview?["--local"]:[]),
     "--agent", process.env.OPENCLAW_AGENT_ID || "mission-control",
     "--session-id", options.session.runtimeSessionId,
     "--message", options.prompt,

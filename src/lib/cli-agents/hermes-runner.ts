@@ -7,13 +7,11 @@ import {stageNativeExecEnvironment,stageNativeExecWorkspace} from "./stage-nativ
 
 const execFileAsync = promisify(execFile);
 const HERMES_BINARY = process.env.HERMES_AGENT_BINARY || "/usr/local/bin/hermes";
-/** Only documented installed flags; not a claim of tool-free execution.
- * Until native --toolsets and fallback semantics are certified, the separate
- * stage pre-dispatch gate must continue to deny provider dispatch.
+/** The existing Hermes profile owns primary and fallback selection.
+ * Preserve the independently bounded stage turn count, not a model override.
  */
 export function hermesStagePinnedArgs():string[]{
-  return ["--provider","openrouter","--model","nvidia/nemotron-3-ultra-550b-a55b:free",
-    "--max-turns","1"];
+  return ["--max-turns","1"];
 }
 
 

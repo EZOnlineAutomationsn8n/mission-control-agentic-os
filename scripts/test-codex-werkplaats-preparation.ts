@@ -13,7 +13,7 @@ test("Codex authenticating with ChatGPT subscription is distinguishable from met
    assert.equal(codexUsesChatGptSubscriptionAuth(text),false);
  }
 });
-test("Gemini stage Start is fail-closed without proven zero-cost and creates no session",async()=>{
+test("Gemini stage Start requires its own native auth, not a model-price proof, and preserves sessions",async()=>{
  const root=await mkdtemp(path.join(tmpdir(),"gaos-gemini-cost-"));
  const save={preview:process.env.MC_PREVIEW,dir:process.env.CLI_AGENT_SESSION_DATA_DIR};
  try{
@@ -23,7 +23,7 @@ test("Gemini stage Start is fail-closed without proven zero-cost and creates no 
   const res=await changeCliAgentSession(new Request(url,{method:"POST",
    headers:{"content-type":"application/json"},body:JSON.stringify({action:"start"})}),"gemini");
   assert.equal(res.status,409);
-  assert.equal((await res.json()).error,"GEMINI_ZERO_COST_AUTH_AND_MODEL_UNVERIFIED");
+  assert.equal((await res.json()).error,"GEMINI_STAGE_NATIVE_AUTH_NOT_CONFIGURED");
   assert.equal((await (await getCliAgentSession(new Request(url),"gemini")).json()).session,null);
  }finally{
   if(save.preview===undefined)delete process.env.MC_PREVIEW;else process.env.MC_PREVIEW=save.preview;

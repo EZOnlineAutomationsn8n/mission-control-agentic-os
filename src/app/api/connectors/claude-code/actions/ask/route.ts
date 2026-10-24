@@ -4,7 +4,6 @@ import { executeConversationRequest } from "@/lib/agent-conversations/service";
 import { parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { runClaudeCodeTurn } from "@/lib/claude-code/runner";
-import { stageFccPreDispatchVerdict } from "@/lib/connectors/live/fcc-actions";
 import { readClaudeCodeSession, updateClaudeCodeSession } from "@/lib/claude-code/session-store";
 
 export const dynamic = "force-dynamic";
@@ -30,9 +29,6 @@ export async function POST(request: Request) {
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error ? error.message : "invalid attachments" }, { status: 400 });
   }
-  const stageGuard=stageFccPreDispatchVerdict();
-  if(!stageGuard.canDispatch)return NextResponse.json({error:stageGuard.code,
-    detail:"Stage native FCC requires effective guarded transport proof; no model turn or session mutation made"}, {status:409});
   const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
   const session = await readClaudeCodeSession(sessionId);
   if (!session?.active) return NextResponse.json({ error: "Claude Code session is stopped; start it before sending a prompt" }, { status: 409 });
@@ -44,7 +40,8 @@ export async function POST(request: Request) {
   const persisted = await executeConversationRequest({
     agentId: "claude-code", sessionId, prompt: prompt.trim(), attachments, actionType: "claude-code-agent-turn",
     initiator: parsedInitiator.initiator ?? undefined,
-    run: () => runClaudeCodeTurn({ session, prompt: effectivePrompt, create: false }),
+    run: () => runClaudeCodeTurn({ session, prompt: effectivePrompt,
+      create: process.env.MC_PREVIEW==="1" && session.status==="prepared" }),
   });
   await updateClaudeCodeSession(sessionId, {
     status: persisted.entry.status === "completed" ? "idle" : "error",

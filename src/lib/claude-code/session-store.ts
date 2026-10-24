@@ -150,6 +150,6 @@ export async function prepareClaudeAfcStageSession(sessionKey="acf-werkplaats-cl
   const newSession=await createClaudeCodeSession(sessionKey);
   return updateClaudeCodeSession(newSession.sessionKey,{
     status:"prepared",active:true,
-    lastError:"FCC_STAGE_NATIVE_GUARD_NOT_EFFECTIVE; native bootstrap not run",
+    lastError:null,
   });
 }

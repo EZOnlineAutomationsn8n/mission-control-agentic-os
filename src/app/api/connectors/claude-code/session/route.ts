@@ -6,7 +6,6 @@ import { runClaudeCodeTurn } from "@/lib/claude-code/runner";
 import { createClaudeCodeSession, prepareClaudeAfcStageSession, readClaudeCodeSession, stopClaudeCodeSession, updateClaudeCodeSession } from "@/lib/claude-code/session-store";
 import { classifyClaudeError, ACF_SESSION_PATTERN } from "@/lib/acf/werkplaats-session-recovery";
 import { FALLBACK_MODEL_ROUTES } from "@/lib/connectors/live/fcc-actions";
-import { stageFccPreDispatchVerdict } from "@/lib/connectors/live/fcc-actions";
 import {validateWerkplaatsOperator} from "@/lib/connectors/live/manus-stage-setup";
 
 export const dynamic = "force-dynamic";
@@ -39,7 +38,7 @@ export async function POST(request: Request) {
     try{
       const session=await prepareClaudeAfcStageSession(sessionId);
       return NextResponse.json({session,nativeReady:false,
-        nativeGuard:stageFccPreDispatchVerdict().code,bootstrapTurns:0});
+        operatorModels:"EXISTING_FCC_ROUTES",bootstrapTurns:0});
     }catch(error){
       return NextResponse.json({error:error instanceof Error?error.message:"PREPARE_FAILED"},{status:409});
     }
@@ -56,11 +55,14 @@ export async function POST(request: Request) {
   }
   if (action !== "start") return NextResponse.json({ error: "action must be start, stop or prepare-stage" }, { status: 400 });
 
-  // Reject BEFORE allocating, mutating, or bootstrapping a stage-native
-  // session. Prior offline FCC guard source cannot authorize provider calls.
-  const stageGuard=stageFccPreDispatchVerdict();
-  if(!stageGuard.canDispatch)return NextResponse.json({error:stageGuard.code,
-    detail:"No native startup or provider preflight performed; existing sessions preserved"},{status:409});
+  if(process.env.MC_PREVIEW==="1"){
+    if(process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1" ||
+      sessionId!=="acf-werkplaats-claude-code")
+      return NextResponse.json({error:"CLAUDE_STAGE_ISOLATION_OR_SESSION_INVALID"},{status:409});
+    const prepared=await prepareClaudeAfcStageSession(sessionId);
+    return NextResponse.json({session:prepared,prepared:true,bootstrapTurns:0,
+      requiresFirstOperatorMessage:prepared.status==="prepared",firstTurnByOperator:true});
+  }
   const existing = await readClaudeCodeSession(sessionId);
   if (existing?.active && existing.status !== "stopped") return NextResponse.json({ session: existing, alreadyActive: true });
   // Fail closed on the ACF-only key: an old ERROR session is never replaced by

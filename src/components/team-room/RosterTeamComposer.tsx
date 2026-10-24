@@ -81,11 +81,9 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
   const [roster,setRoster]=useState<TeamRoster|null>(null);
   const [problem,setProblem]=useState("");
   const [claudeDiagnostic,setClaudeDiagnostic]=useState<{
-    code:string; status:string; note:string;
-    proof:{code:string;detail:string;triedRoutes:number[];triedAliases:string[];recoverable:boolean};
-    uatReadiness?:string;readyForDennisUat?:boolean;dennisUatPass?:boolean;
-    catalog?:{status:string;code:string;operatorRoute:number};
-    native?:{status:string;registered:boolean;nativeIdPresent:boolean;active:boolean}
+    code?:string;nativeStatus?:string;registered?:boolean;nativeSessionIdPresent?:boolean;
+    sessionRef?:string;active?:boolean;canJoinNow?:boolean;readyForDennisUat?:boolean;
+    dennisUatPass?:boolean;
   }|null>(null);
 
   const [goal,setGoal]=useState("");
@@ -131,7 +129,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     const controller=new AbortController();
     fetch("/api/acf/team-room/prepare",{cache:"no-store",signal:controller.signal})
       .then(async response=>response.ok?await response.json():null)
-      .then(result=>{if(!cancelled && result?.proof && typeof result.code==="string")setClaudeDiagnostic(result);})
+      .then(result=>{if(!cancelled && result?.sessionRef)setClaudeDiagnostic(result);})
       .catch(()=>{if(!cancelled)setClaudeDiagnostic(null);});
     return ()=>{cancelled=true;controller.abort();};
   },[claudeSelected]);
@@ -257,22 +255,14 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
         <p className={"mt-1 text-[11px] "+(choice.selected?"text-cyan-200":"text-muted")}>{choice.selected?"● GESELECTEERD · DRAFT":a.can_join_now?"● Kandidaat beschikbaar":"● Niet bindbaar zonder sessiecontrole"}</p>
         {a.agent_id===CLAUDE_AGENT && choice.selected && claudeDiagnostic && <p className="mt-1 break-words text-warn"
             data-testid="acf-claude-route-diagnostic" role="status">
-          Werkplaatsdiagnose: {claudeDiagnostic.code} · {claudeDiagnostic.proof.detail}
-          <span className="block">Bewezen modelalias: {claudeDiagnostic.proof.triedAliases.join(", ")||"niet geregistreerd"}</span>
-          <span className="block">Bewezen routepogingen: {claudeDiagnostic.proof.triedRoutes.join(", ")||"niet afzonderlijk geregistreerd"}</span>
-          <span className="block">Herstelstatus: {claudeDiagnostic.status} · {claudeDiagnostic.note}</span>
-          <span className="block" data-testid="acf-claude-catalog-price">Officiële prijscheck route 11:
-            {" "}{claudeDiagnostic.catalog?.status??"ONBEKEND"} · {claudeDiagnostic.catalog?.code??"NIET_GELEZEN"}
-          </span>
-          <span className="block" data-testid="acf-claude-native-status">Bestaande native sessie:
-            {" "}{claudeDiagnostic.native?.registered?"geregistreerd":"niet bevestigd"} ·
-            {" "}{claudeDiagnostic.native?.status??"unknown"} ·
-            native identiteit {claudeDiagnostic.native?.nativeIdPresent?"aanwezig":"niet bevestigd"}
-          </span>
-          <span className="block" data-testid="acf-claude-uat-status">DENNIS-UAT:
-            {" "}{claudeDiagnostic.readyForDennisUat===true?"READY_FOR_DENNIS_UAT":"BLOCKED"} ·
-            DENNIS_UAT_PASS={claudeDiagnostic.dennisUatPass===true?"JA":"NEE"}
-          </span>
+          Werkplaats · ACF-sessie: {claudeDiagnostic.sessionRef||"niet geregistreerd"}
+          <span className="block">Native sessie: {claudeDiagnostic.registered?"geregistreerd":"niet geregistreerd"}
+            {" "}· {claudeDiagnostic.nativeStatus||"onbekend"} ·
+            {" "}identity {claudeDiagnostic.nativeSessionIdPresent?"aanwezig":"niet bevestigd"}</span>
+          <span className="block">Modelkeuze: bestaande FCC-operatorroutes · geen aparte prijsgate</span>
+          <span className="block">ACF bindbaar: {claudeDiagnostic.canJoinNow?"JA":"NEE; echte native beurt nodig"}</span>
+          <span className="block">DENNIS-UAT: {claudeDiagnostic.readyForDennisUat?"READY":"NOG NIET BEWEZEN"}
+            {" "}· PASS={claudeDiagnostic.dennisUatPass?"JA":"NEE"}</span>
         </p>}
         <details className="mc-team-composer-card-details mt-2 rounded border border-border/50 p-1.5" data-testid={"agent-details-"+a.agent_id}>
           <summary className="cursor-pointer text-[11px] text-cyan-200">Sessies, waarom niet & functies</summary>

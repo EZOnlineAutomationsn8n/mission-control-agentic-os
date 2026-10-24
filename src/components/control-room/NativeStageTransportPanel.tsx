@@ -2,7 +2,7 @@
 import {useCallback,useEffect,useState} from "react";
 type Agent="hermes"|"openclaw";
 type Status={
-  agentId:Agent;costMode:"FREE_ONLY";configuredModel:string|null;
+  agentId:Agent;costMode:"OPERATOR_SELECTED";configuredModel:string|null;
   stageCredentialConfigured:boolean;configVerified:boolean;effectiveFallbacks:string;
   toolsVerifiedDisabled:boolean;gateway:string;catalogStatus:string;catalogCode:string;
   canSend:boolean;code:string;stageSource:string;
@@ -39,16 +39,14 @@ export function NativeStageTransportPanel({agentId}:{agentId:Agent}){
  return <section className="rounded border border-border bg-panel-2/70 p-2 text-xs space-y-1.5"
   data-testid={"stage-native-transport-"+agentId} aria-label={agentId+" stage transport readiness"}>
   <div className="font-semibold">Werkplaats · {agentId==="hermes"?"Hermes":"OpenClaw"} · native transport</div>
-  <div>Modus: <strong>FREE_ONLY</strong> · Bron: eigen stage-profiel + officiële catalogus</div>
+  <div>Modus: <strong>Operator modelkeuze</strong> · Bron: eigen stage-profiel</div>
   <div>Model: <span className="mono">{status?.configuredModel||"niet bevestigd"}</span></div>
   <div>Stagecredential: {status?.stageCredentialConfigured?"veilig opgeslagen":"ontbreekt"} ·
    {agentId==="hermes"?"Reguliere modeltoolsets":"Native tools"}:
    {status?.toolsVerifiedDisabled?"uitgeschakeld":"niet bewezen"} ·
    Fallback: {status?.effectiveFallbacks||"onbekend"}</div>
-  {agentId==="hermes" && <div className="text-warn">Aanvullende externe kostenroutes nog niet gecertificeerd;
-   geen modelverzoeken toegestaan zolang deze blokkade bestaat.</div>}
-  <div>Officiële prijsgate: {status?.catalogCode||"wordt gecontroleerd"} ·
-   Transport: {status?.gateway||"onbekend"}</div>
+  <div>Transportisolatie: {status?.gateway||"onbekend"} ·
+   Model- en fallbackkeuze: bestaande native configuratie</div>
   <div role="status" className={status?.canSend?"text-ok":"text-warn"}>
    {status?.canSend?"READY_FOR_DENNIS_FIRST_NATIVE_TURN":"BLOCKED: "+(status?.code||"VERIFICATIE_NODIG")}
   </div>

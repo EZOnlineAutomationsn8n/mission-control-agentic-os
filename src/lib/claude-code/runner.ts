@@ -6,7 +6,7 @@ import path from "path";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { ClaudeCodeSession } from "./session-store";
-import { FALLBACK_MODEL_ROUTES, sendFccControlledPrompt, stageFccPreDispatchVerdict } from "@/lib/connectors/live/fcc-actions";
+import { FALLBACK_MODEL_ROUTES, sendFccControlledPrompt } from "@/lib/connectors/live/fcc-actions";
 import type { FccModelAttempt } from "@/lib/connectors/live/fcc-actions-types";
 
 const execFileAsync = promisify(execFile);
@@ -137,11 +137,13 @@ export async function runClaudeCodeTurn(options: {
   prompt: string;
   create: boolean;
 }): Promise<ClaudeCodeTurnResult> {
-  // This is the actual native child boundary. Even --version and route
-  // readiness are downstream; no preview may reach a provider or launcher
-  // while the FCC stage gateway guard is only offline-source certified.
-  const stageGuard=stageFccPreDispatchVerdict();
-  if(!stageGuard.canDispatch)throw new Error(stageGuard.code);
+  // Keep the independent Werkplaats boundary; operator model selection is
+  // handled by existing FCC route list, not a worker-created price certificate.
+  if (process.env.MC_PREVIEW==="1" && (
+    process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1" ||
+    !path.resolve(options.session.workspace).endsWith("/.stage-achtergrond") ||
+    !path.resolve(process.cwd()).endsWith("/.stage-achtergrond")
+  )) throw new Error("CLAUDE_STAGE_SESSION_ISOLATION_NOT_VERIFIED");
   const launcher = process.env.CLAUDE_CODE_LAUNCHER || DEFAULT_LAUNCHER;
   const launcherPrefix = process.env.CLAUDE_CODE_LAUNCHER_ARGS_JSON
     ? JSON.parse(process.env.CLAUDE_CODE_LAUNCHER_ARGS_JSON) as unknown
@@ -156,7 +158,10 @@ export async function runClaudeCodeTurn(options: {
     timeout: 20_000, maxBuffer: 1024 * 1024, encoding: "utf8",
   }).catch(() => null);
   const installedVersion = versionProbe ? String(versionProbe.stdout).trim() || null : null;
-  const routeReadiness = process.env.CLAUDE_CODE_SKIP_ROUTE_PREFLIGHT === "1"
+  // No hidden model request before Dennis's actual prompt. The first
+  // operator turn itself tests native transport, retaining existing fallback.
+  const routeReadiness = process.env.MC_PREVIEW === "1" ||
+    process.env.CLAUDE_CODE_SKIP_ROUTE_PREFLIGHT === "1"
     ? {
         status: "completed" as const,
         transportModelAlias: FALLBACK_MODEL_ROUTES[0],
