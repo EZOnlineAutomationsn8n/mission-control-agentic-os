@@ -82,7 +82,7 @@ interface AgentSessionView {
   workspace: string;
   permissionMode: string;
   executionMode: string;
-  status: "starting" | "idle" | "running" | "stopped" | "error";
+  status: "starting" | "prepared" | "idle" | "running" | "stopped" | "error";
   active: boolean;
   lastError: string | null;
   profileId?: string | null;
@@ -540,6 +540,12 @@ export function AgentConversationPanel({
 
       {/* Terminal panes: everything below the header is ONE scroll surface (notices, turns, composer). */}
       <div ref={terminal ? scrollSurface : undefined} className={terminal ? "flex-1 min-h-0 overflow-y-auto pr-1 space-y-2.5" : "space-y-3"} data-conversation-stream={terminal ? "true" : undefined}>
+      {session?.status==="prepared" && agentId==="codex" && <p role="status" data-testid="codex-staged-prepared"
+        className="rounded border border-accent/40 p-2 text-xs text-accent">
+        Codex Werkplaats-sessie voorbereid zonder modelaanvraag. ChatGPT CLI-login is geverifieerd;
+        er is nog geen native thread. Alleen je eerste eigen bericht start de nieuwe stage-thread.
+        ACF meldt pas ELIGIBLE na een echte succesvolle beurt.
+      </p>}
       {session?.lastError && <StreamNotice tone="warn" title="Runtime blocker" text={session.lastError} terminal={terminal} />}
       {!terminal && loadError && <StreamNotice tone="danger" text={loadError} terminal={false} />}
 

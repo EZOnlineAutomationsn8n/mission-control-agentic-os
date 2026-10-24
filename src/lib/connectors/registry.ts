@@ -7,6 +7,7 @@ import { n8nAdapter } from "./mock/n8n";
 import { agyAdapter } from "./mock/agy";
 import { obsidianAdapter } from "./mock/obsidian";
 import { browserAgentsAdapter } from "./mock/browser-agents";
+import { manusAdapter } from "./mock/manus";
 
 // ─────────────────────────────────────────────────────────────────────────
 // CONNECTOR REGISTRY
@@ -51,6 +52,7 @@ export const connectorRegistry = new ConnectorRegistry([
   agyAdapter,
   obsidianAdapter,
   browserAgentsAdapter,
+  manusAdapter,
 ]);
 
 export { obsidianAdapter };

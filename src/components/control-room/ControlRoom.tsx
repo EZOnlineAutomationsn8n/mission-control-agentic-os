@@ -8,6 +8,7 @@ import { riskColor, runStateColor, statusColor, timeAgo, dotGlowStyle } from "@/
 import { ControlledActionPanel } from "./ControlledActionPanel";
 import { AgentConversationPanel } from "./AgentConversationPanel";
 import { FocusablePanel } from "@/components/shell/PanelFocus";
+import { ManusOperatorPanel } from "@/components/connectors/ManusOperatorPanel";
 
 // Generic control room — the SAME component renders every registered
 // system. It knows nothing about Claude/Hermes/OpenClaw/etc. specifically;
@@ -76,7 +77,7 @@ export function ControlRoom({ systemId }: { systemId: string }) {
           >
             {state.runState}
           </span>
-          {!commandsEnabled && !state.controlledAction && (
+          {!commandsEnabled && !state.controlledAction && systemId!=="manus" && (
             <span className="text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded mono ml-1 text-warn bg-warn/10">
               needs integration
             </span>
@@ -144,6 +145,7 @@ export function ControlRoom({ systemId }: { systemId: string }) {
             </div>
           )}
 
+          {systemId==="manus" && <ManusOperatorPanel />}
           {state.controlledAction && (
             state.controlledAction.id === "claude-code-agent" ? (
               <AgentConversationPanel

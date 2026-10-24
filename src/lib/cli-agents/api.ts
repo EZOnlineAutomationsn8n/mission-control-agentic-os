@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { appendAuditEvent } from "@/lib/audit-log-store";
 import { promptWithAttachments, resolveAttachments } from "@/lib/attachments/store";
 import { executeConversationRequest, type ConnectorConversationResult } from "@/lib/agent-conversations/service";
@@ -38,6 +40,11 @@ function bootstrapPrompt(agentId: CliAgentId): string {
     ].join("\n");
   }
   return `Initialize this Mission Control ${LABELS[agentId]} session. Report your agent identity and exact workspace. Do not edit files or use tools.`;
+}
+
+export function codexUsesChatGptSubscriptionAuth(stdout: string): boolean {
+  return /^Logged in using ChatGPT\s*$/m.test(stdout.trim()) &&
+    !/api.key|pay.as.you.go|openai_api_key/i.test(stdout);
 }
 
 function sessionKey(request: Request): string {
@@ -87,6 +94,41 @@ export async function changeCliAgentSession(request: Request, agentId: CliAgentI
   const existing = await readCliAgentSession(agentId, key);
   if (existing?.active && existing.status !== "stopped") return NextResponse.json({ session: existing, alreadyActive: true });
 
+  // Gemini's effective "auto" backing model and unpaid account quota are
+  // not independently proven. In the isolated workshop even an operator
+  // Start must not issue the hidden Gemini bootstrap/model prompt.
+  if (process.env.MC_PREVIEW === "1" && agentId === "gemini") {
+    return NextResponse.json({error:"GEMINI_ZERO_COST_AUTH_AND_MODEL_UNVERIFIED",
+      detail:"Gemini CLI is installed; CLI auth mode, actual model behind auto, and cost-free quota remain unverified. No session reset or provider call."},
+      {status:409});
+  }
+  // WORKPLAATS ONLY: Codex subscription auth is checked without model traffic.
+  // The operator's first actual prompt opens the native thread, rather than
+  // a hidden model bootstrap on Start. No session is created on failed auth.
+  if (process.env.MC_PREVIEW === "1" && agentId === "codex") {
+    if (existing) return NextResponse.json({error:"STAGE_SESSION_ALREADY_EXISTS_NO_RESET",
+      session:existing},{status:409});
+    try {
+      const {stdout,stderr}=await promisify(execFile)(process.env.CODEX_AGENT_BINARY || "/usr/bin/codex",
+        ["login","status"],{timeout:8000,encoding:"utf8",maxBuffer:1024*1024});
+      // codex CLI writes the login status to STDERR in some versions.
+      // Only inspect the local auth type; do not expose raw output to browser.
+      if (!codexUsesChatGptSubscriptionAuth(String(stdout)+"\n"+String(stderr))) {
+        return NextResponse.json({error:"CODEX_SUBSCRIPTION_AUTH_NOT_VERIFIED",authMode:"UNKNOWN"},{status:409});
+      }
+    } catch {
+      return NextResponse.json({error:"CODEX_CLI_AUTH_UNAVAILABLE_IN_STAGE"},{status:409});
+    }
+    const created=await createCliAgentSession(agentId,key);
+    const prepared=await updateCliAgentSession(agentId,key,{
+      active:true,status:"prepared",agentRuntime:"Codex CLI (subscription login verified)",
+      lastError:null,
+    });
+    return NextResponse.json({session:prepared,prepared:true,firstTurnByOperator:true,
+      authMode:"CHATGPT_SUBSCRIPTION",modelCalls:0,requiresFirstOperatorMessage:true,
+      // Codex native thread id is created on Dennis's first prompt, NOT now.
+      stageOnly:true,previousRuntimeSessionId:created.runtimeSessionId||null});
+  }
   const session = await createCliAgentSession(agentId, key);
   try {
     const bootstrap = await runAgentTurn(agentId, session, bootstrapPrompt(agentId), true);
@@ -173,7 +215,9 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
     attachments,
     actionType: `${agentId}-agent-turn`,
     initiator: parsedInitiator.initiator ?? undefined,
-    run: () => runAgentTurn(agentId, session, effectivePrompt, false),
+    run: () => runAgentTurn(agentId, session, effectivePrompt,
+      process.env.MC_PREVIEW === "1" && agentId === "codex" &&
+      session.status === "prepared" && !session.runtimeSessionId),
   });
   await updateCliAgentSession(agentId, key, {
     runtimeSessionId: persisted.entry.agentSessionId ?? session.runtimeSessionId,

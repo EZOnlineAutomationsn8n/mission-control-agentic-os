@@ -24,7 +24,7 @@ export interface CockpitSessionSummary {
   workspace: string;
   permissionMode: string;
   executionMode: string;
-  status: "starting" | "idle" | "running" | "stopped" | "error";
+  status: "starting" | "prepared" | "idle" | "running" | "stopped" | "error";
   active: boolean;
   createdAt: string;
   updatedAt: string;

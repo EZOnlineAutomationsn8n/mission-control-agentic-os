@@ -174,10 +174,29 @@ const defaultRunner: AcfRunner = async (args, timeoutMs) => {
   return String(stdout);
 };
 
+/**
+ * Reconcile only Codex/Gemini ACF Werkplaats candidates from the existing
+ * STAGE session registry. Preserve legacy preview status reads for all other
+ * agents; no production Codex/Gemini personal sessions may enter the stage
+ * team roster, and a PREPARED session is not marked ELIGIBLE by ACF.
+ */
+export function reconcileStageCliCandidates(
+  remote: Array<Record<string, unknown>>,
+  stage: Array<Record<string, unknown>>,
+  pattern: string,
+): Array<Record<string, unknown>> {
+  const re = new RegExp(pattern);
+  const localOnly = new Set(["codex","gemini"]);
+  const eligibleName = (item:Record<string,unknown>) => re.test(String(item.sessionId??""));
+  const preserved = remote.filter(item => eligibleName(item) && !localOnly.has(String(item.agentId??"")));
+  const local = stage.filter(item => eligibleName(item) && localOnly.has(String(item.agentId??"")));
+  return [...preserved,...local];
+}
+
 const defaultLister: SessionLister = async () => {
-  // WERKPLAATS with real agents (CSA 2026-10-22): a preview has its own empty session store, so it reads the LIVE
-  // session index named in its ACF routes file, filtered to the routes' session_ref_pattern (^acf-werkplaats-).
-  // Live conversations outside that pattern are never listed, so ACF cannot bind them.
+  // Existing Werkplaats: preserve the bounded live-session status reads for
+  // unrelated legacy agents. Gemini/Codex use their own STAGE session store
+  // and STAGE 3331 ask routes, so never import production CLI sessions.
   if (process.env.MC_PREVIEW === "1") {
     try {
       const { readFile } = await import("node:fs/promises");
@@ -190,8 +209,9 @@ const defaultLister: SessionLister = async () => {
         const res = await fetch(index.base_url + index.path, { cache: "no-store",
           signal: AbortSignal.timeout((index.timeout_seconds ?? 15) * 1000) });
         const body = (await res.json()) as { sessions?: Array<Record<string, unknown>> };
-        const re = new RegExp(pattern);
-        return (body.sessions ?? []).filter(row => re.test(String(row.sessionId ?? "")));
+        const {listCockpitSessions} = await import("@/lib/cockpit/session-registry");
+        const stageSessions=(await listCockpitSessions()) as unknown as Array<Record<string,unknown>>;
+        return reconcileStageCliCandidates(body.sessions??[],stageSessions,pattern);
       }
     } catch { /* fall back to the preview's own (empty) store */ }
   }

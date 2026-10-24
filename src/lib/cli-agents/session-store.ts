@@ -5,7 +5,7 @@ import { databaseEnabled } from "@/lib/persistence/database";
 import { listPersistedSessions, patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
 
 export type CliAgentId = "hermes" | "openclaw" | "agy" | "gemini" | "codex";
-export type CliAgentSessionStatus = "starting" | "idle" | "running" | "stopped" | "error";
+export type CliAgentSessionStatus = "starting" | "prepared" | "idle" | "running" | "stopped" | "error";
 
 export interface CliAgentSession {
   sessionKey: string;
