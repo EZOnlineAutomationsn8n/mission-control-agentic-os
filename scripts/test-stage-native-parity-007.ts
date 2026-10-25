@@ -37,7 +37,7 @@ test("isolated native profile enforced and prepared stage turns fail closed befo
       method:"POST",headers:{"content-type":"application/json"},
       body:JSON.stringify({sessionId:key,prompt:"MUST NOT DISPATCH"})}),agent);
    assert.equal(send.status,409);
-   assert.equal((await send.json()).error,"STAGE_NATIVE_FREE_TRANSPORT_NOT_VERIFIED");
+   assert.equal((await send.json()).error,"STAGE_NATIVE_TRANSPORT_NOT_READY");
   }
  } finally {
   for(const [k,v] of Object.entries(saved)){if(v===undefined)delete process.env[k];else process.env[k]=v;}

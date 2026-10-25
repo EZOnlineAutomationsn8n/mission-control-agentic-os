@@ -30,6 +30,8 @@ send_request stop 'mc-preview-stop'
 # Stage-native selection must not silently rewire to LIVE production connectors.
 [[ -d "$STAGE/.preview-native-home/hermes" && -d "$STAGE/.preview-native-home/openclaw" ]] ||
   { echo "FOUT: stage-native homes ontbreken; geen productieproxy"; exit 9; }
+[[ -x "$STAGE/.preview-acf-runtime/acf" ]] ||
+  { echo "FOUT: stage-only ACF runtime ontbreekt; bouw de werkplaats opnieuw"; exit 10; }
 send_request start "mc-preview-start .stage-$NAME native-stage"
 echo "Kijk op https://werkplaats.mc.vireonhq.cloud"
 echo "DNS/TLS moet bestaan voor de publieke link. Interne Apps Browser: http://shared-agentic-sandbox:3331/team-room"

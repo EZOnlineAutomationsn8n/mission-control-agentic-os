@@ -13,8 +13,8 @@ test("Codex authenticating with ChatGPT subscription is distinguishable from met
    assert.equal(codexUsesChatGptSubscriptionAuth(text),false);
  }
 });
-test("Gemini stage Start requires its own native auth, not a model-price proof, and preserves sessions",async()=>{
- const root=await mkdtemp(path.join(tmpdir(),"gaos-gemini-cost-"));
+test("Gemini stage Start requires its own native authentication and preserves sessions",async()=>{
+ const root=await mkdtemp(path.join(tmpdir(),"gaos-gemini-auth-"));
  const save={preview:process.env.MC_PREVIEW,dir:process.env.CLI_AGENT_SESSION_DATA_DIR};
  try{
   process.env.MC_PREVIEW="1";process.env.CLI_AGENT_SESSION_DATA_DIR=root;

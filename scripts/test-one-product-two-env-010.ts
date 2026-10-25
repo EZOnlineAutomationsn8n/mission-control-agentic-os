@@ -57,9 +57,9 @@ test("release helper accounts for owner moving .next and requires build provenan
 
 test("promotable artifact excludes environment state and secret paths",()=>{
  const config=read(path.join(stage,"next.config.ts"));
- for(const dir of ["./data/**/*","./.preview-acf-home/**/*","./.preview-native-home/**/*","./.preview-ops/**/*","./.preview-omi/**/*","./theme/**/*"])
+ for(const dir of ["./data/**/*","./.preview-acf-home/**/*","./.preview-acf-runtime/**/*","./.preview-native-home/**/*","./.preview-ops/**/*","./.preview-omi/**/*","./theme/**/*"])
   assert.ok(config.includes(dir),"missing trace exclusion: "+dir);
- for(const m of ["stage-native-free-gate.ts","stage-native-secret.ts"]){
+ for(const m of ["stage-native-transport-gate.ts","stage-native-secret.ts"]){
   const content=read(path.join(stage,"src/lib/cli-agents",m));
   assert.ok(content.includes("/* turbopackIgnore: true */"),"runtime profile reads must not be traced: "+m);
  }
@@ -69,7 +69,7 @@ test("Next instrumentation file-trace sanitizer operates only on isolated stage 
  const build=read(path.join(stage,"scripts/werkplaats/bouw.sh"));
  const cleaner=read(path.join(stage,"scripts/werkplaats/sanitize-private-traces.py"));
  assert.ok(build.includes('python3 scripts/werkplaats/sanitize-private-traces.py "$STAGE"'));
- for(const d of ["data",".preview-native-home",".preview-acf-home",".werkplaats-release-source"])
+ for(const d of ["data",".preview-native-home",".preview-acf-home",".preview-acf-runtime",".werkplaats-release-source"])
    assert.ok(cleaner.includes('"'+d+'"'));
  assert.ok(cleaner.includes("INCOMPLETE_STAGE_BUILD"));
  assert.ok(cleaner.includes("UNSAFE_STAGE_TRACE_STILL_PRESENT"));

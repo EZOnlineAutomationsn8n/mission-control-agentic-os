@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { readClaudeCodeSession, prepareClaudeAfcStageSession } from "@/lib/claude-code/session-store";
 import { validateWerkplaatsOperator } from "@/lib/connectors/live/manus-stage-setup";
 import { readAcfTeamRoster } from "@/lib/acf/control-adapter";
-import path from "node:path";
+import { werkplaatsRuntimeRoot } from "@/lib/acf/runtime-root";
 
 export const dynamic = "force-dynamic";
 const headers = {"Cache-Control":"no-store"};
@@ -12,7 +12,7 @@ let preparing = false;
 function stageOnly():boolean {
   return process.env.MC_PREVIEW==="1" &&
     process.env.GAOS_STAGE_NATIVE_ISOLATED==="1" &&
-    path.resolve(process.cwd()).endsWith("/.stage-achtergrond");
+    werkplaatsRuntimeRoot()!==null;
 }
 
 /** Existing local registry and ACF roster, not a production status proxy

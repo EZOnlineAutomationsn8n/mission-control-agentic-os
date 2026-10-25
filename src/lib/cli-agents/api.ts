@@ -13,7 +13,9 @@ import { runHermesTurn } from "./hermes-runner";
 import { runOpenClawTurn } from "./openclaw-runner";
 import { runGeminiTurn } from "./gemini-runner";
 import { runCodexTurn } from "./codex-runner";
-import {inspectNativeStageTransport} from "./stage-native-free-gate";
+import {inspectNativeStageTransport} from "./stage-native-transport-gate";
+import { readFirstTurnReadiness } from "@/lib/acf/first-turn-readiness";
+import { werkplaatsRuntimeRoot } from "@/lib/acf/runtime-root";
 import {
   createCliAgentSession,
   readCliAgentSession,
@@ -59,8 +61,10 @@ async function stageNativePreflight(agentId: "hermes" | "openclaw"): Promise<
   { ok: true; binary: string; runtime: string } | { ok: false; error: string }
 > {
   const root=process.env.GAOS_STAGE_NATIVE_ROOT;
+  const stageRoot=werkplaatsRuntimeRoot();
   if (process.env.MC_PREVIEW !== "1" || process.env.GAOS_STAGE_NATIVE_ISOLATED !== "1" ||
-    !root || !path.isAbsolute(root) || !path.resolve(root).includes("/.stage-achtergrond/.preview-native-home")) {
+    !stageRoot || !root || !path.isAbsolute(root) ||
+    path.resolve(root)!==path.join(stageRoot,".preview-native-home")) {
     return {ok:false,error:"STAGE_NATIVE_PROFILE_ISOLATION_NOT_PROVEN"};
   }
   const home=path.join(root,agentId);
@@ -104,11 +108,15 @@ export async function getCliAgentSession(request: Request, agentId: CliAgentId) 
   const key = sessionKey(request);
   if (!isValidConversationKey(key)) return NextResponse.json({ error: "invalid session identifier" }, { status: 400 });
   const session=await readCliAgentSession(agentId,key);
+  let transport=null;
   if(process.env.MC_PREVIEW==="1"&&(agentId==="hermes"||agentId==="openclaw")) {
-    const transport=await inspectNativeStageTransport(agentId,key);
-    return NextResponse.json({session,transport});
+    transport=await inspectNativeStageTransport(agentId,key);
   }
-  return NextResponse.json({session});
+  const firstTurnReadiness=session ? await readFirstTurnReadiness({
+    agentId,sessionId:key,status:session.status,active:session.active,
+  },transport) : null;
+  return NextResponse.json({session,...(transport?{transport}:{}),
+    ...(firstTurnReadiness?{firstTurnReadiness}:{})});
 }
 
 export async function changeCliAgentSession(request: Request, agentId: CliAgentId) {

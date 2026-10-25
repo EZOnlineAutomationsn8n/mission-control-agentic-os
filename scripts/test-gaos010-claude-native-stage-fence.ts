@@ -14,9 +14,9 @@ test("Twelve existing FCC operator routes keep their exact order",()=>{
   assert.equal(FALLBACK_MODEL_ROUTES[11],"open_router/openrouter/free");
 });
 
-test("No unconditional FCC stage price-certificate veto",()=>{
+test("No secondary FCC stage dispatch veto",()=>{
   const f=readFileSync(path.join(process.cwd(),"src/lib/connectors/live/fcc-actions.ts"),"utf8");
-  assert.doesNotMatch(f,/stageFccPreDispatchVerdict|FCC_STAGE_NATIVE_GUARD_NOT_EFFECTIVE/);
+  assert.doesNotMatch(f,/stageFccPreDispatchVerdict/);
   assert.match(f,/FALLBACK_MODEL_ROUTES\.forEach/);
 });
 

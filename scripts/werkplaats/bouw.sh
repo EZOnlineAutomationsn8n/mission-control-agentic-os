@@ -21,6 +21,7 @@ git -C "$STAGE" diff --cached --quiet -- src scripts package.json next.config.ts
 cd "$STAGE"
 echo "BOUW: uitsluitend in werkplaats $STAGE."
 unset MC_ALLOW_LIVE_BUILD
+python3 scripts/werkplaats/prepare-acf-runtime.py "$STAGE"
 npm run build
 ./node_modules/.bin/tsc --noEmit
 npm run lint

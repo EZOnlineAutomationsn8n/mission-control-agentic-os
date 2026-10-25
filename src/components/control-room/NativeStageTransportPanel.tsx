@@ -2,9 +2,8 @@
 import {useCallback,useEffect,useState} from "react";
 type Agent="hermes"|"openclaw";
 type Status={
-  agentId:Agent;costMode:"OPERATOR_SELECTED";configuredModel:string|null;
-  stageCredentialConfigured:boolean;configVerified:boolean;effectiveFallbacks:string;
-  toolsVerifiedDisabled:boolean;gateway:string;catalogStatus:string;catalogCode:string;
+  agentId:Agent;configuredModel:string|null;
+  stageCredentialConfigured:boolean;configReadable:boolean;gateway:string;
   canSend:boolean;code:string;stageSource:string;
 };
 
@@ -39,14 +38,10 @@ export function NativeStageTransportPanel({agentId}:{agentId:Agent}){
  return <section className="rounded border border-border bg-panel-2/70 p-2 text-xs space-y-1.5"
   data-testid={"stage-native-transport-"+agentId} aria-label={agentId+" stage transport readiness"}>
   <div className="font-semibold">Werkplaats · {agentId==="hermes"?"Hermes":"OpenClaw"} · native transport</div>
-  <div>Modus: <strong>Operator modelkeuze</strong> · Bron: eigen stage-profiel</div>
+  <div>Bron: eigen geïsoleerd stage-profiel</div>
   <div>Model: <span className="mono">{status?.configuredModel||"niet bevestigd"}</span></div>
-  <div>Stagecredential: {status?.stageCredentialConfigured?"veilig opgeslagen":"ontbreekt"} ·
-   {agentId==="hermes"?"Reguliere modeltoolsets":"Native tools"}:
-   {status?.toolsVerifiedDisabled?"uitgeschakeld":"niet bewezen"} ·
-   Fallback: {status?.effectiveFallbacks||"onbekend"}</div>
-  <div>Transportisolatie: {status?.gateway||"onbekend"} ·
-   Model- en fallbackkeuze: bestaande native configuratie</div>
+  <div>Stagecredential: {status?.stageCredentialConfigured?"veilig opgeslagen":"ontbreekt"} · Config: {status?.configReadable?"leesbaar":"niet leesbaar"}</div>
+  <div>Transportisolatie: {status?.gateway||"onbekend"} · Model/fallback: native configuratie</div>
   <div role="status" className={status?.canSend?"text-ok":"text-warn"}>
    {status?.canSend?"READY_FOR_DENNIS_FIRST_NATIVE_TURN":"BLOCKED: "+(status?.code||"VERIFICATIE_NODIG")}
   </div>
@@ -61,7 +56,7 @@ export function NativeStageTransportPanel({agentId}:{agentId:Agent}){
       onClick={()=>void save()}>{saving?"Opslaan…":"Veilig opslaan"}</button>
    </div>}
    <p className="text-muted">Alleen een nieuwe, voor deze Werkplaats bedoelde key. Geen productiekey kopiëren.
-     Opslaan doet geen modelaanvraag en autoriseert geen betaalde modellen.</p>
+     Opslaan doet geen modelaanvraag en raakt productie niet.</p>
   </div>}
   <button type="button" className="mc-button mc-button-secondary mc-button-sm" onClick={()=>void load()}>
    Hercontroleer stageverbinding

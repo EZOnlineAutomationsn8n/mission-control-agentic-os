@@ -3,7 +3,7 @@ import { promises as fs } from "fs";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
-import {stageNativeExecEnvironment,stageNativeExecWorkspace} from "./stage-native-free-gate";
+import {stageNativeExecEnvironment,stageNativeExecWorkspace} from "./stage-native-transport-gate";
 
 const execFileAsync = promisify(execFile);
 const HERMES_BINARY = process.env.HERMES_AGENT_BINARY || "/usr/local/bin/hermes";

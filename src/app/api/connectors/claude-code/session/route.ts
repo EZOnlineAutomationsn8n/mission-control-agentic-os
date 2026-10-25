@@ -7,6 +7,7 @@ import { createClaudeCodeSession, prepareClaudeAfcStageSession, readClaudeCodeSe
 import { classifyClaudeError, ACF_SESSION_PATTERN } from "@/lib/acf/werkplaats-session-recovery";
 import { FALLBACK_MODEL_ROUTES } from "@/lib/connectors/live/fcc-actions";
 import {validateWerkplaatsOperator} from "@/lib/connectors/live/manus-stage-setup";
+import { readFirstTurnReadiness } from "@/lib/acf/first-turn-readiness";
 
 export const dynamic = "force-dynamic";
 
@@ -17,7 +18,11 @@ function keyFrom(request: Request): string {
 export async function GET(request: Request) {
   const sessionId = keyFrom(request);
   if (!isValidConversationKey(sessionId)) return NextResponse.json({ error: "invalid session identifier" }, { status: 400 });
-  return NextResponse.json({ session: await readClaudeCodeSession(sessionId) });
+  const session=await readClaudeCodeSession(sessionId);
+  const firstTurnReadiness=session ? await readFirstTurnReadiness({
+    agentId:"claude-code",sessionId,status:session.status,active:session.active,
+  }) : null;
+  return NextResponse.json({session,...(firstTurnReadiness?{firstTurnReadiness}:{})});
 }
 
 export async function POST(request: Request) {

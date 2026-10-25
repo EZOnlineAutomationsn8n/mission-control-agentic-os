@@ -11,7 +11,7 @@ import pathlib
 import sys
 
 PRIVATE_DIRS = (
-    "data", ".preview-acf-home", ".preview-native-home", ".preview-ops",
+    "data", ".preview-acf-home", ".preview-acf-runtime", ".preview-native-home", ".preview-ops",
     ".preview-omi", ".werkplaats-release-source", "theme",
 )
 
