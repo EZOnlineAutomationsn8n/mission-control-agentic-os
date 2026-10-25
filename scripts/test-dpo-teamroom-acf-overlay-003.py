@@ -59,5 +59,10 @@ verdict,reason=classify(blocked,{"claude-code":Route()},r"^acf-werkplaats-[a-zA-
 assert verdict=="EXCLUDED_UNCLEAR",(verdict,reason)
 assert "STAGE_NATIVE_KEY_MISSING" in reason
 
+
+team_room_text=(ROOT/"runtime/acf_runtime/team_room.py").read_text()
+assert 'if r.get("verdict") == "ELIGIBLE_FIRST_TURN"' in team_room_text
+assert 'else session_ready(routes, agent, r["session_ref"])' in team_room_text
+print("ACF_ROSTER_FIRST_TURN_SNAPSHOT_REUSE=PASS")
 print("ACF_FIRST_TURN_CONTRACT_TEST=PASS")
 print("MODEL_OR_PROVIDER_CALLS=0")

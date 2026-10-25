@@ -185,6 +185,30 @@ def patch_engine(root: pathlib.Path) -> None:
         'if live.get("state") == "READY":',
         'if live.get("state") in READY_SESSION_STATES:'
     )
+    old_roster_live = """        for r in eligible:
+            live = session_ready(routes, agent, r["session_ref"])
+            r["live"] = live
+            if live.get("state") in READY_SESSION_STATES:
+                suggested = r["session_ref"]
+                break
+"""
+    new_roster_live = """        for r in eligible:
+            # candidateRows() computed FIRST_TURN readiness immediately before
+            # this ACF roster call. Reuse that same explicit contract snapshot
+            # instead of synchronously probing the same route a second time.
+            # Real team-open/team-step execution still uses ACF's normal live
+            # session gate; this shortcut is roster-read-only only.
+            live = ({"state": "FIRST_TURN_READY", "reason": r.get("reason")}
+                    if r.get("verdict") == "ELIGIBLE_FIRST_TURN"
+                    else session_ready(routes, agent, r["session_ref"]))
+            r["live"] = live
+            if live.get("state") in READY_SESSION_STATES:
+                suggested = r["session_ref"]
+                break
+"""
+    if text.count(old_roster_live) != 1:
+        raise RuntimeError(f"TEAM_ROSTER_LIVE_ANCHOR_MISMATCH:{text.count(old_roster_live)}")
+    text = text.replace(old_roster_live, new_roster_live, 1)
     team_room.write_text(text)
 
     team_control = root / "runtime/acf_runtime/team_control.py"
