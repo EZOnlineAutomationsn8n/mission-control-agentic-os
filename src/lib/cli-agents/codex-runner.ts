@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
+import { effectiveWerkplaatsWorkspace } from "@/lib/acf/runtime-root";
 
 const execFileAsync = promisify(execFile);
 const CODEX_BINARY = process.env.CODEX_AGENT_BINARY || "/usr/bin/codex";
@@ -58,9 +59,10 @@ export async function runCodexTurn(options: {
   prompt: string;
   create: boolean;
 }): Promise<ConnectorConversationResult> {
+  const effectiveWorkspace=effectiveWerkplaatsWorkspace(options.session.workspace);
   try {
     await execFileAsync(CODEX_BINARY, ["login", "status"], {
-      cwd: options.session.workspace,
+      cwd: effectiveWorkspace,
       env: { ...process.env },
       timeout: 10_000,
       maxBuffer: 1024 * 1024,
@@ -70,12 +72,12 @@ export async function runCodexTurn(options: {
     throw new Error("Codex login required on the VPS. Run: codex login --device-auth");
   }
   const args = options.create
-    ? ["exec", "--json", "--sandbox", "workspace-write", "--cd", options.session.workspace, "--skip-git-repo-check", options.prompt]
+    ? ["exec", "--json", "--sandbox", "workspace-write", "--cd", effectiveWorkspace, "--skip-git-repo-check", options.prompt]
     : ["exec", "resume", "--json", "--skip-git-repo-check", options.session.runtimeSessionId, options.prompt];
   if (!options.create && !options.session.runtimeSessionId) throw new Error("Codex runtime thread ID is missing");
 
   try {
-    const stdout = await execCodex(args, options.session.workspace);
+    const stdout = await execCodex(args, effectiveWorkspace);
     const parsed = parseEvents(stdout, options.session.runtimeSessionId);
     return {
       status: "completed",
@@ -87,7 +89,7 @@ export async function runCodexTurn(options: {
       agentIdentity: "Codex",
       agentRuntime: CODEX_RUNTIME,
       agentSessionId: parsed.sessionId,
-      workspace: options.session.workspace,
+      workspace: effectiveWorkspace,
       sessionState: "idle",
       executionMode: options.session.executionMode,
       permissionMode: options.session.permissionMode,

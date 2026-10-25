@@ -51,7 +51,8 @@ const style = "w-full min-w-0 rounded-md border border-border bg-background p-2 
 const agentKey = (a: RosterAgent) => a.agent_id;
 const validTag = /^[a-z][a-z0-9_-]{0,31}$/;
 const canPin = (s: RosterSession) => s.verdict === "ELIGIBLE_PIN_REQUIRED";
-const selectable = (s: RosterSession) => s.verdict === "ELIGIBLE" || canPin(s);
+const selectable = (s: RosterSession) =>
+  s.verdict === "ELIGIBLE" || s.verdict === "ELIGIBLE_FIRST_TURN" || canPin(s);
 function functionTags(text: string): string[] {
   return text.split(",").map(s=>s.trim()).filter(Boolean);
 }
@@ -103,8 +104,9 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     if(inFlight.current)return;
     inFlight.current=true;
     try{
-      const url="/api/acf/team-room/roster"+(runId?"?runId="+encodeURIComponent(runId):"");
-      const response=await fetch(url,{cache:"no-store",signal:AbortSignal.timeout(25000)});
+      // Candidate availability is independent from whichever historical/current
+      // run is being viewed. Membership comes from the selected run snapshot.
+      const response=await fetch("/api/acf/team-room/roster",{cache:"no-store",signal:AbortSignal.timeout(25000)});
       const answer=await response.json() as TeamRoster & {error?:string;detail?:string};
       if(!response.ok || answer.roster_version!==1 || !Array.isArray(answer.agents)) {
         throw Error(answer.error ? answer.error+": "+(answer.detail??"") : "ACF roster malformed");
@@ -113,7 +115,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     }catch(e){
       setProblem(e instanceof Error?e.message:String(e)); // keep last roster visible but mark stale
     }finally{inFlight.current=false;}
-  },[runId]);
+  },[]);
   useEffect(()=>{
     // Schedule after mount instead of synchronously invoking a stateful callback in the effect.
     const first=window.setTimeout(()=>{void loadRoster();},0);
@@ -144,10 +146,6 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
   const selectedSession=(a:RosterAgent)=>choices[a.agent_id]?.session || a.suggested_session ||
     (a.agent_id===CLAUDE_AGENT && a.sessions.some(s=>s.session_ref===LEGACY_SESSION) ? LEGACY_SESSION : "");
   const sessionsReady=selectedRows.length>0 && selectedRows.every(a=>a.route==="ENABLED"&&a.sessions.some(s=>s.session_ref===selectedSession(a)&&selectable(s)));
-  const prepareClaude = selectedRows.some(a=>a.agent_id===CLAUDE_AGENT &&
-    !a.sessions.some(s=>s.session_ref===selectedSession(a)&&selectable(s))) &&
-    selectedRows.every(a=>a.route==="ENABLED" && (a.agent_id===CLAUDE_AGENT ||
-      a.sessions.some(s=>s.session_ref===selectedSession(a)&&selectable(s))));
   const validFunctions=selectedRows.every(a=>{const f=functionTags(choices[a.agent_id]?.functions||"");return f.length<=6&&f.every(tag=>validTag.test(tag))&&new Set(f).size===f.length;});
   const members=(rows.flatMap(a=>(a.member??[]).map(m=>({...m,agent_id:a.agent_id,label:a.label??agentLabel(a.agent_id)}))));
   const memberHandles=new Set(members.map(x=>x.handle));
@@ -158,19 +156,17 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
   const showCreate=!isV2||newTeamMode;
   const canJoin=Boolean(isV2&&roster?.can_join_running_run);
   const openPreview=()=>{
-    if(!selectedRows.length||selectedRows.length>8||!(sessionsReady||prepareClaude)||!validFunctions)return;
+    if(!selectedRows.length||selectedRows.length>8||!sessionsReady||!validFunctions)return;
     const taken=new Set<string>();
     const participants=selectedRows.map(a=>{
       const handle=newHandle(a.agent_id,taken);taken.add(handle);
       return {handle,agent_id:a.agent_id,
-        session_ref:prepareClaude&&a.agent_id===CLAUDE_AGENT?LEGACY_SESSION:selectedSession(a),
+        session_ref:selectedSession(a),
         roles:functionTags(choices[a.agent_id]?.functions??"")};
     });
     setPreview({verb:"team-open-participants",args:{goal:goal.trim(),success_criterion:criterion.trim(),participants},
-      description:prepareClaude
-        ? "Na Dennis' bevestiging: probeer precies één afgebakende ACF Claude-sessie voor te bereiden. Alleen bij ACF ELIGIBLE wordt het team geregistreerd; geen samenwerkingsbeurt. Geen bestaande sessie overschrijven."
-        : "Nieuw v2-team registreren. Geen agentturn, geen prompt en geen nieuwe sessies.",
-      range:prepareClaude?"Eenmalige sessiebootstrap alleen na gecertificeerde free-only FCC-gate; 0 samenwerkingsbeurten":"0 modelbeurten"});
+      description:"Nieuw v2-team registreren met bestaande Werkplaats-sessies. FIRST_TURN_READY is bindbaar maar blijft PREPARED tot Dennis werkelijk een eerste beurt start.",
+      range:"0 modelbeurten"});
   };
   const joinPreview=()=>{
     if(!runId||!canJoin||eligibleNew.length!==1||!sessionsReady||!validFunctions)return;
@@ -190,22 +186,6 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     const action=preview;if(!action||sending||busy)return;
     setPreview(null);setSending(true);setNote("");
     try{
-      if(action.verb==="team-open-participants" &&
-          (action.args.participants as Array<{agent_id:string;session_ref:string}>).some(
-            p=>p.agent_id===CLAUDE_AGENT&&p.session_ref===LEGACY_SESSION)) {
-        const response=await fetch("/api/acf/team-room/prepare",{method:"POST",
-          headers:{"content-type":"application/json"},
-          body:JSON.stringify({agentId:CLAUDE_AGENT,operatorConfirmed:true})});
-        const prepared=await response.json() as {ok:boolean;code?:string;detail?:string;
-          proof?:{code:string;triedRoutes:number[];triedAliases:string[]};sessionRef?:string;};
-        await loadRoster();
-        if(!prepared.ok || prepared.sessionRef!==LEGACY_SESSION){
-          setNote("Claude Code nog niet ELIGIBLE: "+(prepared.code??"UNKNOWN")+
-            (prepared.detail?" · "+prepared.detail:"")+
-            (prepared.proof?.triedRoutes?.length?" · pogingroutes: "+prepared.proof.triedRoutes.join(", "):" · routepogingen niet bewezen"));
-          return;
-        }
-      }
       const answer=await callControl(action.verb,action.args);
       if(!answer.ok){setNote("Niet uitgevoerd: "+refusalText(answer));return;}
       const id=action.verb==="team-open-participants"?String(answer.result?.run_id||""):runId;
@@ -252,7 +232,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
           {roster?.environment==="WERKPLAATS"?"WERKPLAATS · eigen stagesessies":
            roster?.environment==="LIVE"?"LIVE · eigen productiesessies":"Omgeving onbekend · status niet bewezen"}
         </p>
-        <p className={"mt-1 text-[11px] "+(choice.selected?"text-cyan-200":"text-muted")}>{choice.selected?"● GESELECTEERD · DRAFT":a.can_join_now?"● Kandidaat beschikbaar":"● Niet bindbaar zonder sessiecontrole"}</p>
+        <p className={"mt-1 text-[11px] "+(choice.selected?"text-cyan-200":"text-muted")}>{choice.selected?"● GESELECTEERD · DRAFT":a.can_join_now?"● Kandidaat beschikbaar":"● Niet bindbaar · zie sessiestatus"}</p>
         {a.agent_id===CLAUDE_AGENT && choice.selected && claudeDiagnostic && <p className="mt-1 break-words text-warn"
             data-testid="acf-claude-route-diagnostic" role="status">
           Werkplaats · ACF-sessie: {claudeDiagnostic.sessionRef||"niet geregistreerd"}
@@ -260,7 +240,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
             {" "}· {claudeDiagnostic.nativeStatus||"onbekend"} ·
             {" "}identity {claudeDiagnostic.nativeSessionIdPresent?"aanwezig":"niet bevestigd"}</span>
           <span className="block">Modelkeuze: bestaande FCC-operatorroutes · geen aparte prijsgate</span>
-          <span className="block">ACF bindbaar: {claudeDiagnostic.canJoinNow?"JA":"NEE; echte native beurt nodig"}</span>
+          <span className="block">ACF bindbaar: {claudeDiagnostic.canJoinNow?"JA":"NEE; readiness nog niet bevestigd"}</span>
           <span className="block">DENNIS-UAT: {claudeDiagnostic.readyForDennisUat?"READY":"NOG NIET BEWEZEN"}
             {" "}· PASS={claudeDiagnostic.dennisUatPass?"JA":"NEE"}</span>
         </p>}
@@ -301,10 +281,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     </div>
     {roster&&rows.length!==6&&<p className="mt-2 text-warn">De complete registry wordt verwacht; er zijn momenteel {rows.length} ACF-rosteritems. Controleer de live agentregistry voordat je een team opent.</p>}
     <p className="mt-2 text-xs text-muted">Geselecteerd: {selectedRows.length}/8 · sessiebindbaar: {sessionsReady?"ja":"nee"} · {selectedRows.length>8?"ACF maximum 8 deelnemers.":""}</p>
-    {prepareClaude&&<p role="status" className="mt-1 text-xs text-warn" data-testid="acf-claude-preparation">
-      Claude Code ontbreekt als ELIGIBLE. Bij bevestigen controleert de werkplaats eenmalig het voorbereidingspad.
-      De oorspronkelijke foutieve ACF-sessie blijft bewaard. Zonder bewezen free-only FCC-gate stopt dit vóór iedere providerstart.
-    </p>}
+
     <div className="mc-team-composer-workflow mt-4 space-y-2 rounded-lg border border-border p-3" data-testid="composer-workflow">
       {isV2&&<div className="flex flex-wrap gap-2" aria-label="Team aanmaken of huidige run uitbreiden">
         <button type="button" data-testid="composer-create-new" aria-pressed={newTeamMode} onClick={()=>{setNewTeamMode(true);setPreview(null);}}
@@ -319,7 +296,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
           <label className="mt-2 block text-xs">Succescriterium<input maxLength={400} className={style+" mt-1"} value={criterion} onChange={e=>setCriterion(e.target.value)}/></label>
         </details>
         <button type="button" className="mc-button mc-button-success disabled:opacity-40" onClick={openPreview}
-          disabled={Boolean(problem)||sending||!!busy||!selectedRows.length||selectedRows.length>8||!(sessionsReady||prepareClaude)||!validFunctions}>
+          disabled={Boolean(problem)||sending||!!busy||!selectedRows.length||selectedRows.length>8||!sessionsReady||!validFunctions}>
           Nieuw team · {selectedRows.length} deelnemer(s)
         </button>
       </>}

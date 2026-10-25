@@ -3,6 +3,7 @@ import { observeDisposableClaudeChild } from "./disposable-fixture-child-observe
 import { promises as fs } from "fs";
 import os from "os";
 import path from "path";
+import { effectiveWerkplaatsWorkspace, werkplaatsRuntimeRoot } from "@/lib/acf/runtime-root";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { ClaudeCodeSession } from "./session-store";
@@ -137,12 +138,14 @@ export async function runClaudeCodeTurn(options: {
   prompt: string;
   create: boolean;
 }): Promise<ClaudeCodeTurnResult> {
-  // Keep the independent Werkplaats boundary; operator model selection is
-  // handled by existing FCC route list, not a worker-created price certificate.
+  // Keep the independent Werkplaats boundary. A preserved session may still
+  // carry its former stage-worktree path as metadata; execution uses the
+  // current isolated Werkplaats without rewriting session history.
+  const stageRoot=werkplaatsRuntimeRoot();
+  const effectiveWorkspace=effectiveWerkplaatsWorkspace(options.session.workspace);
   if (process.env.MC_PREVIEW==="1" && (
-    process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1" ||
-    !path.resolve(options.session.workspace).endsWith("/.stage-achtergrond") ||
-    !path.resolve(process.cwd()).endsWith("/.stage-achtergrond")
+    process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1" || !stageRoot ||
+    path.resolve(effectiveWorkspace)!==stageRoot
   )) throw new Error("CLAUDE_STAGE_SESSION_ISOLATION_NOT_VERIFIED");
   const launcher = process.env.CLAUDE_CODE_LAUNCHER || DEFAULT_LAUNCHER;
   const launcherPrefix = process.env.CLAUDE_CODE_LAUNCHER_ARGS_JSON
@@ -153,8 +156,8 @@ export async function runClaudeCodeTurn(options: {
   }
   const runtimeVerifiedAt = new Date().toISOString();
   const versionProbe = await execFileAsync(launcher, [...launcherPrefix, "--version"], {
-    cwd: options.session.workspace,
-    env: { ...process.env, CLAUDE_WORKDIR: options.session.workspace, CLAUDE_BARE: "0", CLAUDE_QUIET: "1" },
+    cwd: effectiveWorkspace,
+    env: { ...process.env, CLAUDE_WORKDIR: effectiveWorkspace, CLAUDE_BARE: "0", CLAUDE_QUIET: "1" },
     timeout: 20_000, maxBuffer: 1024 * 1024, encoding: "utf8",
   }).catch(() => null);
   const installedVersion = versionProbe ? String(versionProbe.stdout).trim() || null : null;
@@ -194,7 +197,7 @@ export async function runClaudeCodeTurn(options: {
       runtimeVerifiedAt,
       responseProvenance: "Claude Code CLI -> FCC transport route -> persistent Claude Code session; backing model only when machine-readable",
       agentSessionId: options.session.claudeSessionId,
-      workspace: options.session.workspace,
+      workspace: effectiveWorkspace,
       sessionState: "error",
       executionMode: options.session.executionMode,
       permissionMode: options.session.permissionMode,
@@ -248,7 +251,7 @@ export async function runClaudeCodeTurn(options: {
     try {
       const childEnv = {
         ...process.env,
-        CLAUDE_WORKDIR: options.session.workspace,
+        CLAUDE_WORKDIR: effectiveWorkspace,
         CLAUDE_BARE: "0",
         CLAUDE_QUIET: "1",
         CLAUDE_MODEL: process.env.CLAUDE_CODE_MODEL || gatewayModel,
@@ -351,7 +354,7 @@ export async function runClaudeCodeTurn(options: {
       runtimeVerifiedAt,
       responseProvenance: "Claude Code CLI -> FCC transport route -> persistent Claude Code session; backing model only when machine-readable",
       agentSessionId: payload.session_id,
-      workspace: options.session.workspace,
+      workspace: effectiveWorkspace,
       sessionState: "idle",
       executionMode: options.session.executionMode,
       permissionMode: `${options.session.permissionMode}${denials > 0 ? ` (${denials} denied tool requests)` : ""}`,
@@ -378,7 +381,7 @@ export async function runClaudeCodeTurn(options: {
     runtimeVerifiedAt,
     responseProvenance: "Claude Code CLI -> FCC transport route -> persistent Claude Code session; backing model only when machine-readable",
     agentSessionId: options.session.claudeSessionId,
-    workspace: options.session.workspace,
+    workspace: effectiveWorkspace,
     sessionState: "error",
     executionMode: options.session.executionMode,
     permissionMode: options.session.permissionMode,

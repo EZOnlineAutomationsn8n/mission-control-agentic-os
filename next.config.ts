@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
     "/*": [
       "./data/**/*",
       "./.preview-acf-home/**/*",
+      "./.preview-acf-runtime/**/*",
       "./.preview-native-home/**/*",
       "./.preview-ops/**/*",
       "./.preview-omi/**/*",

@@ -1,5 +1,6 @@
 import { promises as fs, constants } from "node:fs";
 import path from "node:path";
+import { werkplaatsRuntimeRoot } from "@/lib/acf/runtime-root";
 
 export const WERKPLAATS_EDGE = "https://mc.vireonhq.cloud:8443";
 export const MANUS_KEY_MAX = 4096;
@@ -9,8 +10,9 @@ export function stageManusKeyPath(): string | null {
   const dataHome = process.env.CLI_AGENT_SESSION_DATA_DIR;
   if (!dataHome) return null;
   const absolute = path.resolve(dataHome);
-  // Never use the global production secret. Only the certified workshop data tree.
-  if (!absolute.endsWith("/.stage-achtergrond/data")) return null;
+  const stageRoot=werkplaatsRuntimeRoot();
+  // Never use the global production secret. Only this running Werkplaats data tree.
+  if (!stageRoot || absolute !== path.join(stageRoot,"data")) return null;
   return path.join(absolute, "secrets", "manus-stage-api-key");
 }
 

@@ -1384,6 +1384,20 @@ export function TeamRoomView() {
           )}
         />
       )}
+      {mode === "discuss" && display?.availability === "empty" && display.runs.length > 0 && (
+        <section className="mx-4 my-2 rounded-lg border border-border/60 p-3" data-testid="acf-historical-run-selector">
+          <div className="text-xs font-semibold text-muted">Historische runs · alleen openen als je ze bewust wilt bekijken</div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {display.runs.map((historicalRun) => (
+              <button type="button" key={historicalRun.runId} className="mc-button mc-button-secondary mc-button-sm"
+                onClick={()=>{setSelectedRunId(historicalRun.runId);setFocusPreference({role:null,sequence:null});void refresh(historicalRun.runId);}}>
+                {historicalRun.runId} · {historicalRun.runState}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {mode === "discuss" && display?.availability === "available" && selected && discussion && (
         <div className="mx-4 my-2">
           <button type="button" className="mc-button mc-button-secondary" onClick={() => setDetailsOpen((o) => !o)}>{detailsOpen ? "Technische details verbergen" : "Technische details"}</button>

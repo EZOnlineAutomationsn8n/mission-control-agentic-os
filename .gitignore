@@ -68,3 +68,7 @@ logs/
 
 # Claude Code machine-local approvals; project policy lives in .claude/settings.json
 /.claude/settings.local.json
+
+# generated isolated ACF runtime overlay
+/.preview-acf-runtime/
+/.preview-acf-runtime.tmp/
