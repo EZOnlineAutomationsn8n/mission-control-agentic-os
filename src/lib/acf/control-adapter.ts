@@ -13,12 +13,14 @@ import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
+import { acfProjectRoot, acfRoutesPath, acfStateDir } from "./runtime-root";
+import { readFirstTurnReadiness } from "./first-turn-readiness";
 
 const execFileAsync = promisify(execFile);
 
-export const ACF_PROJECT_ROOT = process.env.ACF_PROJECT_ROOT || "/workspace/projects/agentic-collaboration-fabric";
-export const ACF_TEAM_ROOM_HOME = process.env.ACF_STATE_DIR || `${ACF_PROJECT_ROOT}/state/team-room`;
-export const ACF_TEAM_ROOM_ROUTES = process.env.ACF_TEAM_ROOM_ROUTES || `${ACF_TEAM_ROOM_HOME}/participant_routes.json`;
+export const ACF_PROJECT_ROOT = acfProjectRoot();
+export const ACF_TEAM_ROOM_HOME = acfStateDir(ACF_PROJECT_ROOT);
+export const ACF_TEAM_ROOM_ROUTES = acfRoutesPath(ACF_TEAM_ROOM_HOME);
 export const ACF_TEAM_CONTROL_VERBS = [
   "team-open", "team-open-participants", "team-task", "team-join", "team-step", "team-reconcile",
   "team-intervene", "team-say", "team-collaborate", "team-resume", "team-stop",
@@ -250,10 +252,14 @@ export async function enabledTeamRoomAgents(path = ACF_TEAM_ROOM_ROUTES): Promis
   }
 }
 
-function candidateRows(rows: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  return rows.map((row) => ({
-    agentId: row.agentId, sessionId: row.sessionId, status: row.status, active: row.active,
-    updatedAt: row.updatedAt, executionMode: row.executionMode, lastError: row.lastError ?? null,
+async function candidateRows(rows: Array<Record<string, unknown>>): Promise<Array<Record<string, unknown>>> {
+  return Promise.all(rows.map(async (row) => {
+    const firstTurnReadiness = await readFirstTurnReadiness(row);
+    return {
+      agentId: row.agentId, sessionId: row.sessionId, status: row.status, active: row.active,
+      updatedAt: row.updatedAt, executionMode: row.executionMode, lastError: row.lastError ?? null,
+      ...(firstTurnReadiness ? { firstTurnReadiness } : {}),
+    };
   }));
 }
 
@@ -294,7 +300,7 @@ export async function teamSessions(input: { roles?: unknown; pins?: unknown; exc
   if (!checked.ok) return { ok: false, code: "ARGUMENTS", detail: checked.detail };
   let rows: Array<Record<string, unknown>>;
   try {
-    rows = candidateRows(await lister());
+    rows = await candidateRows(await lister());
   } catch (error) {
     return { ok: false, code: "SESSION_INDEX_UNAVAILABLE", detail: error instanceof Error ? error.message.slice(0, 300) : "session index failed" };
   }
@@ -318,7 +324,7 @@ export async function readAcfTeamRoster(
     return { ok: false, code: "ARGUMENTS", detail: "Invalid runId" };
   }
   let candidates: Array<Record<string, unknown>>;
-  try { candidates = candidateRows(await lister()); }
+  try { candidates = await candidateRows(await lister()); }
   catch (error) {
     return { ok: false, code: "SESSION_INDEX_UNAVAILABLE",
       detail: error instanceof Error ? error.message.slice(0, 300) : "session index unavailable" };

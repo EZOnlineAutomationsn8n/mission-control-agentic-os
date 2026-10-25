@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { acfProjectRoot } from "./runtime-root";
 import type {
   AcfIndexExport,
   AcfMessageReadModel,
@@ -15,7 +16,6 @@ import type {
 
 const execFileAsync = promisify(execFile);
 
-const DEFAULT_ACF_ROOT = "/workspace/projects/agentic-collaboration-fabric";
 const DEFAULT_TIMEOUT_MS = 8_000;
 const MAX_BUFFER = 4 * 1024 * 1024;
 
@@ -368,7 +368,7 @@ export async function readAcfTeamRoomSnapshot(options: {
   runner?: AcfCommandRunner;
   now?: () => Date;
 } = {}): Promise<AcfTeamRoomSnapshot> {
-  const projectRoot = options.projectRoot || process.env.ACF_PROJECT_ROOT || DEFAULT_ACF_ROOT;
+  const projectRoot = options.projectRoot || acfProjectRoot();
   // Default: Dennis's working Team Room home (state/team-room, RECORD_ONLY, no signing). ACF_STATE_DIR overrides it.
   const stateDir=options.stateDir ?? process.env.ACF_STATE_DIR ?? `${projectRoot}/state/team-room`;
   const runner = options.runner || defaultRunner(projectRoot,stateDir);
@@ -389,6 +389,21 @@ export async function readAcfTeamRoomSnapshot(options: {
         observedAt,
         source,
         runs: [],
+        selectedRun: null,
+        noRealTeamRunYet: true,
+        error: null,
+      };
+    }
+
+    // WERKPLAATS history is not the current room. Without an explicit runId,
+    // return the index only so Dennis starts in "compose a new team".
+    // Historical runs remain selectable and load only after an explicit click.
+    if (process.env.MC_PREVIEW === "1" && !options.runId) {
+      return {
+        availability: "empty",
+        observedAt,
+        source,
+        runs,
         selectedRun: null,
         noRealTeamRunYet: true,
         error: null,

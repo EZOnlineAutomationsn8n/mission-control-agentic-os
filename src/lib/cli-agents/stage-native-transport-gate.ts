@@ -4,6 +4,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { werkplaatsRuntimeRoot } from "@/lib/acf/runtime-root";
 import { stageNativeKeyPresent, readStageNativeKey } from "./stage-native-secret";
 
 export type StageNativeAgent="hermes"|"openclaw";
@@ -51,8 +52,9 @@ async function readBoundedStageFile(p:string,max=16384):Promise<string|null>{
 
 export async function inspectNativeStageTransport(agentId:StageNativeAgent,sessionKey:string):Promise<StageTransportStatus>{
  const root=process.env.GAOS_STAGE_NATIVE_ROOT||"";
- const stage=process.env.MC_PREVIEW==="1"&&process.env.GAOS_STAGE_NATIVE_ISOLATED==="1"&&
-   path.isAbsolute(root)&&path.resolve(root).endsWith("/.stage-achtergrond/.preview-native-home");
+ const stageRoot=werkplaatsRuntimeRoot();
+ const stage=process.env.MC_PREVIEW==="1"&&process.env.GAOS_STAGE_NATIVE_ISOLATED==="1"&&Boolean(stageRoot)&&
+   path.isAbsolute(root)&&path.resolve(root)===path.join(stageRoot!,".preview-native-home");
  const ownHome=path.join(root||"/nonexistent",agentId);
  const dirs=Boolean(stage&&(await regularPrivateDir(root))&&(await regularPrivateDir(ownHome)));
  const credential=await stageNativeKeyPresent();
@@ -110,8 +112,9 @@ export async function inspectNativeStageTransport(agentId:StageNativeAgent,sessi
  */
 export async function stageNativeExecWorkspace(agentId:StageNativeAgent):Promise<string>{
  const root=process.env.GAOS_STAGE_NATIVE_ROOT||"";
- if(process.env.MC_PREVIEW!=="1"||process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1"||
-    !path.isAbsolute(root)||!path.resolve(root).endsWith("/.stage-achtergrond/.preview-native-home"))
+ const stageRoot=werkplaatsRuntimeRoot();
+ if(process.env.MC_PREVIEW!=="1"||process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1"||!stageRoot||
+    !path.isAbsolute(root)||path.resolve(root)!==path.join(stageRoot,".preview-native-home"))
    throw new Error("NATIVE_STAGE_WORKSPACE_MODE_UNVERIFIED");
  const own=path.join(root,agentId);
  const cwd=path.join(own,"workspace-mission-control");

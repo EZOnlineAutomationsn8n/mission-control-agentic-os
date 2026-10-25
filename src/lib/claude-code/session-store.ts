@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import type { DisposableFixtureOwnership } from "./disposable-fixture-cleanup";
 import { promises as fs } from "fs";
 import path from "path";
+import { werkplaatsRuntimeRoot } from "@/lib/acf/runtime-root";
 import { databaseEnabled } from "@/lib/persistence/database";
 import { insertPersistedFixtureSession, listPersistedSessions, patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
 
@@ -139,10 +140,10 @@ export async function stopClaudeCodeSession(sessionKey: string): Promise<ClaudeC
  * Existing registration and native identity are never overwritten.
  */
 export async function prepareClaudeAfcStageSession(sessionKey="acf-werkplaats-claude-code"):Promise<ClaudeCodeSession>{
+  const stageRoot=werkplaatsRuntimeRoot();
   if(process.env.MC_PREVIEW!=="1"||process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1"||
-    sessionKey!=="acf-werkplaats-claude-code"||databaseEnabled()||
-    !path.resolve(process.cwd()).endsWith("/.stage-achtergrond")||
-    path.resolve(dataDirectory())!==path.join(path.resolve(process.cwd()),"data")){
+    sessionKey!=="acf-werkplaats-claude-code"||databaseEnabled()||!stageRoot||
+    path.resolve(dataDirectory())!==path.join(stageRoot,"data")){
     throw new Error("CLAUDE_ACF_STAGE_PREPARE_NOT_ISOLATED");
   }
   const existing=await readClaudeCodeSession(sessionKey);
