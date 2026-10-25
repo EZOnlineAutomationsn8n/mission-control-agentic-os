@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { access } from "node:fs/promises";
 import { promisify } from "node:util";
 import { readFccLiveStatus } from "@/lib/connectors/live/fcc-status";
-import { inspectNativeStageTransport, type StageTransportStatus } from "@/lib/cli-agents/stage-native-free-gate";
+import { inspectNativeStageTransport, type StageTransportStatus } from "@/lib/cli-agents/stage-native-transport-gate";
 import { werkplaatsRuntimeRoot } from "./runtime-root";
 
 const execFileAsync = promisify(execFile);
