@@ -170,7 +170,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
       description:prepareClaude
         ? "Na Dennis' bevestiging: probeer precies één afgebakende ACF Claude-sessie voor te bereiden. Alleen bij ACF ELIGIBLE wordt het team geregistreerd; geen samenwerkingsbeurt. Geen bestaande sessie overschrijven."
         : "Nieuw v2-team registreren. Geen agentturn, geen prompt en geen nieuwe sessies.",
-      range:prepareClaude?"Eenmalige sessiebootstrap alleen na gecertificeerde free-only FCC-gate; 0 samenwerkingsbeurten":"0 modelbeurten"});
+      range:prepareClaude?"Eenmalige stagesessievoorbereiding; 0 samenwerkingsbeurten":"0 modelbeurten"});
   };
   const joinPreview=()=>{
     if(!runId||!canJoin||eligibleNew.length!==1||!sessionsReady||!validFunctions)return;
@@ -259,7 +259,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
           <span className="block">Native sessie: {claudeDiagnostic.registered?"geregistreerd":"niet geregistreerd"}
             {" "}· {claudeDiagnostic.nativeStatus||"onbekend"} ·
             {" "}identity {claudeDiagnostic.nativeSessionIdPresent?"aanwezig":"niet bevestigd"}</span>
-          <span className="block">Modelkeuze: bestaande FCC-operatorroutes · geen aparte prijsgate</span>
+          <span className="block">Modelroute: bestaande FCC-configuratie</span>
           <span className="block">ACF bindbaar: {claudeDiagnostic.canJoinNow?"JA":"NEE; echte native beurt nodig"}</span>
           <span className="block">DENNIS-UAT: {claudeDiagnostic.readyForDennisUat?"READY":"NOG NIET BEWEZEN"}
             {" "}· PASS={claudeDiagnostic.dennisUatPass?"JA":"NEE"}</span>
@@ -303,7 +303,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
     <p className="mt-2 text-xs text-muted">Geselecteerd: {selectedRows.length}/8 · sessiebindbaar: {sessionsReady?"ja":"nee"} · {selectedRows.length>8?"ACF maximum 8 deelnemers.":""}</p>
     {prepareClaude&&<p role="status" className="mt-1 text-xs text-warn" data-testid="acf-claude-preparation">
       Claude Code ontbreekt als ELIGIBLE. Bij bevestigen controleert de werkplaats eenmalig het voorbereidingspad.
-      De oorspronkelijke foutieve ACF-sessie blijft bewaard. Zonder bewezen free-only FCC-gate stopt dit vóór iedere providerstart.
+      De oorspronkelijke foutieve ACF-sessie blijft bewaard. Voorbereiden start geen providerbeurt; de eerste echte beurt volgt alleen uit Dennis/ACF.
     </p>}
     <div className="mc-team-composer-workflow mt-4 space-y-2 rounded-lg border border-border p-3" data-testid="composer-workflow">
       {isV2&&<div className="flex flex-wrap gap-2" aria-label="Team aanmaken of huidige run uitbreiden">

@@ -13,7 +13,7 @@ import { runHermesTurn } from "./hermes-runner";
 import { runOpenClawTurn } from "./openclaw-runner";
 import { runGeminiTurn } from "./gemini-runner";
 import { runCodexTurn } from "./codex-runner";
-import {inspectNativeStageTransport} from "./stage-native-free-gate";
+import {inspectNativeStageTransport} from "./stage-native-transport-gate";
 import {
   createCliAgentSession,
   readCliAgentSession,

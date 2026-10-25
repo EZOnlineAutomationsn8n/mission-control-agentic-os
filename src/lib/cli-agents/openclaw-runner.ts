@@ -2,7 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
-import {stageNativeExecEnvironment,stageNativeExecWorkspace} from "./stage-native-free-gate";
+import {stageNativeExecEnvironment,stageNativeExecWorkspace} from "./stage-native-transport-gate";
 
 const execFileAsync = promisify(execFile);
 const OPENCLAW_BINARY = process.env.OPENCLAW_AGENT_BINARY || "/usr/bin/openclaw";

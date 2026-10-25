@@ -4,7 +4,7 @@ import type { FccAskResult, FccAttemptOutcome, FccModelAttempt } from "./fcc-act
 // SERVER-ONLY. Must only be imported from a server context (the API route
 // below). Never import it from a "use client" component.
 //
-// One-time, explicitly-scoped controlled prompt for Free Claude Code (FCC)
+// One-time, explicitly-scoped controlled prompt for the existing FCC gateway
 // only: the operator submits a single plain-text prompt to FCC's own
 // Anthropic-compatible /v1/messages endpoint and reads back the plain text
 // answer. This is NOT a general command-execution channel and NOT a Claude
@@ -19,7 +19,7 @@ import type { FccAskResult, FccAttemptOutcome, FccModelAttempt } from "./fcc-act
 //     while ANTHROPIC_AUTH_TOKEN is unset on this host)
 //
 // ROUTING CONTRACT (operator-controlled):
-//   - FALLBACK_MODEL_ROUTES below is the OPERATOR-DEFINED, FREE-only route
+//   - FALLBACK_MODEL_ROUTES below is the operator-owned configured route
 //     order. Its contents and order are never changed by code.
 //   - Routes are numbered 1..N in that order, and every attempt reports
 //     its operator route number to the UI.
@@ -43,10 +43,10 @@ const PER_ROUTE_TIMEOUT_MS = 8000;
 const TOTAL_BUDGET_MS = 60000;
 const MAX_PROMPT_LENGTH = 4000;
 
-// OPERATOR-DEFINED FREE-only route order. Do not reorder or edit in code
+// Operator-owned configured route order. Do not reorder or edit in code
 // passes — this list belongs to the operator (locked in commit 4af1aaf).
 export const FALLBACK_MODEL_ROUTES: readonly string[] = [
-  // Operator-approved FREE-only routes verified from live FCC /v1/models
+  // Operator-configured routes. Preserve this order unless Dennis changes it
   // on 2026-07-17. Keep this FCC order code-first and different from the
   // OpenClaw order so both runtimes do not exhaust the same route together.
   "open_router/poolside/laguna-xs-2.1:free",

@@ -1,7 +1,7 @@
 import {NextResponse} from "next/server";
 import {validateWerkplaatsOperator} from "@/lib/connectors/live/manus-stage-setup";
 import {saveStageNativeKey} from "@/lib/cli-agents/stage-native-secret";
-import {inspectNativeStageTransport} from "@/lib/cli-agents/stage-native-free-gate";
+import {inspectNativeStageTransport} from "@/lib/cli-agents/stage-native-transport-gate";
 
 export const dynamic="force-dynamic";
 const headers={"Cache-Control":"no-store","X-Content-Type-Options":"nosniff"};

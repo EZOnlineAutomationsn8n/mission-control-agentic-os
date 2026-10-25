@@ -137,8 +137,7 @@ export async function runClaudeCodeTurn(options: {
   prompt: string;
   create: boolean;
 }): Promise<ClaudeCodeTurnResult> {
-  // Keep the independent Werkplaats boundary; operator model selection is
-  // handled by existing FCC route list, not a worker-created price certificate.
+  // Keep the independent Werkplaats boundary; model selection remains with the existing FCC configuration.
   if (process.env.MC_PREVIEW==="1" && (
     process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1" ||
     !path.resolve(options.session.workspace).endsWith("/.stage-achtergrond") ||

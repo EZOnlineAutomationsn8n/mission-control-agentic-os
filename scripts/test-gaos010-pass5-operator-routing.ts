@@ -4,10 +4,10 @@ import {mkdtemp,mkdir,writeFile,rm,readFile} from "node:fs/promises";
 import {readFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import path from "node:path";
-import {inspectNativeStageTransport,assessStageNativeFree} from "../src/lib/cli-agents/stage-native-free-gate";
+import {inspectNativeStageTransport,assessStageNativeTransport} from "../src/lib/cli-agents/stage-native-transport-gate";
 import {hermesStagePinnedArgs} from "../src/lib/cli-agents/hermes-runner";
 
-test("Operator-configured non-free primary/fallbacks remain accepted metadata, never catalog gate",async()=>{
+test("Operator-configured primary/fallbacks remain native configuration",async()=>{
  const temp=await mkdtemp(path.join(tmpdir(),"gaos010-pass5-"));
  const root=path.join(temp,".stage-achtergrond",".preview-native-home");
  const hp=path.join(root,"hermes");
@@ -32,21 +32,18 @@ test("Operator-configured non-free primary/fallbacks remain accepted metadata, n
    tools:{deny:["*"]}}));
   process.env.MC_PREVIEW="1";process.env.GAOS_STAGE_NATIVE_ISOLATED="1";
   process.env.GAOS_STAGE_NATIVE_ROOT=root;process.env.HERMES_HOME=hp;process.env.OPENCLAW_STATE_DIR=op;
-  globalThis.fetch=(async()=>{fetchCount++;throw Error("PRICING_NETWORK_NOT_ALLOWED")}) as typeof fetch;
+  globalThis.fetch=(async()=>{fetchCount++;throw Error("NETWORK_NOT_ALLOWED")}) as typeof fetch;
   for(const [agent,selected] of [
    ["hermes","someone/operator-choice"],
    ["openclaw","openrouter/operator-selected-primary"]
   ] as const){
    const status=await inspectNativeStageTransport(agent,"acf-werkplaats-"+agent);
    assert.equal(status.configuredModel,selected);
-   assert.equal(status.configVerified,true);
-   assert.equal(status.effectiveFallbacks,"CONFIGURED");
-   assert.equal(status.catalogStatus,"NOT_REQUIRED");
-   assert.equal(status.catalogCode,"NOT_A_DISPATCH_GATE");
+   assert.equal(status.profileReadable,true);
    assert.equal(status.canSend,false);
    assert.equal(status.code,"STAGE_NATIVE_KEY_MISSING");
   }
-  assert.equal(fetchCount,0,"no catalog or provider request at inspect");
+  assert.equal(fetchCount,0,"no external network request at inspect");
  }finally{
   globalThis.fetch=fetchBefore;
   for(const [key,value] of Object.entries({
@@ -67,7 +64,7 @@ test("Current genuine stage profiles preserve their original primary and fallbac
  assert.match(hermes,/fallback_model: \[\]/);
  assert.equal(openclaw.agents.defaults.model.primary,
    "openrouter/nvidia/nemotron-3-ultra-550b-a55b:free");
- assert.deepEqual(openclaw.agents.defaults.model.fallbacks,[]);
+ assert.deepEqual(openclaw.agents.defaults.model.fallbacks,["openrouter/nvidia/nemotron-3-super-120b-a12b:free"]);
 });
 
 test("Native runners do not inject model override; OpenClaw still --local",()=>{
@@ -78,25 +75,20 @@ test("Native runners do not inject model override; OpenClaw still --local",()=>{
 });
 
 test("Native send gate admits operator model selection but still enforces actual stage security",()=>{
- const safe={
-  stage:true,stageSession:true,profileIsolated:true,
-  nativeModelExact:true,providerExact:true,fallbackEmpty:false,nativeToolsDisabled:false,
-  stageCredential:true,transportIsolated:true,catalogTextFree:false,extraToolFeesDisabled:false
- };
- assert.equal(assessStageNativeFree(safe).canSend,true);
- assert.equal(assessStageNativeFree({...safe,stageCredential:false}).code,"STAGE_NATIVE_KEY_MISSING");
- assert.equal(assessStageNativeFree({...safe,transportIsolated:false}).code,"STAGE_NATIVE_TRANSPORT_UNAVAILABLE");
+ const safe={stage:true,stageSession:true,profileIsolated:true,stageCredential:true,transportIsolated:true};
+ assert.equal(assessStageNativeTransport(safe).canSend,true);
+ assert.equal(assessStageNativeTransport({...safe,stageCredential:false}).code,"STAGE_NATIVE_KEY_MISSING");
+ assert.equal(assessStageNativeTransport({...safe,transportIsolated:false}).code,"STAGE_NATIVE_TRANSPORT_UNAVAILABLE");
 });
-test("ACF prepare is stage-local only; no live source, no price-catalog admissions",()=>{
+test("ACF prepare is stage-local only and has no live source dependency",()=>{
  const route=readFileSync(path.join(process.cwd(),"src/app/api/acf/team-room/prepare/route.ts"),"utf8");
- assert.doesNotMatch(route,/3330|readOfficialUatCatalog|catalogTextFree/);
+ assert.doesNotMatch(route,/3330/);
  assert.match(route,/prepareClaudeAfcStageSession/);
  assert.match(route,/validateWerkplaatsOperator/);
  assert.match(route,/readyForDennisUat:false/);
 });
-test("Gemini cost-only rejection is removed; independent stage-native auth remains",()=>{
+test("Gemini stage admission reports only native authentication state",()=>{
  const route=readFileSync(path.join(process.cwd(),"src/lib/cli-agents/api.ts"),"utf8");
- assert.doesNotMatch(route,/GEMINI_ZERO_COST_AUTH_AND_MODEL_UNVERIFIED/);
  assert.match(route,/GEMINI_STAGE_NATIVE_AUTH_NOT_CONFIGURED/);
  assert.match(route,/agentId === "hermes" \|\| \(agentId === "codex"/);
 });

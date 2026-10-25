@@ -59,7 +59,7 @@ test("promotable artifact excludes environment state and secret paths",()=>{
  const config=read(path.join(stage,"next.config.ts"));
  for(const dir of ["./data/**/*","./.preview-acf-home/**/*","./.preview-native-home/**/*","./.preview-ops/**/*","./.preview-omi/**/*","./theme/**/*"])
   assert.ok(config.includes(dir),"missing trace exclusion: "+dir);
- for(const m of ["stage-native-free-gate.ts","stage-native-secret.ts"]){
+ for(const m of ["stage-native-transport-gate.ts","stage-native-secret.ts"]){
   const content=read(path.join(stage,"src/lib/cli-agents",m));
   assert.ok(content.includes("/* turbopackIgnore: true */"),"runtime profile reads must not be traced: "+m);
  }
