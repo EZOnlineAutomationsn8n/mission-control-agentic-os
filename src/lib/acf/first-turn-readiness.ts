@@ -1,4 +1,6 @@
 import { execFile } from "node:child_process";
+import { constants } from "node:fs";
+import { access } from "node:fs/promises";
 import { promisify } from "node:util";
 import { readFccLiveStatus } from "@/lib/connectors/live/fcc-status";
 import { inspectNativeStageTransport, type StageTransportStatus } from "@/lib/cli-agents/stage-native-free-gate";
@@ -48,9 +50,12 @@ export async function readFirstTurnReadiness(
   }
 
   if (agentId === "claude-code") {
+    const launcher=process.env.CLAUDE_CODE_LAUNCHER || "/runtime/bin/start-claude-fcc.sh";
+    try { await access(launcher,constants.X_OK); }
+    catch { return result(false,"CLAUDE_STAGE_LAUNCHER_DISABLED"); }
     const fcc = await readFccLiveStatus();
     return fcc.status === "connected"
-      ? result(true, "FCC_STAGE_RELAY_CONNECTED")
+      ? result(true, "FCC_STAGE_RELAY_CONNECTED_AND_LAUNCHER_READY")
       : result(false, "FCC_STAGE_RELAY_" + fcc.status.toUpperCase());
   }
 

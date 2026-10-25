@@ -5,6 +5,7 @@ import test from "node:test";
 import { readAcfTeamRoomSnapshot } from "../src/lib/acf/read-adapter";
 import { acfProjectRoot, acfStateDir, werkplaatsRuntimeRoot } from "../src/lib/acf/runtime-root";
 import { stageManusKeyPath } from "../src/lib/connectors/live/manus-stage-setup";
+import { readFirstTurnReadiness } from "../src/lib/acf/first-turn-readiness";
 
 test("Werkplaats root is the current isolated worktree and ignores shared ACF state", () => {
   const old=process.env.MC_PREVIEW;
@@ -33,6 +34,27 @@ test("Werkplaats credential path is bound to this stage data tree only", () => {
   } finally {
     if(oldPreview===undefined) delete process.env.MC_PREVIEW; else process.env.MC_PREVIEW=oldPreview;
     if(oldData===undefined) delete process.env.CLI_AGENT_SESSION_DATA_DIR; else process.env.CLI_AGENT_SESSION_DATA_DIR=oldData;
+  }
+});
+
+test("Claude PREPARED is not first-turn-ready when the actual stage launcher is disabled", async () => {
+  const oldPreview=process.env.MC_PREVIEW;
+  const oldIsolation=process.env.GAOS_STAGE_NATIVE_ISOLATED;
+  const oldLauncher=process.env.CLAUDE_CODE_LAUNCHER;
+  process.env.MC_PREVIEW="1";
+  process.env.GAOS_STAGE_NATIVE_ISOLATED="1";
+  process.env.CLAUDE_CODE_LAUNCHER="/nonexistent/mc-preview-agents-disabled";
+  try {
+    const readiness=await readFirstTurnReadiness({
+      agentId:"claude-code",sessionId:"acf-werkplaats-claude-code",status:"prepared",active:true,
+    });
+    assert.equal(readiness?.ready,false);
+    assert.equal(readiness?.code,"CLAUDE_STAGE_LAUNCHER_DISABLED");
+    assert.equal(readiness?.providerCalls,0);
+  } finally {
+    if(oldPreview===undefined) delete process.env.MC_PREVIEW; else process.env.MC_PREVIEW=oldPreview;
+    if(oldIsolation===undefined) delete process.env.GAOS_STAGE_NATIVE_ISOLATED; else process.env.GAOS_STAGE_NATIVE_ISOLATED=oldIsolation;
+    if(oldLauncher===undefined) delete process.env.CLAUDE_CODE_LAUNCHER; else process.env.CLAUDE_CODE_LAUNCHER=oldLauncher;
   }
 });
 
