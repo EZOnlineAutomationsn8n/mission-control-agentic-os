@@ -35,6 +35,8 @@ import { FocusablePanel, PanelFocusButton, usePanelFocus } from "@/components/sh
 import { OperatorDeck, TeamOpenSessions, agentLabel, refusalText } from "@/components/team-room/OperatorDeck";
 import { RosterTeamComposer, type TeamDraftChoice } from "@/components/team-room/RosterTeamComposer";
 import { FreeRoomPanel } from "@/components/team-room/FreeRoomPanel";
+import { AcfReplyPanel } from "@/components/team-room/AcfReplyPanel";
+import { activityFromAcf, type AcfActivity } from "@/components/team-room/acf-activity";
 import { deriveVisibleParticipants } from "@/lib/acf/visible-participants";
 
 const POLL_MS = 5_000;
@@ -447,6 +449,7 @@ function ShellAgentCard({
   onFocus,
   runCard = null,
   speaking = false,
+  activity,
   membershipKind = "SHELL",
 }: {
   agent: TeamRosterAgent;
@@ -456,6 +459,7 @@ function ShellAgentCard({
   onFocus: () => void;
   runCard?: TeamRoomParticipantCard | null;
   speaking?: boolean;
+  activity: AcfActivity;
   membershipKind?: "DRAFT" | "CONFIRMED" | "SHELL";
 }) {
   const observed = shellSessionsFor(agent.id, sessions);
@@ -487,6 +491,8 @@ function ShellAgentCard({
       </div>
       <div className="acf-shell-card-body">
         <ReadinessEvidenceLine readiness={readiness} />
+        <span className="mc-acf-activity" data-activity={activity.state} data-testid={"acf-activity-"+agent.id}
+          title={activity.evidence}><span aria-hidden="true">●</span>{activity.label}</span>
         <div className="mt-1 text-[10px] leading-4 text-muted/90">{readiness.explanation}</div>
         <div className="mt-3">
         {agent.id === "hermes" && (
@@ -532,6 +538,8 @@ function TeamRoomShell({
   readLabel,
   operationalEvidence,
   discussion = null,
+  run = null,
+  stale = false,
   runId = null,
   controls = null,
   selection = null,
@@ -543,6 +551,8 @@ function TeamRoomShell({
   readLabel: string;
   operationalEvidence: OperationalEvidenceMap;
   discussion?: TeamRoomDiscussionModel | null;
+  run?: AcfTeamRoomRun | null;
+  stale?: boolean;
   runId?: string | null;
   controls?: React.ReactNode;
   selection?: React.ReactNode;
@@ -652,6 +662,7 @@ function TeamRoomShell({
             {visualSlots.map((agent) => {
               const member=visible.find(card=>card.id===agent.id) ?? null;
               const runCard=member?.kind==="CONFIRMED" ? discussion?.participants.find(p=>p.role===member.role) ?? null : null;
+              const activity=activityFromAcf(run,runCard?.role ?? null,stale);
               return <FocusablePanel
                 key={agent.id}
                 id={`acf-illustrated-visual-${agent.id}`}
@@ -664,10 +675,11 @@ function TeamRoomShell({
                     ? participantReadinessByRole.get(member.role) ?? shellReadiness(agent.id,operationalEvidence)
                     : shellReadiness(agent.id,operationalEvidence)}
                   membershipKind={member?.kind==="DRAFT" ? "DRAFT" : "SHELL"}
+                  activity={activity}
                   focused={focusedAgentId===agent.id}
                   onFocus={()=>focusAgent(agent.id)}
                   runCard={runCard}
-                  speaking={speakerKey===agent.id && Boolean(runCard)} />
+                  speaking={activity.state==="RUNNING"} />
               </FocusablePanel>;
             })}
 
@@ -677,7 +689,7 @@ function TeamRoomShell({
             <div className="acf-shell-focus-overlay">
               <motion.section
                 data-agent={focusedAgent.id}
-                className={"acf-shell-focus-card" + (speakerKey === focusedAgentId ? " acf-shell-focus-speaking" : "") + (readingPaneMax ? " acf-shell-focus-card-max" : "")}
+                className={"acf-shell-focus-card" + (activityFromAcf(run,focusedRunCard?.role ?? null,stale).state === "RUNNING" ? " acf-shell-focus-speaking" : "") + (readingPaneMax ? " acf-shell-focus-card-max" : "")}
                 initial={prefersReducedMotion ? false : { scale: 0.985, y: 8, opacity: 0.96 }}
                 animate={{ scale: 1, y: 0, opacity: 1 }}
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
@@ -690,6 +702,10 @@ function TeamRoomShell({
                       <h2 className="acf-shell-focus-name text-xl font-semibold">{focusedAgent.id === "antigravity" ? "AntiGravity 2.0" : focusedAgent.label}</h2>
                       {focusedReadiness?.roleClass === "ORCHESTRATOR" && <span className="acf-orchestrator-role-badge">ORCHESTRATOR</span>}
                       {focusedReadiness && <ReadinessBadge readiness={focusedReadiness} />}
+                      <span className="mc-acf-activity" data-activity={activityFromAcf(run,focusedRunCard?.role ?? null,stale).state}
+                        title={activityFromAcf(run,focusedRunCard?.role ?? null,stale).evidence}>
+                        {activityFromAcf(run,focusedRunCard?.role ?? null,stale).label}
+                      </span>
                       <span className="acf-shell-focus-active">{focusedReadiness?.roleClass === "ORCHESTRATOR" ? "ORCHESTRATOR VIEW" : "AGENT VIEW"}</span>
                     </div>
                     {focusedReadiness?.roleClass === "ORCHESTRATOR" && <div className="acf-orch-subtitle acf-orch-subtitle-lg"><span aria-hidden="true">♛</span> ORCHESTRATOR</div>}
@@ -706,7 +722,10 @@ function TeamRoomShell({
                   {readingSurface === "live" && focusedRunCard?.latestReply && (
                     <div className="acf-shell-tv-copy">
                       <p className="text-[11px] uppercase tracking-[0.08em] text-muted">Beurt {focusedRunCard.latestTurn ?? "?"} · {focusedRunCard.role} → {focusedRunCard.latestReply.to}{focusedRunCard.previousReplyCount > 0 ? ` · ${focusedRunCard.previousReplyCount} eerdere` : ""}</p>
-                      <div className="whitespace-pre-wrap break-words">{focusedRunCard.latestReply.body}</div>
+                      <AcfReplyPanel namespace="live-focus" messageId={focusedRunCard.latestReply.messageId}
+                        author={focusedRunCard.role} body={focusedRunCard.latestReply.body}>
+                        <article><div className="mc-acf-reply-text whitespace-pre-wrap break-words">{focusedRunCard.latestReply.body}</div></article>
+                      </AcfReplyPanel>
                     </div>
                   )}
                   {readingSurface === "live" && !focusedRunCard?.latestReply && (
@@ -757,12 +776,16 @@ function TeamRoomShell({
 
                   {readingSurface === "full" && discussion && (
                     <div className="space-y-3">
-                      {discussion.history.map((m) => (
-                        <article key={m.messageId} className="border-b border-border/60 pb-3">
+                      {discussion.history.map((m) => {
+                        const article=<article className="border-b border-border/60 pb-3">
                           <p className="text-[11px] text-muted mono">#{m.sequence} · {m.from} → {m.to}</p>
-                          <p className="mt-1 whitespace-pre-wrap break-words text-sm leading-6">{m.body}</p>
-                        </article>
-                      ))}
+                          <p className="mc-acf-reply-text mt-1 whitespace-pre-wrap break-words text-sm leading-6">{m.body}</p>
+                        </article>;
+                        return m.from !== "OPERATOR" && m.from !== "DENNIS"
+                          ? <AcfReplyPanel key={m.messageId} namespace="full" messageId={m.messageId}
+                              author={m.from} body={m.body}>{article}</AcfReplyPanel>
+                          : <div key={m.messageId}>{article}</div>;
+                      })}
                       {discussion.history.length === 0 && <p className="text-sm text-muted">Nog geen berichten in deze run.</p>}
                     </div>
                   )}
@@ -809,15 +832,19 @@ function TeamRoomShell({
             </header>
             {draftSelected.length > 0 && <p className="mc-team-shared-draft-note" role="status">{draftSelected.length} conceptdeelnemer(s) geselecteerd. Het gesprek en de bevestigde run veranderen niet.</p>}
             <div className={freeRoom ? "min-w-0 p-3" : "mc-team-shared-conversation-messages"} data-testid="acf-shared-conversation-messages">
-              {freeRoom ?? (discussion?.history.length ? discussion.history.slice(-18).map(message=>(
-                <article key={message.messageId} className="mc-team-shared-message" data-testid="acf-shared-message">
+              {freeRoom ?? (discussion?.history.length ? discussion.history.slice(-18).map(message=>{
+                const article=<article className="mc-team-shared-message" data-testid="acf-shared-message">
                   <div className="flex items-center justify-between gap-2">
                     <strong className="text-xs">{message.from}</strong>
                     <span className="text-[10px] text-muted">#{message.sequence} · naar {message.to}</span>
                   </div>
-                  <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{message.body}</p>
-                </article>
-              )) : <p className="p-4 text-sm text-muted">Nog geen gedeelde berichten in deze ACF-run. Conceptselectie verzendt niets.</p>)}
+                  <p className="mc-acf-reply-text mt-2 whitespace-pre-wrap break-words text-sm leading-6">{message.body}</p>
+                </article>;
+                return message.from!=="OPERATOR" && message.from!=="DENNIS"
+                  ? <AcfReplyPanel key={message.messageId} namespace="shared" messageId={message.messageId}
+                      author={message.from} body={message.body}>{article}</AcfReplyPanel>
+                  : <div key={message.messageId}>{article}</div>;
+              }) : <p className="p-4 text-sm text-muted">Nog geen gedeelde berichten in deze ACF-run. Conceptselectie verzendt niets.</p>)}
             </div>
           </section>
 
@@ -1342,6 +1369,8 @@ export function TeamRoomView() {
           readLabel={presentation.label}
           operationalEvidence={operationalEvidence}
           discussion={display?.availability === "available" ? discussion : null}
+          run={display?.availability === "available" ? selected : null}
+          stale={presentation.stale}
           runId={display?.availability === "available" ? selected?.runId ?? null : null}
           freeRoom={display?.availability === "available" && selected?.teamView?.schema===2
             ? <FreeRoomPanel key={selected.runId} run={selected} busy={controlBusy} setBusy={setControlBusy}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { AcfReplyPanel } from "./AcfReplyPanel";
 import type { AcfTeamRoomRun, AcfTeamViewV1 } from "@/lib/acf/types";
 import { deriveEvidenceGroupReport, type EvidenceKind } from "@/lib/acf/evidence-group-report";
 import { agentLabel, refusalText, type CallControl, type ControlAnswer, type WaitForStep } from "./OperatorDeck";
@@ -268,11 +269,15 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
         const member = byHandle.get(m.from);
         const author = operator ? "Dennis" : member ? agentLabel(member.agent) + " · " + m.from : m.from;
         const replyTo = m.inReplyTo ? ordered.find(x => x.messageId === m.inReplyTo) : null;
-        return <article key={m.messageId} className={"max-w-[94%] rounded-lg border px-3 py-2 text-xs " + (operator ? "ml-auto border-cyan-400/50 bg-cyan-950/30" : "mr-auto border-border bg-panel-2")} data-testid={operator ? "free-room-operator-message" : "free-room-agent-message"}>
+        const messageCard = <article className={"rounded-lg border px-3 py-2 text-xs " + (operator ? "border-cyan-400/50 bg-cyan-950/30" : "border-border bg-panel-2")} data-testid={operator ? "free-room-operator-message" : "free-room-agent-message"}>
           <div className="flex flex-wrap justify-between gap-2"><strong>{author}</strong><span className="text-muted">#{m.sequence} · {m.kind} · naar {m.to}</span></div>
-          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{m.body}</p>
+          <p className="mc-acf-reply-text mt-2 whitespace-pre-wrap break-words text-sm leading-6">{m.body}</p>
           <div className="mt-1 break-all text-[10px] text-muted">Bericht {m.messageId} · sessie {m.origin?.sessionRef ?? member?.session ?? "—"} · gesprek {m.origin?.conversationRef ?? "—"}{m.inReplyTo ? " · antwoord op " + m.inReplyTo + (replyTo ? " (" + replyTo.from + ")" : "") : ""}</div>
         </article>;
+        return operator
+          ? <div key={m.messageId} className={operator ? "ml-auto max-w-[94%]" : "mr-auto max-w-[94%]"}>{messageCard}</div>
+          : <AcfReplyPanel key={m.messageId} namespace="free-room" messageId={m.messageId}
+              author={author} body={m.body} className="mr-auto max-w-[94%]">{messageCard}</AcfReplyPanel>;
       })}
       {thinking && <p className="text-xs text-cyan-200" role="status" data-testid="free-room-thinking">{thinking}</p>}
     </div>
