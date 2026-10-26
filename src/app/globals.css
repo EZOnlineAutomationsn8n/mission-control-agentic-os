@@ -3713,3 +3713,8 @@ html[data-mc-panel-focus-id="acf-reading-pane"] .acf-shell-focus-overlay { z-ind
   .mc-clear-history-mobile > summary::-webkit-details-marker { display: none; }
   .mc-clear-history-mobile > button { margin: .3rem; }
 }
+
+/* WERKPLAATS v2: test identity only in the isolated stage source, adapted from 1bf1042. */
+.mc-werkplaats-label { color:#fbbf24 !important; font-size:15px !important; font-weight:800 !important; letter-spacing:.08em !important; }
+.mc-werkplaats-tag { margin-left:6px; padding:1px 6px; border-radius:6px; border:1px solid rgba(251,191,36,.6);
+  font-size:10px; font-weight:700; letter-spacing:.04em; color:#fde68a; vertical-align:middle; }

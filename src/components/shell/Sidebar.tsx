@@ -150,7 +150,10 @@ export function Sidebar() {
   }
 
   function section(title: string, items: NavItem[]) {
-    return <div className="px-2 pt-3"><div className="mc-sidebar-section-label px-3 pb-1.5">{title}</div>{items.map(renderItem)}</div>;
+    const label = title === "Workspace"
+      ? <div className="mc-sidebar-section-label mc-werkplaats-label px-3 pb-1.5">WERKPLAATS <span className="mc-werkplaats-tag">test</span></div>
+      : <div className="mc-sidebar-section-label px-3 pb-1.5">{title}</div>;
+    return <div className="px-2 pt-3">{label}{items.map(renderItem)}</div>;
   }
 
   function agentPool() {
