@@ -192,11 +192,32 @@ export function reconcileStageCliCandidates(
 }
 
 const defaultLister: SessionLister = async () => {
+  // AGENTS MODE: reuse the existing LIVE agent executor/session index, but
+  // accept only the dedicated acf-werkplaats-* conversation channel.
+  // No LIVE conversation or personal session may enter the ACF candidate set.
+  if (process.env.MC_PREVIEW === "1" && process.env.GAOS_STAGE_NATIVE_ISOLATED !== "1") {
+    try {
+      const routes = JSON.parse(await readFile(ACF_TEAM_ROOM_ROUTES, "utf8")) as {
+        session_ref_pattern?: string;
+        session_index?: { base_url?: string; path?: string; timeout_seconds?: number };
+      };
+      const pattern = routes.session_ref_pattern;
+      const index = routes.session_index;
+      if (typeof pattern !== "string" || !pattern.startsWith("^acf-werkplaats-") ||
+          !index?.base_url || !index.path) return [];
+      const res = await fetch(index.base_url + index.path, { cache: "no-store",
+        signal: AbortSignal.timeout((index.timeout_seconds ?? 15) * 1000) });
+      if (!res.ok) return [];
+      const payload = await res.json() as { sessions?: Array<Record<string, unknown>> };
+      if (!Array.isArray(payload.sessions)) return [];
+      return reconcileStageCliCandidates([], payload.sessions, pattern);
+    } catch { return []; } // fail closed; never silently fall back to personal sessions
+  }
+  // Retain the certified native-stage registry implementation for historical
+  // rollback evidence; it is not selected in AGENTS MODE.
   const { listCockpitSessions } = await import("@/lib/cockpit/session-registry");
   const sessions = (await listCockpitSessions()) as unknown as Array<Record<string, unknown>>;
   if (process.env.MC_PREVIEW !== "1") return sessions;
-  // Never let an unavailable or malformed stage route file silently fall
-  // back to a LIVE index or an unbounded personal-session list.
   try {
     const routes = JSON.parse(await readFile(ACF_TEAM_ROOM_ROUTES, "utf8")) as {
       session_ref_pattern?: string;
@@ -204,9 +225,7 @@ const defaultLister: SessionLister = async () => {
     const pattern = routes.session_ref_pattern;
     if (typeof pattern !== "string" || !pattern.startsWith("^acf-werkplaats-")) return [];
     return reconcileStageCliCandidates([], sessions, pattern);
-  } catch {
-    return [];
-  }
+  } catch { return []; }
 };
 
 function parseAnswer(raw: string): Record<string, unknown> {

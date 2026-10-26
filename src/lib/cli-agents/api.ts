@@ -109,7 +109,8 @@ export async function getCliAgentSession(request: Request, agentId: CliAgentId) 
   if (!isValidConversationKey(key)) return NextResponse.json({ error: "invalid session identifier" }, { status: 400 });
   const session=await readCliAgentSession(agentId,key);
   let transport=null;
-  if(process.env.MC_PREVIEW==="1"&&(agentId==="hermes"||agentId==="openclaw")) {
+  if(process.env.MC_PREVIEW==="1" && process.env.GAOS_STAGE_NATIVE_ISOLATED==="1" &&
+     (agentId==="hermes"||agentId==="openclaw")) {
     transport=await inspectNativeStageTransport(agentId,key);
   }
   const firstTurnReadiness=session ? await readFirstTurnReadiness({
@@ -270,7 +271,8 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
   }
   // Native stage isolation and stage credential are mandatory.
   // Operator-configured primary/fallbacks are not price-certified by workers.
-  if(process.env.MC_PREVIEW==="1"&&(agentId==="hermes"||agentId==="openclaw")){
+  if(process.env.MC_PREVIEW==="1" && process.env.GAOS_STAGE_NATIVE_ISOLATED==="1" &&
+     (agentId==="hermes"||agentId==="openclaw")){
     const verdict=await inspectNativeStageTransport(agentId,key);
     if(!verdict.canSend)return NextResponse.json({
       error:"STAGE_NATIVE_TRANSPORT_NOT_READY",

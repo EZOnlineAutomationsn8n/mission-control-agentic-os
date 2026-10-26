@@ -39,6 +39,9 @@ export async function readFirstTurnReadiness(
 ): Promise<FirstTurnReadiness | null> {
   if (row.status !== "prepared") return null;
   const stage = werkplaatsRuntimeRoot();
+  // AGENTS MODE uses the real shared executor; native-stage readiness checks
+  // are inapplicable. ACF must judge eligibility from the actual session index.
+  if (process.env.MC_PREVIEW === "1" && process.env.GAOS_STAGE_NATIVE_ISOLATED !== "1") return null;
   if (!stage || process.env.GAOS_STAGE_NATIVE_ISOLATED !== "1") {
     return result(false, "WERKPLAATS_RUNTIME_NOT_ISOLATED");
   }
