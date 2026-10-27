@@ -238,7 +238,7 @@ export function Sidebar() {
       <button
         type="button"
         onClick={() => setMobileOpen((open) => !open)}
-        className="mc-mobile-nav-toggle xl:hidden fixed left-3 z-50 mc-button mc-button-secondary p-0"
+        className="mc-mobile-nav-toggle xl:hidden fixed left-3 z-[130] mc-button mc-button-secondary p-0"
         aria-label={mobileOpen ? "Close Mission Control navigation" : "Open Mission Control navigation"}
         aria-expanded={mobileOpen}
         aria-controls="mission-control-sidebar"
@@ -252,14 +252,14 @@ export function Sidebar() {
       {mobileOpen && (
         <button
           type="button"
-          className="xl:hidden fixed inset-0 z-30 bg-[#02040c]/75 backdrop-blur-[2px]"
+          className="xl:hidden fixed inset-0 z-[110] bg-[#02040c]/75 backdrop-blur-[2px]"
           aria-label="Close Mission Control navigation"
           onClick={() => setMobileOpen(false)}
         />
       )}
       <aside
         id="mission-control-sidebar"
-        className={`mc-sidebar ${focusRail ? "mc-sidebar-focus-rail" : ""} fixed inset-y-0 left-0 z-40 w-72 shrink-0 flex flex-col h-dvh overflow-hidden transition-[transform,width] duration-200 xl:sticky xl:top-0 xl:z-auto xl:h-screen xl:w-64 xl:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
+        className={`mc-sidebar ${focusRail ? "mc-sidebar-focus-rail" : ""} fixed inset-y-0 left-0 z-[120] w-72 shrink-0 flex flex-col h-dvh overflow-hidden transition-[transform,width] duration-200 xl:sticky xl:top-0 xl:z-auto xl:h-screen xl:w-64 xl:translate-x-0 ${mobileOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="mc-sidebar-brand px-4">
           <div className="mc-sidebar-brand-row flex items-center gap-2.5 w-full">
