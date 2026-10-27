@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AcfReplyPanel } from "./AcfReplyPanel";
 import type { AcfTeamRoomRun, AcfTeamViewV1 } from "@/lib/acf/types";
 import { deriveEvidenceGroupReport, type EvidenceKind } from "@/lib/acf/evidence-group-report";
@@ -39,6 +39,35 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
   const [uncertain, setUncertain] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [showEvidenceReport, setShowEvidenceReport] = useState(false);
+  const [draftRehydrated,setDraftRehydrated]=useState(false);
+  const draftKey = "mc.team-room.unsent-draft.v1."+run.runId;
+  useEffect(()=>{
+    try{
+      const raw=window.localStorage.getItem(draftKey);
+      if(raw&&raw.length<20_000){
+        const saved:unknown=JSON.parse(raw);
+        if(saved&&typeof saved==="object"&&!Array.isArray(saved)){
+          const value=saved as Record<string,unknown>;
+          // eslint-disable-next-line react-hooks/set-state-in-effect -- restore unsent operator draft, not ACF source
+          if(typeof value.text==="string"&&value.text.length<=6000)setText(value.text);
+          if(typeof value.topic==="string"&&value.topic.length<=6000)setTopic(value.topic);
+          if(typeof value.consensusText==="string"&&value.consensusText.length<=6000)setConsensusText(value.consensusText);
+          if(typeof value.rounds==="number"&&Number.isInteger(value.rounds)&&value.rounds>=1&&value.rounds<=4)setRounds(value.rounds);
+          if(value.showEvidenceReport===true)setShowEvidenceReport(true);
+          if(value.uncertain===true)setUncertain(true);
+        }
+      }
+    }catch {/* local browser preference unavailable; do not touch canonical ACF history */}
+    setDraftRehydrated(true);
+  },[draftKey]);
+  useEffect(()=>{
+    if(!draftRehydrated)return;
+    try{
+      window.localStorage.setItem(draftKey,JSON.stringify({
+        text,topic,consensusText,rounds,showEvidenceReport,uncertain,
+      }));
+    }catch {/* do not send drafts to another backend or database */}
+  },[draftKey,draftRehydrated,text,topic,consensusText,rounds,showEvidenceReport,uncertain]);
   // UI-only synchronous guard against a repeated click during the first ACF write.
   // Never invent a new session or dispatch an uncertain send twice.
   const submissionGuard = useRef(false);

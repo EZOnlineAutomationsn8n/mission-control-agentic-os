@@ -29,7 +29,38 @@ const PanelFocusContext = createContext<PanelFocusContextValue | null>(null);
 export function PanelFocusProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [focused, setFocused] = useState<PanelFocusState | null>(null);
+  const [roomFocusRestored,setRoomFocusRestored] = useState(false);
   const previousPath = useRef(pathname);
+  // This is presentation state only. A panel does not own a native session.
+  useEffect(() => {
+    if (pathname !== "/team-room") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- discard Team Room-only saved focus on route change
+      setRoomFocusRestored(false);
+      return;
+    }
+    try {
+      const raw = window.localStorage.getItem("mc.team-room.focus-panel.v1");
+      if (raw && raw.length < 350) {
+        const saved: unknown=JSON.parse(raw);
+        if (saved && typeof saved === "object" && "id" in saved && "label" in saved &&
+          typeof saved.id === "string" && typeof saved.label === "string" &&
+          /^acf-(reading-pane|participant-[a-zA-Z0-9_-]+)$/.test(saved.id) &&
+          saved.label.length <= 160) {
+          setFocused({panelId:saved.id,label:saved.label});
+        }
+      }
+    }catch {/* private mode or stale preference: retain normal panel controls */}
+    setRoomFocusRestored(true);
+  }, [pathname]);
+  useEffect(() => {
+    if (pathname !== "/team-room" || !roomFocusRestored) return;
+    try {
+      if (focused) window.localStorage.setItem("mc.team-room.focus-panel.v1",JSON.stringify({
+        id:focused.panelId,label:focused.label,
+      }));
+      else window.localStorage.removeItem("mc.team-room.focus-panel.v1");
+    }catch {/* browser preferences are optional */}
+  }, [pathname,focused,roomFocusRestored]);
 
   const restoreLayout = useCallback(() => setFocused(null), []);
   const focusPanel = useCallback((panelId: string, label: string) => {

@@ -38,6 +38,8 @@ import { FreeRoomPanel } from "@/components/team-room/FreeRoomPanel";
 import { AcfReplyPanel } from "@/components/team-room/AcfReplyPanel";
 import { activityFromAcf, type AcfActivity } from "@/components/team-room/acf-activity";
 import { deriveVisibleParticipants } from "@/lib/acf/visible-participants";
+import { ROOM_VIEW_KEY, roomShellKey, parseRoomView, parseShellView, verifySavedRun,
+  type StoredRoomView, type StoredShellView } from "@/lib/acf/team-room-rehydration";
 
 const POLL_MS = 5_000;
 const STALE_AFTER_MS = 15_000;
@@ -571,14 +573,35 @@ function TeamRoomShell({
   const speakerKey = !draftSelected.length ? speakerAgent?.id ?? null : null;
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [previewPlaying, setPreviewPlaying] = useState(false);
+  const [shellRestored, setShellRestored] = useState(false);
   const latestMessageId = discussion?.latestParticipantMessage?.messageId ?? null;
   useEffect(() => {
-    if (!latestMessageId || !speakerKey) return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- only ACF-exported turns may auto-focus speakers
+    // A refresh is not a new reply: never overwrite the operator's restored focus.
+    if (!shellRestored || !latestMessageId || !speakerKey) return;
+    if (initialSpeaker.current === latestMessageId)return;
+    initialSpeaker.current = latestMessageId;
     setFocusedId(speakerKey);
-  }, [latestMessageId, speakerKey]);
+  }, [latestMessageId, speakerKey, shellRestored]);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const [readingSurface, setReadingSurface] = useState<ShellReadingSurface>("live");
+  const initialSpeaker = useRef(latestMessageId);
+  useEffect(() => {
+    try {
+      const saved = parseShellView(window.localStorage.getItem(roomShellKey(runId)));
+      if (saved) {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- restore persisted user viewport on initial mount
+        setVisualSlotOffset(saved.visualSlotOffset);
+        setFocusedId(saved.focusedId);
+        setReadingSurface(saved.readingSurface);
+      }
+    } catch { /* storage disabled: normal in-memory controls still work */ }
+    setShellRestored(true);
+  }, [runId]);
+  useEffect(() => {
+    if (!shellRestored)return;
+    const state:StoredShellView = {version:1,visualSlotOffset,focusedId,readingSurface};
+    try { window.localStorage.setItem(roomShellKey(runId),JSON.stringify(state)); } catch { /* no storage */ }
+  }, [shellRestored,runId,visualSlotOffset,focusedId,readingSurface]);
 
   useEffect(() => {
     const media = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -937,12 +960,24 @@ export function TeamRoomView() {
   const [lastGood, setLastGood] = useState<AcfTeamRoomSnapshot | null>(null);
   const [lastGoodAt, setLastGoodAt] = useState<number | null>(null);
   const [selectedRunId, setSelectedRunIdState] = useState<string | null>(null);
+  const [viewRestored, setViewRestored] = useState(false);
+  const [recoveryRunId,setRecoveryRunId] = useState<string|null>(null);
+  const [recoveryReason,setRecoveryReason] = useState<string|null>(null);
   // The run the operator looks at now. A read answer for any other run arrives late and is dropped, so the room never
   // shows (or steps) a run the operator just navigated away from (ACF-OPERATOR-CONTROL-DECK-REALWORLD-001).
   const wantedRunId = useRef<string | null>(null);
   const setSelectedRunId = useCallback((runId: string | null) => {
     wantedRunId.current = runId;
     setSelectedRunIdState(runId);
+    setRecoveryRunId(null);
+    setRecoveryReason(null);
+    // Save the operator's explicit run choice immediately, even before polling.
+    try {
+      const previous = parseRoomView(window.localStorage.getItem(ROOM_VIEW_KEY));
+      window.localStorage.setItem(ROOM_VIEW_KEY,JSON.stringify({
+        ...(previous ?? {version:1}),runId,
+      }));
+    }catch { /* browser preference storage is optional */ }
   }, []);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [refreshFailureKind, setRefreshFailureKind] = useState<AcfRefreshFailureKind>(null);
@@ -962,35 +997,97 @@ export function TeamRoomView() {
   const draftSelected = COCKPIT_AGENT_TARGETS.filter(a=>draftChoices[a.apiAgentId]?.selected).map(a=>a.apiAgentId);
   const [operationalEvidence, setOperationalEvidence] = useState<OperationalEvidenceMap>({});
 
+  useEffect(() => {
+    try {
+      const saved = parseRoomView(window.localStorage.getItem(ROOM_VIEW_KEY));
+      if (saved) {
+        wantedRunId.current = saved.runId;
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate explicit browser selection before first ACF poll
+        setSelectedRunIdState(saved.runId);
+        setMode(saved.mode);
+        setHistoryOpen(saved.historyOpen);
+        setDetailsOpen(saved.detailsOpen);
+        setOperatorObjective(saved.operatorObjective);
+        setOperatorSuccessCriterion(saved.operatorSuccessCriterion);
+        setDraftChoices(saved.draftChoices);
+        setFocusPreference(saved.focusPreference);
+      }
+    } catch { /* recover from canonical ACF index without browser storage */ }
+    setViewRestored(true);
+  }, []);
+  useEffect(() => {
+    if (!viewRestored)return;
+    const saved:StoredRoomView = {version:1,runId:selectedRunId,mode,historyOpen,detailsOpen,
+      operatorObjective,operatorSuccessCriterion,draftChoices,focusPreference};
+    try { window.localStorage.setItem(ROOM_VIEW_KEY,JSON.stringify(saved)); }
+    catch { /* browser preferences cannot alter the ACF journal */ }
+  }, [viewRestored,selectedRunId,mode,historyOpen,detailsOpen,operatorObjective,
+      operatorSuccessCriterion,draftChoices,focusPreference]);
+
   const refresh = useCallback(async (runId: string | null) => {
     try {
       const suffix = runId ? `?runId=${encodeURIComponent(runId)}` : "";
       const response = await fetch(`/api/acf/team-room${suffix}`, { cache: "no-store" });
       const next = await response.json() as AcfTeamRoomSnapshot;
       if (runId !== wantedRunId.current) return;   // a late answer for a run the operator left: dropped
+      if (runId && response.ok && next.availability==="available" &&
+          verifySavedRun(runId,next.runs.map(r=>r.runId),next.selectedRun?.runId??null)!=="VERIFIED") {
+        setRecoveryRunId(runId);
+        setRecoveryReason("De opgeslagen run komt niet overeen met de canonieke ACF-runindex.");
+        setSnapshot({...next,selectedRun:null,availability:"empty"});
+        return;
+      }
+      if (runId && (!response.ok || next.availability==="empty")) {
+        // A stale local preference must never silently open another run. Query
+        // the canonical index once for an operator-visible recovery selector.
+        try {
+          const indexResponse = await fetch("/api/acf/team-room",{cache:"no-store"});
+          const index = await indexResponse.json() as AcfTeamRoomSnapshot;
+          if (runId!==wantedRunId.current)return;
+          if (indexResponse.ok && (index.availability==="empty" || index.availability==="available")) {
+            setSnapshot({...index,selectedRun:null,availability:"empty"});
+            setRecoveryRunId(runId);
+            setRecoveryReason(index.runs.some(x=>x.runId===runId)
+              ? "De opgeslagen run staat in de index, maar kon niet worden geopend. Probeer opnieuw."
+              : "De opgeslagen run staat niet meer in de canonieke ACF-runindex. Kies een bestaande run.");
+            setRefreshError(null);
+            setRefreshFailureKind(null);
+            return;
+          }
+        }catch { /* temporary ACF outage: retain saved id for recovery */ }
+        setRecoveryRunId(runId);
+        setRecoveryReason("De bestaande ACF-run is tijdelijk niet bereikbaar. De opgeslagen keuze blijft behouden.");
+      }
       setSnapshot(next);
       if (response.ok && (next.availability === "available" || next.availability === "empty")) {
         setLastGood(next);
         setLastGoodAt(Date.now());
         setRefreshError(null);
         setRefreshFailureKind(null);
+        setRecoveryRunId(null);
+        setRecoveryReason(null);
         if (!runId && next.selectedRun?.runId) setSelectedRunId(next.selectedRun.runId);
       } else {
         setRefreshError(next.error || `ACF read failed with HTTP ${response.status}`);
         setRefreshFailureKind(next.availability === "malformed" ? "malformed" : "unavailable");
       }
     } catch (error) {
+      if (runId===wantedRunId.current && runId) {
+        setRecoveryRunId(runId);
+        setRecoveryReason("ACF is tijdelijk niet beschikbaar. De gekozen run blijft bewaard.");
+      }
       setRefreshError(error instanceof Error ? error.message : "ACF read failed");
       setRefreshFailureKind("unavailable");
     }
   }, [setSelectedRunId]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional initial poll of the external ACF read side
+    if (!viewRestored)return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- external read-only ACF request (async result), not local setState
     void refresh(selectedRunId);
     const timer = window.setInterval(() => void refresh(selectedRunId), POLL_MS);
     return () => window.clearInterval(timer);
-  }, [refresh, selectedRunId]);
+  }, [refresh, selectedRunId, viewRestored]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1_000);
@@ -1302,6 +1399,8 @@ export function TeamRoomView() {
 
   return (
     <div className="acf-team-room-page">
+      {!viewRestored && <div role="status" data-testid="team-room-rehydrating"
+        className="mx-4 rounded-lg border border-border p-3">Werkruimte herstellen…</div>}
       <header className="acf-team-room-hero">
         <div className="acf-team-room-hero-copy">
           <div className="text-[10px] font-semibold tracking-[0.18em] text-cyan-300">MISSION CONTROL · TEAM ROOM</div>
@@ -1370,6 +1469,18 @@ export function TeamRoomView() {
         </section>
       )}
 
+      {recoveryRunId && (
+        <section className="mx-4 my-3 rounded-lg border border-warn/50 p-3"
+          role="status" data-testid="team-room-run-recovery">
+          <strong>Bestaande Team Room herstellen</strong>
+          <p className="mt-1 text-sm">{recoveryReason}</p>
+          <p className="mono mt-1 break-all text-xs">{recoveryRunId}</p>
+          <button type="button" className="mc-button mc-button-secondary mt-2"
+            onClick={()=>void refresh(recoveryRunId)}>Probeer opgeslagen run opnieuw</button>
+          <p className="mt-1 text-xs text-muted">Selecteer anders een run uit het bestaande ACF-overzicht.
+            Er is geen nieuwe run of agentbeurt gestart.</p>
+        </section>
+      )}
       {mode === "discuss" && (display?.availability === "empty" || (display?.availability === "available" && selected && discussion)) && (
         <TeamRoomShell
           key={selected?.runId ?? "empty"}
