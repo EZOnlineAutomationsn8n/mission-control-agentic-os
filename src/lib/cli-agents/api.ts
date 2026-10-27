@@ -302,10 +302,16 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
       admission:"STAGE_AUTH_AND_ISOLATION",
     },{status:409});
   }
-  // Prove real isolated HOME before moving PREPARED to RUNNING or recording a turn.
+  // Fail before any session/history/audit write if the actual isolated stage
+  // executor is unavailable. A previously PREPARED first turn stays PREPARED.
   if (process.env.MC_PREVIEW === "1" && (agentId === "codex" || agentId === "gemini")) {
-    try { await stageCliProfileEnvironment(agentId); }
-    catch { return NextResponse.json({error:"STAGE_NATIVE_PROFILE_NOT_ISOLATED",modelCalls:0},{status:409}); }
+    const native = await inspectStageCliPreflight(agentId);
+    if (!native.isolated || !native.binaryAvailable || agentId === "codex" && native.loginVerified !== true) {
+      return NextResponse.json({
+        error: native.code, nativeStagePreflight: native, modelCalls: 0,
+        preservedPreparedSession: true,
+      }, {status: 409});
+    }
   }
   const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
 
