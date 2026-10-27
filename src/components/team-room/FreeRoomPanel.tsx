@@ -441,6 +441,24 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
             {!report.sourceMessages.length && <li>Geen geregistreerde groepsbijdragen.</li>}
           </ol>
         </div>
+        <section className="rounded-lg border border-border/70 p-3" data-testid="free-room-independent-research-proof"
+          aria-label="Bewijs van onafhankelijk beginonderzoek">
+          <strong>Onafhankelijk beginonderzoek · ACF-contextprovenance</strong>
+          <p className="mt-1" data-testid="free-room-independent-research-verdict">
+            {report.initialResearch.verdict === "CONTEXT_BARRIER_NOT_PROVEN"
+              ? "CONTEXTISOLATIE NIET BEWEZEN — een volgend eerste antwoord kreeg een ACF-contextgrens na een eerder agentantwoord."
+              : report.initialResearch.verdict === "ISOLATION_COMPATIBLE_NOT_PROVEN"
+              ? "ACF-contextgrenzen zijn verenigbaar met isolatie, maar de geleverde promptinhoud is niet bewezen."
+              : "ONVOLDOENDE BEWIJS voor twee onafhankelijk uitgevoerde eerste antwoorden."}
+          </p>
+          <p className="mt-1 text-warn">Echt parallel uitgevoerd: NIET BEWEZEN. Geen overlappende native uitvoeringsintervallen geëxporteerd.</p>
+          <ul className="mt-2 space-y-1">
+            {report.initialResearch.firstTurns.map(turn=><li key={turn.role}>
+              {turn.role}: eerste bericht #{turn.sequence}, ACF-context t/m #{turn.contextThroughSequence ?? "ONBEKEND"}, gepost {turn.at ?? "ONBEKEND"}
+            </li>)}
+          </ul>
+          <p className="mt-2 text-muted">{report.initialResearch.caveat}</p>
+        </section>
         <div>
           <strong>Wie sprak met wie? (geen inhoudelijke acceptatie)</strong>
           <p className="mt-1">{report.participantTurns.map(p => p.role + ": " + p.turns + " bronherleidbare beurt(en)").join(" · ") || "Geen deelnemers"}</p>
