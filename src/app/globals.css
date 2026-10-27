@@ -3760,6 +3760,15 @@ html[data-mc-panel-focus-id="acf-reading-pane"] .acf-shell-focus-overlay { z-ind
   z-index: 1;
 }
 
+/* A closed mobile sidebar is a drawer: once opened it must paint above
+   the later main work-pane sibling. Override the generic shell child
+   z-index=1 rule without changing desktop focus or the pane layout. */
+@media (max-width: 1279px) {
+  .mc-app-shell > .mc-sidebar { position: fixed !important; z-index: 120 !important; }
+  .mc-app-shell > .mc-mobile-nav-toggle { position: fixed !important; z-index: 130 !important; }
+  .mc-app-shell > .mc-mobile-nav-backdrop { position: fixed !important; z-index: 110 !important; }
+}
+
 
 /* MC-THEMA-SLEUF-20261022-001 corrected by Dennis 16:11/16:14.
    Preserve the Team Room header dimensions, texts, tabs and position.

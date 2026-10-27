@@ -252,7 +252,7 @@ export function Sidebar() {
       {mobileOpen && (
         <button
           type="button"
-          className="xl:hidden fixed inset-0 z-[110] bg-[#02040c]/75 backdrop-blur-[2px]"
+          className="mc-mobile-nav-backdrop xl:hidden fixed inset-0 z-[110] bg-[#02040c]/75 backdrop-blur-[2px]"
           aria-label="Close Mission Control navigation"
           onClick={() => setMobileOpen(false)}
         />
