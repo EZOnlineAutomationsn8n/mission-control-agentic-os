@@ -1502,6 +1502,24 @@ export function TeamRoomView() {
               <span className="mc-button mc-button-secondary mc-button-sm">{historyOpen ? "Hide" : "View history"}</span>
             </button>
 
+            <nav className="mt-2 flex flex-wrap gap-2" aria-label="Kies historisch Team Room-gesprek"
+                 data-testid="team-room-canonical-run-switcher">
+              {display.runs.map(run=>(
+                <button type="button" key={run.runId}
+                  className={"mc-button mc-button-sm "+(selected.runId===run.runId
+                    ? "mc-button-primary" : "mc-button-secondary")}
+                  aria-current={selected.runId===run.runId?"true":undefined}
+                  onClick={()=>{
+                    if (run.runId===selected.runId)return;
+                    setFocusPreference({role:null,sequence:null});
+                    setSelectedRunId(run.runId);
+                    setHistoryOpen(true);
+                    void refresh(run.runId);
+                  }}>
+                  {run.runId} · {run.goal}
+                </button>
+              ))}
+            </nav>
             {historyOpen && (
               <div className="mt-4 max-h-[28rem] overflow-y-auto space-y-2 pr-1">
                 {discussion.history.map((message: AcfMessageReadModel) => (
