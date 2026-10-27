@@ -191,6 +191,28 @@ export function reconcileStageCliCandidates(
   return stage.filter(item => re.test(String(item.sessionId ?? "")));
 }
 
+/**
+ * Keep AGENTS MODE and the existing ACF participant contract: the executor
+ * that answers session GET / ask must also own the session's registry row.
+ * For explicitly stage-bound agents only, use the existing stage session
+ * registry instead of incorrectly reporting the shared executor's row.
+ * This does NOT convert prepared/error sessions to idle or manufacture
+ * eligibility. ACF still verifies actual GET readiness for each route.
+ */
+export function mergeStageBoundCandidates(
+  shared: Array<Record<string, unknown>>,
+  own: Array<Record<string, unknown>>,
+  stageBoundAgentIds: ReadonlyArray<string>,
+  pattern: string,
+): Array<Record<string, unknown>> {
+  const re = new RegExp(pattern);
+  const bound = new Set(stageBoundAgentIds);
+  return [
+    ...shared.filter(row => !bound.has(String(row.agentId ?? "")) && re.test(String(row.sessionId ?? ""))),
+    ...own.filter(row => bound.has(String(row.agentId ?? "")) && re.test(String(row.sessionId ?? ""))),
+  ];
+}
+
 const defaultLister: SessionLister = async () => {
   // AGENTS MODE: reuse the existing LIVE agent executor/session index, but
   // accept only the dedicated acf-werkplaats-* conversation channel.
@@ -200,6 +222,7 @@ const defaultLister: SessionLister = async () => {
       const routes = JSON.parse(await readFile(ACF_TEAM_ROOM_ROUTES, "utf8")) as {
         session_ref_pattern?: string;
         session_index?: { base_url?: string; path?: string; timeout_seconds?: number };
+        routes?: Record<string, { base_url?: string }>;
       };
       const pattern = routes.session_ref_pattern;
       const index = routes.session_index;
@@ -210,7 +233,16 @@ const defaultLister: SessionLister = async () => {
       if (!res.ok) return [];
       const payload = await res.json() as { sessions?: Array<Record<string, unknown>> };
       if (!Array.isArray(payload.sessions)) return [];
-      return reconcileStageCliCandidates([], payload.sessions, pattern);
+      // Only the preview's own existing executor may supply local session
+      // candidates. Never merge a local registry row for an agent whose
+      // actual ACF session/ask transport still points to the shared executor.
+      const stageBound = Object.entries(routes.routes ?? {})
+        .filter(([, value]) => value?.base_url === "http://127.0.0.1:3331")
+        .map(([agent]) => agent);
+      if (!stageBound.length) return reconcileStageCliCandidates([], payload.sessions, pattern);
+      const { listCockpitSessions } = await import("@/lib/cockpit/session-registry");
+      const own = (await listCockpitSessions()) as unknown as Array<Record<string, unknown>>;
+      return mergeStageBoundCandidates(payload.sessions, own, stageBound, pattern);
     } catch { return []; } // fail closed; never silently fall back to personal sessions
   }
   // Retain the certified native-stage registry implementation for historical
