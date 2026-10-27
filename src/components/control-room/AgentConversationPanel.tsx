@@ -167,6 +167,8 @@ export function AgentConversationPanel({
   const [session, setSession] = useState<AgentSessionView | null>(null);
   const [runtimeTruth, setRuntimeTruth] = useState<RuntimeTruthView | null>(null);
   const [nativeStageProbe, setNativeStageProbe] = useState<{code:string;isolated:boolean;binaryAvailable:boolean;loginVerified:boolean|null;modelCalls:0}|null>(null);
+  const [weg2State,setWeg2State]=useState<{mode:string;registeredOnly:boolean;
+    stageFirstTurnBlocked:boolean;modelCalls:0}|null>(null);
   const [bootstrap, setBootstrap] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(true);
@@ -215,11 +217,13 @@ export function AgentConversationPanel({
       // this READY/PREPARED state wait on the optional runtime diagnostics.
       const response = await fetch(sessionEndpoint, { cache: "no-store" });
       const data = await response.json() as { session?: AgentSessionView | null; error?: string;
-        nativeStagePreflight?: {code:string;isolated:boolean;binaryAvailable:boolean;loginVerified:boolean|null;modelCalls:0} };
+        nativeStagePreflight?: {code:string;isolated:boolean;binaryAvailable:boolean;loginVerified:boolean|null;modelCalls:0};
+        weg2?:{mode:string;registeredOnly:boolean;stageFirstTurnBlocked:boolean;modelCalls:0} };
       if (!response.ok) throw new Error(data.error ?? `session returned HTTP ${response.status}`);
       if (!isCurrent()) return;
       setSession(data.session ?? null);
       setNativeStageProbe(data.nativeStagePreflight ?? null);
+      setWeg2State(data.weg2 ?? null);
       setLoadError(null);
       setLoading(false);
       // History belongs to the session, not to the pane. Read it independently
@@ -443,7 +447,7 @@ export function AgentConversationPanel({
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
-    if (!prompt.trim() || running || !session?.active || listening || voiceNeedsReview) return;
+    if (!prompt.trim() || running || !session?.active || pendingWeg2StageTurn || listening || voiceNeedsReview) return;
     const submittedPrompt = prompt.trim();
     const submittedAttachments = attachments;
     setRunning(true);
@@ -522,6 +526,7 @@ export function AgentConversationPanel({
     setClearConfirm(false);
   }
 
+  const pendingWeg2StageTurn=Boolean(weg2State?.stageFirstTurnBlocked && session?.status==="prepared");
   const active = session?.active === true;
   const busy = running || session?.status === "starting" || session?.status === "running";
 
@@ -588,6 +593,14 @@ export function AgentConversationPanel({
       {session?.status==="prepared" && (agentId==="hermes"||agentId==="openclaw") &&
         sessionId.startsWith("acf-werkplaats-") &&
         <NativeStageTransportPanel agentId={agentId}/>}
+      {session?.status==="prepared" && weg2State && <p role="status"
+        data-testid="weg2-prepared-registration"
+        className="rounded border border-warn/40 p-2 text-xs text-warn">
+        WEG 2: alleen sessieregistratie via bestaande LIVE-executor, geen bootstrap of modelcall.
+        {weg2State.stageFirstTurnBlocked ?
+          " Deze Werkplaats-preview start geen gedeelde native beurt; na afzonderlijke CSA-release wordt jouw eerste Verstuur mogelijk via de bestaande LIVE-executor." :
+          " De eerste echte native conversatie begint pas bij jouw bewuste Verstuur. Native authenticatie is nog niet bewezen."}
+      </p>}
       {session?.status==="prepared" && agentId==="gemini" && sessionId.startsWith("acf-werkplaats-") && <p
         role="status" data-testid="gemini-staged-prepared"
         className="rounded border border-warn/40 p-2 text-xs text-warn">

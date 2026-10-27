@@ -120,12 +120,17 @@ export async function getCliAgentSession(request: Request, agentId: CliAgentId) 
   const firstTurnReadiness=session ? await readFirstTurnReadiness({
     agentId,sessionId:key,status:session.status,active:session.active,
   },transport) : null;
-  const nativeStagePreflight = process.env.MC_PREVIEW === "1" && session?.status === "prepared" &&
-    (agentId === "codex" || agentId === "gemini")
+  const weg2Registration=Boolean(session && session.status==="prepared" &&
+    /^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(key) &&
+    (agentId==="codex"||agentId==="gemini"||agentId==="agy"));
+  const nativeStagePreflight = process.env.MC_PREVIEW === "1" && !weg2Registration &&
+    session?.status === "prepared" && (agentId === "codex" || agentId === "gemini")
       ? await inspectStageCliPreflight(agentId) : null;
   return NextResponse.json({session,...(transport?{transport}:{}),
     ...(firstTurnReadiness?{firstTurnReadiness}:{}),
-    ...(nativeStagePreflight?{nativeStagePreflight}:{})});
+    ...(nativeStagePreflight?{nativeStagePreflight}:{}),
+    ...(weg2Registration?{weg2:{mode:"EXISTING_LIVE_EXECUTOR",registeredOnly:true,
+      stageFirstTurnBlocked:process.env.MC_PREVIEW==="1",modelCalls:0}}:{})});
 }
 
 export async function changeCliAgentSession(request: Request, agentId: CliAgentId) {
