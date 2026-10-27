@@ -39,7 +39,7 @@ export function planClaudeSession(agent:RosterAgent|null) {
  // Dennis explicitly chose to preserve and repair the registered ACF identity,
  // not silently fork a new native or roster session.
  if(old)return {status:"REPAIR_EXISTING" as const,sessionRef:LEGACY_SESSION,proof,
-   note:"Bestaande ACF-sessie behouden; herstel alleen met bewezen gratis SDK/FCC-binding en zonder native-history reset."};
+   note:"Bestaande ACF-sessie behouden; herstel via Dennis' bestaande FCC-model- en fallbackconfiguratie, zonder native-history reset of aanvullende cost/free-only gate."};
  return {status:"BLOCKED" as const,sessionRef:null,proof,
    note:"Geen bestaande ACF-registratie aangetroffen. Maak niet stilzwijgend een tweede sessie."};
 }

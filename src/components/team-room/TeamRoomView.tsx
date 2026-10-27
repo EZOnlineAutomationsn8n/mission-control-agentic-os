@@ -38,6 +38,8 @@ import { FreeRoomPanel } from "@/components/team-room/FreeRoomPanel";
 import { AcfReplyPanel } from "@/components/team-room/AcfReplyPanel";
 import { activityFromAcf, type AcfActivity } from "@/components/team-room/acf-activity";
 import { deriveVisibleParticipants } from "@/lib/acf/visible-participants";
+import { deriveClaudeFccOperatorState, type ClaudeFccOperatorInput } from "@/lib/acf/claude-fcc-operator-view";
+import { classifyClaudeError } from "@/lib/acf/werkplaats-session-recovery";
 import { ROOM_VIEW_KEY, roomShellKey, parseRoomView, parseShellView, verifySavedRun,
   type StoredRoomView, type StoredShellView } from "@/lib/acf/team-room-rehydration";
 
@@ -642,7 +644,7 @@ function TeamRoomShell({
   };
 
   return (
-    <section className="acf-shell" id="team-room-my-team">
+    <section className="acf-shell" id="team-room-agent-pool">
       <div className="acf-shell-preview-bar">
         <div className="min-w-0">
           <div className="acf-shell-preview-title">
@@ -951,6 +953,150 @@ function TeamRoomShell({
         <span>MC session source</span>
         <span>{freeRoom ? "ACF operatorbediening · " : "Read only · "}{readLabel}</span>
       </footer>
+    </section>
+  );
+}
+
+/** Existing Team Room operator lane: one read-only reconciliation of FCC, native session and ACF. */
+function ClaudeFccStatusPanel({teamPaused}:{teamPaused:boolean}) {
+  type Readback={
+    stageSession:ClaudeFccOperatorInput["stageSession"];
+    acfSession:ClaudeFccOperatorInput["acfSession"];
+    canJoinNow:boolean;
+    fcc:ClaudeFccOperatorInput["fcc"];
+    nativeVersion:string|null;
+    errorCode:string;
+    observedAt:string;
+    readError:string|null;
+  };
+  const [readback,setReadback]=useState<Readback|null>(null);
+  const [diagnosticsOpen,setDiagnosticsOpen]=useState(false);
+  const [checking,setChecking]=useState(false);
+  const check=useCallback(async()=>{
+    try {
+      // GET only; no new session, no bootstrap, no model or ACF turn.
+      const urls=[
+        "/api/connectors/claude-code/session?sessionId=acf-werkplaats-claude-code",
+        "/api/acf/team-room/roster",
+        "/api/connectors/fcc/status",
+        "/api/cockpit/runtime-truth",
+      ];
+      const responses=await Promise.all(urls.map(url=>fetch(url,{cache:"no-store"})));
+      if(responses.some(r=>!r.ok))throw Error("READ_SOURCE_UNAVAILABLE");
+      const [sessionBody,rosterBody,fccBody,runtimeBody]=await Promise.all(
+        responses.map(r=>r.json())) as [
+          {session?:{status:string;active:boolean;claudeSessionId?:string;lastError?:string|null}|null},
+          {agents?:Array<{agent_id:string;can_join_now:boolean;sessions?:Array<{session_ref:string;status:string;verdict:string;last_error?:string|null}>}>},
+          {status?:string},
+          {runtimes?:Array<{targetId:string;installedVersion?:string|null}>},
+        ];
+      const stage=sessionBody.session??null;
+      const claude=rosterBody.agents?.find(a=>a.agent_id==="claude-code");
+      const acf=claude?.sessions?.find(x=>x.session_ref==="acf-werkplaats-claude-code")??null;
+      const rawError=acf?.last_error??stage?.lastError??"";
+      const fccStatus=fccBody.status;
+      setReadback({
+        stageSession:stage?{
+          status:stage.status,active:stage.active,
+          hasNativeId:Boolean(stage.claudeSessionId),
+          // Read-only status and an allocated UUID do not prove a stored first turn.
+          firstTurnStored:false,
+        }:null,
+        acfSession:acf?{status:acf.status,verdict:acf.verdict}:null,
+        canJoinNow:claude?.can_join_now===true,
+        fcc:fccStatus==="connected"||fccStatus==="degraded"||
+          fccStatus==="disconnected"?fccStatus:"unknown",
+        nativeVersion:runtimeBody.runtimes?.find(r=>r.targetId==="claude-code")?.installedVersion??null,
+        errorCode:classifyClaudeError(rawError).code,
+        observedAt:new Date().toISOString(),
+        readError:null,
+      });
+    }catch{
+      // Unknown beats a previously healthy but stale claim.
+      setReadback({stageSession:null,acfSession:null,canJoinNow:false,
+        fcc:"unknown",nativeVersion:null,errorCode:"UNKNOWN",observedAt:new Date().toISOString(),
+        readError:"Een of meer bestaande read-only bronnen zijn niet beschikbaar."});
+    }
+  },[]);
+  useEffect(()=>{
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous external GET read; state is updated only after responses
+    void check();
+    const timer=window.setInterval(()=>void check(),15_000);
+    return ()=>window.clearInterval(timer);
+  },[check]);
+  const state=deriveClaudeFccOperatorState({
+    stageSession:readback?.stageSession??null,acfSession:readback?.acfSession??null,
+    canJoinNow:readback?.canJoinNow??false,fcc:readback?.fcc??"unknown",
+    nativeVersion:readback?.nativeVersion??null,teamPaused,
+  });
+  const sessionLink="/?agent=claude-code&session=acf-werkplaats-claude-code";
+  const canOpenPrepared=readback?.stageSession?.status==="prepared";
+  return (
+    <section id="team-room-my-team" data-testid="team-room-claude-fcc-recovery"
+      className="mx-4 my-3 rounded-xl border border-cyan-400/40 bg-panel-2 p-3"
+      aria-label="Claude Code en FCC · status en herstel">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-sm font-semibold">Claude Code / FCC</h2>
+          <p className="mt-1 text-sm font-medium" role="status" data-testid="claude-fcc-status">
+            {state.title}
+          </p>
+          <p className="mt-1 text-xs text-muted">{state.explanation}</p>
+        </div>
+        <span className="rounded border border-border px-2 py-1 font-mono text-xs"
+          data-testid="claude-fcc-state">{readback?.readError?"UNKNOWN":state.kind}</span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted" data-testid="claude-fcc-source-status">
+        <span>FCC: {readback?.fcc==="connected"?"verbonden (alleen gateway)":readback?.fcc??"nog niet gemeten"}</span>
+        <span>Native CLI: {readback?.nativeVersion?"versie bevestigd":"uitvoering niet bevestigd"}</span>
+        <span>Werkplaats: {readback?.stageSession?.status??"onbekend"}</span>
+        <span>ACF: {readback?.acfSession?.verdict??"onbekend"}</span>
+      </div>
+      {readback?.readError&&<p className="mt-2 text-xs text-warn">{readback.readError}</p>}
+      {teamPaused&&<p className="mt-2 text-xs text-warn">Team Room-ingreep: gepauzeerd. Dit is niet de native Claude-sessiestatus.</p>}
+      <div className="mt-3 flex flex-wrap gap-2" data-testid="claude-fcc-recovery-actions">
+        {state.next==="SHOW_RESUME"&&(
+          <button type="button" className="mc-button mc-button-secondary mc-button-sm"
+            onClick={()=>document.getElementById("acf-operator-deck")?.scrollIntoView({block:"start",behavior:"smooth"})}>
+            Naar bestaande Hervatten-bediening
+          </button>
+        )}
+        {(canOpenPrepared||state.next==="VIEW_EXISTING"||state.kind==="READY")&&(
+          <a href={sessionLink} className="mc-button mc-button-secondary mc-button-sm"
+            data-testid="claude-fcc-open-session">
+            {canOpenPrepared?"Open voorbereide sessie":"Open bestaande Claude-sessie"}
+          </a>
+        )}
+        {state.next==="INSPECT_ERROR"&&(
+          <button type="button" className="mc-button mc-button-secondary mc-button-sm"
+            data-testid="claude-fcc-inspect-error" onClick={()=>setDiagnosticsOpen(true)}>
+            Bekijk veilige herstelactie
+          </button>
+        )}
+        <button type="button" className="mc-button mc-button-secondary mc-button-sm"
+          data-testid="claude-fcc-read-status" disabled={checking} onClick={()=>{
+            setChecking(true);void check().finally(()=>setChecking(false));
+          }}>
+          {checking?"Status lezen…":"Controleer actuele status"}
+        </button>
+      </div>
+      <details className="mt-3" open={diagnosticsOpen}
+        onToggle={e=>setDiagnosticsOpen(e.currentTarget.open)}
+        data-testid="claude-fcc-advanced">
+        <summary className="cursor-pointer text-xs text-muted">Geavanceerd / Beheer · herstelbewijs</summary>
+        <div className="mt-2 space-y-1 text-xs text-muted">
+          <p>FCC-health is geen bewijs van een uitvoerbare native Claude-sessie.</p>
+          <p>Oude ACF-registratie: {readback?.acfSession?.status??"onbekend"} · {readback?.acfSession?.verdict??"onbekend"}.</p>
+          <p>Foutcategorie: {readback?.errorCode??"nog niet gelezen"}.</p>
+          <p>De Werkplaatssessie en de oude LIVE/ACF-sessie hebben niet automatisch dezelfde native identiteit.</p>
+          <p>Bij ERROR: behoud bestaande native historie, voer geen bootstrap of automatische retry uit. De bestaande
+            voorbereide sessie kan alleen door Dennis bewust worden gebruikt; pas na echte uitvoerings- en
+            journalbewijzen kan ACF-admissie opnieuw worden beoordeeld.</p>
+          <p>Model- en fallbackroutes blijven de bestaande Dennis-configuratie; geen aanvullende gratis-model- of kostentoets.</p>
+          <p>Bronnen: GET Claude-session, ACF-roster, FCC-health en runtime-truth.</p>
+          <p>Gemeten: {readback?.observedAt??"nog niet"}</p>
+        </div>
+      </details>
     </section>
   );
 }
@@ -1501,6 +1647,8 @@ export function TeamRoomView() {
         </nav>
         <p className="mt-2 text-xs text-muted">Kies je team, praat in het bestaande gesprek of open een eerder teamgesprek. Technische bediening staat onder Geavanceerd / Beheer.</p>
       </section>
+      <ClaudeFccStatusPanel teamPaused={Boolean(selected?.teamView?.intervention?.open) &&
+        Boolean(selected?.participants.some(p=>p.agentId==="claude-code"))} />
       <section id="team-room-history" className="mx-4 my-3 rounded-xl border border-border/70 bg-panel-2 p-3"
         data-testid="acf-historical-run-selector" aria-label="Geschiedenis · opgeslagen Team Room-gesprekken">
         <div className="flex flex-wrap items-center justify-between gap-2">
