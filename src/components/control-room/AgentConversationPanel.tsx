@@ -166,6 +166,7 @@ export function AgentConversationPanel({
   const [entries, setEntries] = useState<AgentConversationEntry[]>([]);
   const [session, setSession] = useState<AgentSessionView | null>(null);
   const [runtimeTruth, setRuntimeTruth] = useState<RuntimeTruthView | null>(null);
+  const [nativeStageProbe, setNativeStageProbe] = useState<{code:string;isolated:boolean;binaryAvailable:boolean;loginVerified:boolean|null;modelCalls:0}|null>(null);
   const [bootstrap, setBootstrap] = useState<string | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(true);
@@ -213,10 +214,12 @@ export function AgentConversationPanel({
       // A real persisted session is the primary operator truth. Never make
       // this READY/PREPARED state wait on the optional runtime diagnostics.
       const response = await fetch(sessionEndpoint, { cache: "no-store" });
-      const data = await response.json() as { session?: AgentSessionView | null; error?: string };
+      const data = await response.json() as { session?: AgentSessionView | null; error?: string;
+        nativeStagePreflight?: {code:string;isolated:boolean;binaryAvailable:boolean;loginVerified:boolean|null;modelCalls:0} };
       if (!response.ok) throw new Error(data.error ?? `session returned HTTP ${response.status}`);
       if (!isCurrent()) return;
       setSession(data.session ?? null);
+      setNativeStageProbe(data.nativeStagePreflight ?? null);
       setLoadError(null);
       setLoading(false);
       // History belongs to the session, not to the pane. Read it independently
@@ -588,6 +591,14 @@ export function AgentConversationPanel({
         Gemini Werkplaats-sessie alleen voorbereid: geen verborgen bootstrap, modelbeurt of bevestigde native login.
         Jouw eerste eigen Verstuur probeert de bestaande Gemini CLI te bereiken. ACF mag deze sessie pas na
         aantoonbaar geslaagde uitvoering en persistente history bindbaar noemen.
+      </p>}
+      {session?.status==="prepared" && (agentId==="codex" || agentId==="gemini") && nativeStageProbe && <p
+        role="status" data-testid="native-stage-cli-proof"
+        className="rounded border border-warn/40 p-2 text-xs text-warn">
+        Werkplaats native profiel: {nativeStageProbe.code}. HOME geïsoleerd: {nativeStageProbe.isolated?"JA":"NEE"}.
+        CLI aanwezig: {nativeStageProbe.binaryAvailable?"JA":"NEE"}.
+        Native login: {nativeStageProbe.loginVerified===true?"bevestigd":nativeStageProbe.loginVerified===false?"niet bevestigd":"onbekend"}.
+        Dit is geen bewezen agentantwoord; modelcalls: 0.
       </p>}
       {session?.status==="prepared" && agentId==="codex" && <p role="status" data-testid="codex-staged-prepared"
         className="rounded border border-accent/40 p-2 text-xs text-accent">

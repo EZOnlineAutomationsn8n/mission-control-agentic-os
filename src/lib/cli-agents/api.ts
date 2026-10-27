@@ -10,7 +10,7 @@ import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-co
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { runAgyTurn } from "./agy-runner";
 import { isPreparedStageNativeFirstTurn } from "./first-native-turn";
-import { stageCliProfileEnvironment } from "./stage-cli-profile";
+import { inspectStageCliPreflight, stageCliProfileEnvironment } from "./stage-cli-profile";
 import { runHermesTurn } from "./hermes-runner";
 import { runOpenClawTurn } from "./openclaw-runner";
 import { runGeminiTurn } from "./gemini-runner";
@@ -118,8 +118,12 @@ export async function getCliAgentSession(request: Request, agentId: CliAgentId) 
   const firstTurnReadiness=session ? await readFirstTurnReadiness({
     agentId,sessionId:key,status:session.status,active:session.active,
   },transport) : null;
+  const nativeStagePreflight = process.env.MC_PREVIEW === "1" && session?.status === "prepared" &&
+    (agentId === "codex" || agentId === "gemini")
+      ? await inspectStageCliPreflight(agentId) : null;
   return NextResponse.json({session,...(transport?{transport}:{}),
-    ...(firstTurnReadiness?{firstTurnReadiness}:{})});
+    ...(firstTurnReadiness?{firstTurnReadiness}:{}),
+    ...(nativeStagePreflight?{nativeStagePreflight}:{})});
 }
 
 export async function changeCliAgentSession(request: Request, agentId: CliAgentId) {
