@@ -11,6 +11,7 @@ export type StoredRoomView = {
   mode: "discuss" | "fusion" | "council" | "playground";
   historyOpen: boolean;
   detailsOpen: boolean;
+  operatorSection: "team"|"conversation"|"history";
   operatorObjective: string;
   operatorSuccessCriterion: string;
   draftChoices: Record<string,{selected:boolean;session:string;functions:string}>;
@@ -51,6 +52,8 @@ export function parseRoomView(raw:string|null):StoredRoomView|null {
   return {
    version:1,runId,mode,
    historyOpen:p.historyOpen===true,detailsOpen:p.detailsOpen===true,
+   operatorSection:p.operatorSection==="team"||p.operatorSection==="conversation"||
+     p.operatorSection==="history"?p.operatorSection:p.historyOpen===true?"history":"team",
    operatorObjective:validText(p.operatorObjective)?p.operatorObjective:"",
    operatorSuccessCriterion:validText(p.operatorSuccessCriterion)?p.operatorSuccessCriterion:"",
    draftChoices:drafts,

@@ -642,7 +642,7 @@ function TeamRoomShell({
   };
 
   return (
-    <section className="acf-shell">
+    <section className="acf-shell" id="team-room-my-team">
       <div className="acf-shell-preview-bar">
         <div className="min-w-0">
           <div className="acf-shell-preview-title">
@@ -855,7 +855,7 @@ function TeamRoomShell({
         <section className="acf-shell-selection" aria-label="Selecteer deelnemers voor Team Room">{selection}</section>
         <div className="acf-shell-canvas acf-shell-canvas-preview">
           <div className="acf-shell-nebula" aria-hidden="true" />
-          <section className="mc-team-shared-conversation" data-testid="acf-shared-conversation" aria-label="Gezamenlijk ACF-gesprek">
+          <section id="team-room-conversation" className="mc-team-shared-conversation" data-testid="acf-shared-conversation" aria-label="Gezamenlijk ACF-gesprek">
             <header className="mc-team-shared-conversation-head">
               <div>
                 <h2 className="text-base font-semibold">Gezamenlijk gesprek</h2>
@@ -985,6 +985,8 @@ export function TeamRoomView() {
   const [mode, setMode] = useState<TeamRoomMode>("discuss");
   const [focusPreference, setFocusPreference] = useState<TeamRoomFocusPreference>({ role: null, sequence: null });
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [operatorSection,setOperatorSection]=useState<StoredRoomView["operatorSection"]>("team");
+  const [runParticipants,setRunParticipants]=useState<Record<string,string[]>>({});
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [operatorObjective, setOperatorObjective] = useState("");
   const [operatorSuccessCriterion, setOperatorSuccessCriterion] = useState("");
@@ -1006,6 +1008,7 @@ export function TeamRoomView() {
         setSelectedRunIdState(saved.runId);
         setMode(saved.mode);
         setHistoryOpen(saved.historyOpen);
+        setOperatorSection(saved.operatorSection);
         setDetailsOpen(saved.detailsOpen);
         setOperatorObjective(saved.operatorObjective);
         setOperatorSuccessCriterion(saved.operatorSuccessCriterion);
@@ -1017,11 +1020,11 @@ export function TeamRoomView() {
   }, []);
   useEffect(() => {
     if (!viewRestored)return;
-    const saved:StoredRoomView = {version:1,runId:selectedRunId,mode,historyOpen,detailsOpen,
+    const saved:StoredRoomView = {version:1,runId:selectedRunId,mode,historyOpen,detailsOpen,operatorSection,
       operatorObjective,operatorSuccessCriterion,draftChoices,focusPreference};
     try { window.localStorage.setItem(ROOM_VIEW_KEY,JSON.stringify(saved)); }
     catch { /* browser preferences cannot alter the ACF journal */ }
-  }, [viewRestored,selectedRunId,mode,historyOpen,detailsOpen,operatorObjective,
+  }, [viewRestored,selectedRunId,mode,historyOpen,detailsOpen,operatorSection,operatorObjective,
       operatorSuccessCriterion,draftChoices,focusPreference]);
 
   const refresh = useCallback(async (runId: string | null) => {
@@ -1125,6 +1128,33 @@ export function TeamRoomView() {
     refreshFailureKind,
   });
 
+  const indexedRuns=display?.runs??[];
+  const indexedIds=indexedRuns.map(r=>r.runId).join("|");
+  useEffect(()=>{
+    if(!viewRestored||!indexedIds)return;
+    let cancelled=false;
+    const ids=indexedIds.split("|").filter(Boolean);
+    async function loadRoster(){
+      const resolved:Record<string,string[]>={};
+      // Read participant IDs from existing canonical ACF run details, never native pool guesses.
+      for(let offset=0;offset<ids.length;offset+=4){
+        const parts=await Promise.all(ids.slice(offset,offset+4).map(async id=>{
+          try{
+            const r=await fetch("/api/acf/team-room?runId="+encodeURIComponent(id),{cache:"no-store"});
+            if(!r.ok)return [id,[]] as const;
+            const snap=await r.json() as AcfTeamRoomSnapshot;
+            if(snap.availability!=="available"||snap.selectedRun?.runId!==id)return [id,[]] as const;
+            return [id,[...new Set(snap.selectedRun.participants.map(p=>p.agentId).filter((x):x is string=>Boolean(x)))]] as const;
+          }catch{return [id,[]] as const;}
+        }));
+        for(const [id,agents] of parts)resolved[id]=[...agents];
+        if(cancelled)return;
+      }
+      if(!cancelled)setRunParticipants(resolved);
+    }
+    void loadRoster();
+    return ()=>{cancelled=true};
+  },[indexedIds,viewRestored]);
   const selected = display?.selectedRun ?? null;
   const discussion = useMemo(() => selected ? buildTeamRoomDiscussion(selected) : null, [selected]);
 
@@ -1394,10 +1424,27 @@ export function TeamRoomView() {
   const currentTurn = discussion?.timeline.length ?? 0;
 
   useEffect(() => {
-    if (!historyOpen || !selected?.runId || !viewRestored) return;
+    if (!historyOpen || operatorSection!=="history" || !selected?.runId || !viewRestored) return;
     // Scroll only on run/open-state change, never on the repeating ACF poll.
     window.requestAnimationFrame(() => document.getElementById("team-room-canonical-history")?.scrollIntoView({block:"start"}));
-  }, [historyOpen,selected?.runId,viewRestored]);
+  }, [historyOpen,operatorSection,selected?.runId,viewRestored]);
+
+  const navigateOperator=(section:StoredRoomView["operatorSection"])=>{
+    setMode("discuss");
+    setOperatorSection(section);
+    if(section==="history")setHistoryOpen(true);
+    window.requestAnimationFrame(()=>document.getElementById(
+      section==="team"?"team-room-my-team":section==="conversation"?"team-room-conversation":"team-room-history"
+    )?.scrollIntoView({block:"start",behavior:"smooth"}));
+  };
+  const hasDisplay=Boolean(display);
+  useEffect(()=>{
+    if(!viewRestored||mode!=="discuss"||!hasDisplay||operatorSection==="team")return;
+    const frame=window.requestAnimationFrame(()=>document.getElementById(
+      operatorSection==="conversation"?"team-room-conversation":"team-room-history"
+    )?.scrollIntoView({block:"start"}));
+    return ()=>window.cancelAnimationFrame(frame);
+  },[viewRestored,mode,operatorSection,hasDisplay]);
 
   const latestLineage = discussion?.latestParticipantMessage
     ? discussion.timeline.find((entry) => entry.messageId === discussion.latestParticipantMessage?.messageId)?.lineage ?? null
@@ -1413,6 +1460,8 @@ export function TeamRoomView() {
           <h1 className="mt-1 text-2xl sm:text-3xl font-semibold">Mission Control Team Room</h1>
           <p className="mt-1.5 text-sm text-muted">Jouw gebruikersruimte · samenwerking en berichten worden bewaard door de Agentic Collaboration Fabric (ACF).</p>
 
+          <details className="mt-3" data-testid="team-room-advanced-modes">
+            <summary className="cursor-pointer text-xs text-muted">Geavanceerd / Beheer · overige Team Room-modi</summary>
           <nav className="acf-mode-tabs" aria-label="Team Room modes">
             {TEAM_ROOM_MODES.map((definition) => (
               <button
@@ -1428,6 +1477,7 @@ export function TeamRoomView() {
               </button>
             ))}
           </nav>
+          </details>
         </div>
 
         <div className="acf-team-room-hero-controls">
@@ -1439,6 +1489,52 @@ export function TeamRoomView() {
         </div>
       </header>
 
+      <section className="mx-4 my-3 rounded-xl border border-border bg-panel-2 p-3"
+        aria-label="Mijn Team Room" data-testid="team-room-simple-navigation">
+        <nav className="flex flex-wrap gap-2" aria-label="Mijn team, gesprek en geschiedenis">
+          {([["team","Mijn team"],["conversation","Gesprek"],["history","Geschiedenis"]] as const).map(([section,label])=>(
+            <button key={section} type="button" data-testid={"team-room-nav-"+section}
+              aria-pressed={operatorSection===section}
+              onClick={()=>navigateOperator(section)}
+              className={"mc-button mc-button-sm "+(operatorSection===section?"mc-button-primary":"mc-button-secondary")}>{label}</button>
+          ))}
+        </nav>
+        <p className="mt-2 text-xs text-muted">Kies je team, praat in het bestaande gesprek of open een eerder teamgesprek. Technische bediening staat onder Geavanceerd / Beheer.</p>
+      </section>
+      <section id="team-room-history" className="mx-4 my-3 rounded-xl border border-border/70 bg-panel-2 p-3"
+        data-testid="acf-historical-run-selector" aria-label="Geschiedenis · opgeslagen Team Room-gesprekken">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="font-semibold text-sm">Geschiedenis</h2>
+          <span className="text-xs text-muted">{indexedRuns.length} opgeslagen teamgesprekken · ACF-journal</span>
+        </div>
+        {indexedRuns.length===0 ? (
+          <p role="status" className="mt-2 text-sm text-muted">{display?.availability==="empty"?"Nog geen historische runs in deze bron.":"De ACF-runindex is tijdelijk niet beschikbaar. Bestaande gesprekken worden niet vervangen."}</p>
+        ):(
+          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {indexedRuns.map(run=>{
+              const dateParts=run.runId.match(/(?:^|-)(20[0-9]{2})([0-9]{2})([0-9]{2})(?:-|$)/);
+              const dateLabel=dateParts?dateParts[3]+"-"+dateParts[2]+"-"+dateParts[1]:"Datum onbekend";
+              const agents=selected?.runId===run.runId
+                ? selected.participants.map(p=>p.agentId).filter((x):x is string=>Boolean(x))
+                : runParticipants[run.runId]??[];
+              return <button key={run.runId} type="button" data-testid="team-room-history-run"
+                aria-current={selectedRunId===run.runId?"true":undefined}
+                className={"rounded-lg border p-3 text-left "+(selectedRunId===run.runId
+                  ?"border-cyan-400/70 bg-cyan-400/10":"border-border/60 bg-background/40 hover:border-cyan-400/40")}
+                onClick={()=>{
+                  setMode("discuss");setOperatorSection("history");
+                  setFocusPreference({role:null,sequence:null});
+                  setSelectedRunId(run.runId);setHistoryOpen(true);void refresh(run.runId);
+                }}>
+                <span className="block font-semibold text-sm">{run.goal||"Doel niet ingevuld"}</span>
+                <span className="mt-1 block text-xs text-muted">Deelnemers: {agents.length?[...new Set(agents)].join(", "):"nog niet uitgelezen"}</span>
+                <span className="mt-1 block text-xs text-muted">Datum uit run-ID: {dateLabel} · {run.runState}</span>
+                <span className="mt-1 block break-all font-mono text-[10px] text-muted">{run.runId}</span>
+              </button>;
+            })}
+          </div>
+        )}
+      </section>
       {refreshError && (
         <section className="rounded-xl border border-danger/30 bg-danger/10 p-3 text-sm">
           <div className="font-medium text-danger">{refreshFailureKind === "malformed" ? "MALFORMED_EXPORT" : "ACF_UNAVAILABLE"}</div>
@@ -1502,24 +1598,6 @@ export function TeamRoomView() {
               <span className="mc-button mc-button-secondary mc-button-sm">{historyOpen ? "Hide" : "View history"}</span>
             </button>
 
-            <nav className="mt-2 flex flex-wrap gap-2" aria-label="Kies historisch Team Room-gesprek"
-                 data-testid="team-room-canonical-run-switcher">
-              {display.runs.map(run=>(
-                <button type="button" key={run.runId}
-                  className={"mc-button mc-button-sm "+(selected.runId===run.runId
-                    ? "mc-button-primary" : "mc-button-secondary")}
-                  aria-current={selected.runId===run.runId?"true":undefined}
-                  onClick={()=>{
-                    if (run.runId===selected.runId)return;
-                    setFocusPreference({role:null,sequence:null});
-                    setSelectedRunId(run.runId);
-                    setHistoryOpen(true);
-                    void refresh(run.runId);
-                  }}>
-                  {run.runId} · {run.goal}
-                </button>
-              ))}
-            </nav>
             {historyOpen && (
               <div className="mt-4 max-h-[28rem] overflow-y-auto space-y-2 pr-1">
                 {discussion.history.map((message: AcfMessageReadModel) => (
@@ -1592,20 +1670,6 @@ export function TeamRoomView() {
           )}
         />
       )}
-      {mode === "discuss" && display?.availability === "empty" && display.runs.length > 0 && (
-        <section className="mx-4 my-2 rounded-lg border border-border/60 p-3" data-testid="acf-historical-run-selector">
-          <div className="text-xs font-semibold text-muted">Historische runs · alleen openen als je ze bewust wilt bekijken</div>
-          <div className="mt-2 flex flex-wrap gap-2">
-            {display.runs.map((historicalRun) => (
-              <button type="button" key={historicalRun.runId} className="mc-button mc-button-secondary mc-button-sm"
-                onClick={()=>{setSelectedRunId(historicalRun.runId);setFocusPreference({role:null,sequence:null});setHistoryOpen(true);void refresh(historicalRun.runId);}}>
-                {historicalRun.runId} · {historicalRun.runState} · {historicalRun.goal}
-              </button>
-            ))}
-          </div>
-        </section>
-      )}
-
       {mode === "discuss" && display?.availability === "available" && selected && discussion && (
         <div className="mx-4 my-2">
           <button type="button" className="mc-button mc-button-secondary" onClick={() => setDetailsOpen((o) => !o)}>{detailsOpen ? "Technische details verbergen" : "Technische details"}</button>
@@ -1628,7 +1692,7 @@ export function TeamRoomView() {
         /></details>
       )}
 
-      <details className="mx-4 my-2 rounded-lg border border-border/60 p-2"><summary className="cursor-pointer text-xs text-muted">Historische v1 team-open (builder/reviewer) · uitklappen</summary>
+      <details className="mx-4 my-2 rounded-lg border border-border/60 p-2"><summary className="cursor-pointer text-xs text-muted">Geavanceerd / Beheer · oude v1 team-open (builder/reviewer)</summary>
       <section className="mx-4 my-3 rounded-xl border border-cyan-400/40 bg-panel-2 p-4" aria-label="Mission Control Team Room opdracht">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold">Nieuw team-doel</h2>
@@ -1889,23 +1953,7 @@ export function TeamRoomView() {
 
 
 
-          <section className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted">Runs</span>
-            {display.runs.map((run) => (
-              <button
-                type="button"
-                key={run.runId}
-                onClick={() => {
-                  setSelectedRunId(run.runId);
-                  setFocusPreference({ role: null, sequence: null });
-                  setHistoryOpen(true);
-                }}
-                className={`rounded-lg border px-2.5 py-1.5 text-xs mono ${selected.runId === run.runId ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-200" : "border-border bg-panel-2 text-muted hover:text-foreground"}`}
-              >
-                {run.runId} · {run.runState} · {run.goal}
-              </button>
-            ))}
-          </section>
+
         </>
       )}
 
