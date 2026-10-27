@@ -154,7 +154,7 @@ export function Sidebar() {
   // One global Mission Control Werkplaats version, with current page context.
   // No page/component-specific version numbers or separate version registry.
   const pageLabel = pathname === "/team-room"
-    ? "ACF Room"
+    ? "Team Room"
     : [...WORKSPACE, ...SELF, ...SYSTEM].find((item) => item.href === pathname)?.label
       ?? (pathname.startsWith("/agents/") ? "Agent" : pathname.startsWith("/systems/") ? "Systeem" : "Mission Control");
 

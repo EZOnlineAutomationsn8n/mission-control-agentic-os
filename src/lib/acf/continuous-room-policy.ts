@@ -76,3 +76,25 @@ export function isUncertainTurnOutcome(code: string | undefined) {
   if (!code) return true;
   return /TIMEOUT|UNKNOWN|PENDING|IN_FLIGHT|RECONCIL|NETWORK|429|RATE_LIMIT|INTERRUPTED/i.test(code);
 }
+
+/**
+ * One operator request may use the already existing ACF team-say followed by
+ * team-collaborate, but ONLY after a fresh journal read proves every directed
+ * reply is settled. A failed/open native turn is never retried or skipped.
+ * The initial recipient selection is a UI presentation choice; all roles must
+ * be bound to the same existing schema-2 run.
+ */
+export function safeToStartCollaborationAfterReplies(
+  view: AcfTeamViewV1 | null,
+  chosenRoles: string[],
+): boolean {
+  if (!view || view.schema !== 2 || view.run_status !== "ACTIVE" || view.in_flight) return false;
+  if ((view.intervention?.open?.owed?.length ?? 0) > 0) return false;
+  if (view.collaboration && view.collaboration.status !== "ENDED") return false;
+  // Even an ENDED window can leave a failed/unknown route intent in its
+  // journal. It is not safe to begin a new coordination window above it.
+  if ((view.collaboration?.open_pending?.length ?? 0) > 0) return false;
+  if (chosenRoles.length < 2 || new Set(chosenRoles).size !== chosenRoles.length) return false;
+  const bound = new Set(view.participants.map(participant => participant.role).filter(Boolean));
+  return chosenRoles.every(role => bound.has(role));
+}

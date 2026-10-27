@@ -642,6 +642,16 @@ function TeamRoomShell({
         </button>
       </div>
 
+      <section className="mx-4 mt-2 rounded-lg border border-border/70 bg-background/35 px-3 py-2 text-xs"
+        aria-label="Regie en ACF coördinatiebewijs" data-testid="team-room-coordination-status">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+          <strong>Operationele regie: Dennis (direct)</strong>
+          <span>AGY: {run?.leaseHolder === "ANTIGRAVITY" ? "ACF-lease vermeldt ANTIGRAVITY; native AGY-besturing niet bevestigd" : "niet ingeschakeld als Team Room-orchestrator"}</span>
+          <span className="text-muted">ACF-lease: {stale ? "ONBEKEND (verouderde status)" : run?.leaseHolder ?? "geen run / niet geëxporteerd"}</span>
+        </div>
+        <p className="mt-1 text-[11px] text-muted">Directe agentcommunicatie blijft onafhankelijk van AGY. Een verbonden AGY-endpoint bewijst geen veilige besturingsoverdracht; die verschijnt pas als de bestaande executors, ACF-leases en sessiecontinuïteit dit ondersteunen.</p>
+      </section>
+
       <section className="mc-team-original-five" aria-label="Originele Team Room met vier agentvensters en centraal leesvenster" data-testid="original-five-card-room">
         <header className="mc-team-visual-topline">
           <div>
@@ -1294,9 +1304,9 @@ export function TeamRoomView() {
     <div className="acf-team-room-page">
       <header className="acf-team-room-hero">
         <div className="acf-team-room-hero-copy">
-          <div className="text-[10px] font-semibold tracking-[0.18em] text-cyan-300">AGENTIC COLLABORATION FABRIC</div>
-          <h1 className="mt-1 text-2xl sm:text-3xl font-semibold">ACF Team Room</h1>
-          <p className="mt-1.5 text-sm text-muted">Visual collaboration topology over ACF&apos;s canonical read/export surface.</p>
+          <div className="text-[10px] font-semibold tracking-[0.18em] text-cyan-300">MISSION CONTROL · TEAM ROOM</div>
+          <h1 className="mt-1 text-2xl sm:text-3xl font-semibold">Mission Control Team Room</h1>
+          <p className="mt-1.5 text-sm text-muted">Jouw gebruikersruimte · samenwerking en berichten worden bewaard door de Agentic Collaboration Fabric (ACF).</p>
 
           <nav className="acf-mode-tabs" aria-label="Team Room modes">
             {TEAM_ROOM_MODES.map((definition) => (
@@ -1450,7 +1460,7 @@ export function TeamRoomView() {
       )}
 
       <details className="mx-4 my-2 rounded-lg border border-border/60 p-2"><summary className="cursor-pointer text-xs text-muted">Historische v1 team-open (builder/reviewer) · uitklappen</summary>
-      <section className="mx-4 my-3 rounded-xl border border-cyan-400/40 bg-panel-2 p-4" aria-label="ACF Team Room objective">
+      <section className="mx-4 my-3 rounded-xl border border-cyan-400/40 bg-panel-2 p-4" aria-label="Mission Control Team Room opdracht">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-semibold">Nieuw team-doel</h2>
           <span className="text-xs font-semibold text-cyan-300">{agentLabel(openRoles.builder)} bouwt · {agentLabel(openRoles.reviewer)} reviewt · ACF stuurt</span>

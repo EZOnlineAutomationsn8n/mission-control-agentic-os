@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { AcfReplyPanel } from "./AcfReplyPanel";
 import type { AcfTeamRoomRun, AcfTeamViewV1 } from "@/lib/acf/types";
 import { deriveEvidenceGroupReport, type EvidenceKind } from "@/lib/acf/evidence-group-report";
 import { agentLabel, refusalText, type CallControl, type ControlAnswer, type WaitForStep } from "./OperatorDeck";
 import { FREE_ROOM_STEPS_PER_CLICK, availableWindowFromStore, isUncertainTurnOutcome, readFreeRoomState,
-  type FreeRoomPendingKind } from "@/lib/acf/continuous-room-policy";
+  type FreeRoomPendingKind, safeToStartCollaborationAfterReplies } from "@/lib/acf/continuous-room-policy";
 
 type Props = {
   run: AcfTeamRoomRun;
@@ -39,6 +39,9 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
   const [uncertain, setUncertain] = useState(false);
   const [confirmStop, setConfirmStop] = useState(false);
   const [showEvidenceReport, setShowEvidenceReport] = useState(false);
+  // UI-only synchronous guard against a repeated click during the first ACF write.
+  // Never invent a new session or dispatch an uncertain send twice.
+  const submissionGuard = useRef(false);
   const report = useMemo(() => deriveEvidenceGroupReport(run), [run]);
   const selected = recipients.includes("TEAM") ? members.map(p => p.handle) : recipients.filter(r => members.some(p => p.handle === r));
   const owed = run.teamView?.intervention?.open?.owed ?? [];
@@ -60,7 +63,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     setRecipients(next.length === members.length ? ["TEAM"] : next);
   }
 
-  async function settle(mode: FreeRoomPendingKind) {
+  async function settle(mode: FreeRoomPendingKind): Promise<boolean> {
     // Bounded *per-click* work. It is never a terminal cap on room history.
     // No hidden server/browser infinite loop, no new backend scheduling.
     for (let step = 0; step < FREE_ROOM_STEPS_PER_CLICK; step++) {
@@ -68,15 +71,15 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
       const state = readFreeRoomState(view, mode);
       if (state.kind === "ended") {
         setThinking(""); setNote(state.label + ". " + state.detail);
-        await refresh(run.runId); return;
+        await refresh(run.runId); return true;
       }
       if (state.kind !== "ready") {
         setThinking("");
         setNote(state.label + ": " + state.detail + " Geen automatische retry.");
         if (state.kind === "pending" || state.kind === "unknown") setUncertain(true);
-        await refresh(run.runId); return;
+        await refresh(run.runId); return false;
       }
-      if (!view) return;
+      if (!view) return false;
       if (mode === "replies") {
         const target = view.intervention?.open?.owed?.[0]?.to ?? null;
         setThinking((byHandle.get(target ?? "")?.agent ? agentLabel(byHandle.get(target ?? "")?.agent) : (target ?? "Agent")) + " denkt na…");
@@ -89,7 +92,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
       if (!started.ok) {
         if (started.code === "INTERVENTION_NOTHING_OWED") {
           setThinking(""); setNote("Geen antwoorden meer open.");
-          await refresh(run.runId); return;
+          await refresh(run.runId); return true;
         }
         if (isUncertainTurnOutcome(started.code)) setUncertain(true);
         throw Error("Beurt niet gestart: " + refusalText(started) + ". Controleer de ACF-journal voordat je verdergaat.");
@@ -101,7 +104,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
       }
       if (!finished.ok) {
         if (finished.code === "INTERVENTION_NOTHING_OWED") {
-          setThinking(""); await refresh(run.runId); return;
+          setThinking(""); await refresh(run.runId); return true;
         }
         if (isUncertainTurnOutcome(finished.code)) setUncertain(true);
         throw Error("ACF meldde: " + refusalText(finished) + ". Geen automatische retry.");
@@ -112,6 +115,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     setThinking("");
     setNote("Werkvenster van " + FREE_ROOM_STEPS_PER_CLICK + " beurten afgerond. Kamer en geschiedenis blijven behouden. Controleer de voortgang en kies zelf 'Volgende reeks' om door te gaan.");
     await refresh(run.runId);
+    return false;
   }
 
   async function continueWindow() {
@@ -229,20 +233,57 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     await refresh(run.runId);
   }
 
-  async function send() {
+  async function send(withCollaboration = false) {
     const message = text.trim();
-    if (locked || uncertain || selected.length < 1 || !message || message.length > limit || owed.length) return;
+    if (submissionGuard.current || locked || uncertain || selected.length < 1 ||
+      !message || message.length > limit || owed.length || (withCollaboration && selected.length < 2)) return;
+    submissionGuard.current = true;
     setBusy("free-room-send"); setNote(""); setThinking("");
     try {
-      const to: string | string[] = recipients.includes("TEAM") || selected.length === members.length ? "TEAM" : selected;
+      const chosenRoles = [...selected];
+      const to: string | string[] = recipients.includes("TEAM") || chosenRoles.length === members.length ? "TEAM" : chosenRoles;
       const result = await callControl("team-say", { run_id: run.runId, to, text: message, kind: "QUESTION" });
-      if (!result.ok) { setNote("Niet verstuurd: " + refusalText(result)); return; }
+      if (!result.ok) {
+        if (isUncertainTurnOutcome(result.code)) setUncertain(true);
+        setNote("Niet bevestigd als verstuurd: " + refusalText(result) + ". Bij onbekende status nooit opnieuw sturen.");
+        return;
+      }
       setText("");
-      setNote("Bericht geplaatst in ACF. Antwoorden worden één voor één opgehaald.");
+      setNote("Bericht eenmaal geplaatst in bestaande Team Room. ACF haalt gerichte antwoorden op.");
       await refresh(run.runId);
-      await settle("replies");
-    } catch(e) { setNote("Gestopt: " + String(e) + ". Geen automatische herhaling van het bericht."); }
-    finally { setThinking(""); setBusy(null); await refresh(run.runId); }
+      const resolved = await settle("replies");
+      if (!withCollaboration) return;
+      if (!resolved) {
+        setNote("Opdracht opgeslagen; antwoorden nog niet bewezen afgerond. Geen samenwerking gestart en geen automatische retry. Controleer ACF en gebruik 'Open antwoorden ophalen'.");
+        return;
+      }
+      const current = await readView(run.runId);
+      if (!safeToStartCollaborationAfterReplies(current, chosenRoles)) {
+        setNote("Antwoorden gelezen; ACF bevestigt geen veilige start van de samenwerking. Bestaand gesprek blijft intact; geen extra dispatch.");
+        return;
+      }
+      // The same ACF journal, same bindings, same conversation. An explicit
+      // one-click choice starts one bounded C<n> window, never a new room.
+      setBusy("free-room-send-collaborate");
+      const start = await callControl("team-collaborate", {
+        run_id: run.runId, participants: chosenRoles, rounds, routing_mode: "RESPONSIVE",
+        topic: topic.trim() || message,
+      });
+      if (!start.ok) {
+        if (isUncertainTurnOutcome(start.code)) setUncertain(true);
+        setNote("Antwoorden bewaard; samenwerking niet bevestigd: " + refusalText(start) + ". Geen tweede verzoek.");
+        return;
+      }
+      setNote("ACF heeft één samenwerkingsvenster geopend in dezelfde Team Room. Echte groepsbeurten volgen, zonder nieuwe sessie.");
+      await refresh(run.runId);
+      await settle("collaboration"); // one bounded per-click chunk, no silent continuation
+    } catch(e) {
+      setUncertain(true); // send outcome may be unknown; no retry by operator path
+      setNote("Uitvoering gestopt bij onbekende uitkomst: " + String(e) + ". ACF-journal controleren, nooit automatisch opnieuw versturen.");
+    } finally {
+      submissionGuard.current = false;
+      setThinking(""); setBusy(null); await refresh(run.runId);
+    }
   }
 
   async function collaborate() {
@@ -294,8 +335,20 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
       </label>
       <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs text-muted">{selected.length} ontvanger(s) · {owed.length} antwoord(en) open</span>
-        <button type="button" data-testid="free-room-send" className="mc-button mc-button-success" disabled={locked || uncertain || Boolean(owed.length) || selected.length<1 || !text.trim()} onClick={()=>void send()}>{busy==="free-room-send" ? "Antwoorden ophalen…" : "Verstuur"}</button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" data-testid="free-room-send" className="mc-button mc-button-success" disabled={locked || uncertain || Boolean(owed.length) || selected.length<1 || !text.trim()} onClick={()=>void send(false)}>{busy==="free-room-send" ? "Antwoorden ophalen…" : "Verstuur"}</button>
+          <button type="button" data-testid="free-room-send-collaborate" className="mc-button mc-button-primary"
+            title="Plaats jouw opdracht eenmalig, haal gerichte antwoorden op en start pas daarna een nieuw ACF-samenwerkingsvenster als het journal dat veilig toestaat."
+            disabled={locked || uncertain || Boolean(owed.length) || selected.length<2 || !text.trim() ||
+              !safeToStartCollaborationAfterReplies(run.teamView, selected)}
+            onClick={()=>void send(true)}>Verstuur + samenwerken</button>
+        </div>
       </div>
+      {!safeToStartCollaborationAfterReplies(run.teamView, selected) && selected.length>=2 &&
+        <p className="mt-2 text-xs text-warn" data-testid="free-room-single-workflow-blocker">
+          Teamopdracht + samenwerking niet startklaar: ACF meldt een openstaand/gestrand venster, een onbevestigde beurt of ontbrekende deelnemersbinding. Direct versturen blijft onafhankelijk beschikbaar waar ACF dat toestaat.
+        </p>}
+      <p className="mt-2 text-[11px] text-muted">Verstuur blijft de bestaande directe actie. Verstuur + samenwerken is één bewuste opdracht: ACF verwerkt eerst de gerichte antwoorden; pas na een bewezen afgeronde antwoordfase begint één responsief samenwerkingsvenster in dezelfde run. Geen automatische herhaling bij twijfel.</p>
     </section>
 
     <section className="rounded-lg border border-border bg-background/30 p-3" aria-label="Samenwerken">
