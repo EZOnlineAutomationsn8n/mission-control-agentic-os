@@ -9,6 +9,7 @@ import { executeConversationRequest, type ConnectorConversationResult } from "@/
 import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { runAgyTurn } from "./agy-runner";
+import { isPreparedStageNativeFirstTurn } from "./first-native-turn";
 import { runHermesTurn } from "./hermes-runner";
 import { runOpenClawTurn } from "./openclaw-runner";
 import { runGeminiTurn } from "./gemini-runner";
@@ -151,9 +152,22 @@ export async function changeCliAgentSession(request: Request, agentId: CliAgentI
   // Gemini model selection is the operator's, but a separate stage login
   // has not been verified. Do not inherit LIVE OAuth or bootstrap a model.
   if (process.env.MC_PREVIEW === "1" && agentId === "gemini") {
-    return NextResponse.json({error:"GEMINI_STAGE_NATIVE_AUTH_NOT_CONFIGURED",
-      detail:"Independent Werkplaats Gemini authentication is not registered. No model call or session mutation."},
-      {status:409});
+    // Existing Gemini CLI is the executor; opening a Werkplaats session must
+    // never run a hidden bootstrap model call or require a second API key.
+    // Actual login validity is tested only on Dennis's first real native turn.
+    if (!/^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(key))
+      return NextResponse.json({error:"WERKPLAATS_SESSION_KEY_REQUIRED"},{status:400});
+    if (existing) return NextResponse.json({error:"STAGE_SESSION_ALREADY_EXISTS_NO_RESET",
+      session:existing},{status:409});
+    await createCliAgentSession(agentId,key);
+    const session=await updateCliAgentSession(agentId,key,{
+      status:"prepared",active:true,lastError:null,
+    });
+    return NextResponse.json({session,prepared:true,
+      firstTurnByOperator:true,modelCalls:0,
+      authentication:"UNVERIFIED_UNTIL_NATIVE_TURN",
+      existingOperatorModelsPreserved:true,
+      note:"Session prepared without dispatch; only a real operator turn verifies Gemini CLI auth."});
   }
   if (process.env.MC_PREVIEW==="1" && (agentId==="hermes" || agentId==="openclaw")) {
     if (existing) return NextResponse.json({error:"STAGE_SESSION_ALREADY_EXISTS_NO_RESET",
@@ -297,8 +311,7 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
     actionType: `${agentId}-agent-turn`,
     initiator: parsedInitiator.initiator ?? undefined,
     run: () => runAgentTurn(agentId, session, effectivePrompt,
-      process.env.MC_PREVIEW === "1" && session.status === "prepared" &&
-      (agentId === "hermes" || (agentId === "codex" && !session.runtimeSessionId))),
+      isPreparedStageNativeFirstTurn(process.env.MC_PREVIEW === "1", agentId, session.status)),
   });
   await updateCliAgentSession(agentId, key, {
     runtimeSessionId: persisted.entry.agentSessionId ?? session.runtimeSessionId,
