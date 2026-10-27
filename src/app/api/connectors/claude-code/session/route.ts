@@ -3,6 +3,7 @@ import { appendAuditEvent } from "@/lib/audit-log-store";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { runClaudeCodeTurn } from "@/lib/claude-code/runner";
+import { isExistingSharedClaudeBinding, existingClaudeOwnerGet } from "@/lib/claude-code/werkplaats-existing-executor";
 import { createClaudeCodeSession, prepareClaudeAfcStageSession, readClaudeCodeSession, stopClaudeCodeSession, updateClaudeCodeSession } from "@/lib/claude-code/session-store";
 import { classifyClaudeError, ACF_SESSION_PATTERN } from "@/lib/acf/werkplaats-session-recovery";
 import { FALLBACK_MODEL_ROUTES } from "@/lib/connectors/live/fcc-actions";
@@ -18,6 +19,8 @@ function keyFrom(request: Request): string {
 export async function GET(request: Request) {
   const sessionId = keyFrom(request);
   if (!isValidConversationKey(sessionId)) return NextResponse.json({ error: "invalid session identifier" }, { status: 400 });
+  if (isExistingSharedClaudeBinding(sessionId))
+    return existingClaudeOwnerGet("session");
   const session=await readClaudeCodeSession(sessionId);
   const firstTurnReadiness=session ? await readFirstTurnReadiness({
     agentId:"claude-code",sessionId,status:session.status,active:session.active,
@@ -31,6 +34,10 @@ export async function POST(request: Request) {
   let body: unknown;
   try { body = await request.json(); } catch { body = null; }
   const action = (body as { action?: unknown } | null)?.action;
+  if (isExistingSharedClaudeBinding(sessionId))
+    return NextResponse.json({error:"CLAUDE_EXISTING_SESSION_NO_START_STOP_OR_RESET",
+      detail:"Native recovery must be proved by its existing session owner, not by preview bootstrap."},
+      {status:409});
   const parsedInitiator = parseConversationInitiator((body as { initiator?: unknown } | null)?.initiator);
   if (!parsedInitiator.ok) return NextResponse.json({ error: parsedInitiator.error }, { status: 400 });
   const initiator = parsedInitiator.initiator;
