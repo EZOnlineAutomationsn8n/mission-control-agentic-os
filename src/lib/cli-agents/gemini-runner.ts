@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
+import { effectiveWerkplaatsWorkspace } from "@/lib/acf/runtime-root";
 
 const execFileAsync = promisify(execFile);
 const GEMINI_BINARY = process.env.GEMINI_AGENT_BINARY || "/usr/bin/gemini";
@@ -17,6 +18,7 @@ interface GeminiEvent {
   response?: string;
   result?: string;
   error?: { message?: string } | string;
+  status?: string;
 }
 
 export function parseGeminiStreamEvents(stdout: string, expectedSessionId: string): { text: string; sessionId: string; model: string | null } {
@@ -32,12 +34,29 @@ export function parseGeminiStreamEvents(stdout: string, expectedSessionId: strin
     // Gemini stream-json includes the submitted user prompt as a message event.
     // Only assistant-role messages are agent output; other roles are never echoed.
     if (event.type === "message" && event.role === "assistant" && event.content) text += event.content;
+    // A native error event, or a failed final result, can never be treated
+    // as successful assistant output. Otherwise ACF would falsely promote a
+    // prepared native session to IDLE/ELIGIBLE on a credential/tool failure.
+    if (event.type === "error" || event.type === "result" &&
+        (event.status === "error" || event.status === "failed" || Boolean(event.error))) {
+      const nativeError = typeof event.error === "string" ? event.error : event.error?.message || "";
+      if (/auth|login|credential|api.?key/i.test(nativeError))
+        throw new Error("GEMINI_NATIVE_AUTH_FAILURE");
+      throw new Error("GEMINI_NATIVE_STREAM_ERROR");
+    }
     if (event.type === "result") text = event.response || event.result || text;
-    if (event.type === "error" && !text) text = typeof event.error === "string" ? event.error : event.error?.message || "";
   }
   if (!sessionId) throw new Error("Gemini returned no persistent session ID");
   if (!text.trim()) throw new Error("Gemini returned no final agent message");
   return { text: text.trim(), sessionId, model };
+}
+
+/** Same existing Workspace resolver as Codex: native file tools must run in the
+ * actual preview worktree, not the historical production workspace stored
+ * on an ACF session record. No user credential or model setting is changed.
+ */
+export function geminiExecutionWorkspace(stored: string): string {
+  return effectiveWerkplaatsWorkspace(stored);
 }
 
 export async function runGeminiTurn(options: {
@@ -46,6 +65,7 @@ export async function runGeminiTurn(options: {
   create: boolean;
 }): Promise<ConnectorConversationResult> {
   if (!options.session.runtimeSessionId) throw new Error("Gemini runtime session ID is missing");
+  const effectiveWorkspace = geminiExecutionWorkspace(options.session.workspace);
   const args = [
     "--skip-trust",
     ...(process.env.GEMINI_AGENT_OUTER_SANDBOX === "1" ? [] : ["--sandbox"]),
@@ -57,7 +77,7 @@ export async function runGeminiTurn(options: {
 
   try {
     const { stdout } = await execFileAsync(GEMINI_BINARY, args, {
-      cwd: options.session.workspace,
+      cwd: effectiveWorkspace,
       env: { ...process.env },
       timeout: Number(process.env.GEMINI_AGENT_TIMEOUT_MS || 660_000),
       maxBuffer: 40 * 1024 * 1024,
@@ -74,14 +94,14 @@ export async function runGeminiTurn(options: {
       agentIdentity: "Gemini",
       agentRuntime: GEMINI_RUNTIME,
       agentSessionId: parsed.sessionId,
-      workspace: options.session.workspace,
+      workspace: effectiveWorkspace,
       sessionState: "idle",
       executionMode: options.session.executionMode,
       permissionMode: options.session.permissionMode,
     };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    if (/auth method|GEMINI_API_KEY|GOOGLE_GENAI_USE/i.test(detail)) {
+    if (/GEMINI_NATIVE_AUTH_FAILURE|auth method|GEMINI_API_KEY|GOOGLE_GENAI_USE/i.test(detail)) {
       throw new Error("Gemini login required on the VPS. Authenticate Gemini CLI or configure its own supported API key.");
     }
     throw error;
