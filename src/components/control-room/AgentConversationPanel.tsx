@@ -582,6 +582,13 @@ export function AgentConversationPanel({
       {session?.status==="prepared" && (agentId==="hermes"||agentId==="openclaw") &&
         sessionId.startsWith("acf-werkplaats-") &&
         <NativeStageTransportPanel agentId={agentId}/>}
+      {session?.status==="prepared" && agentId==="gemini" && sessionId.startsWith("acf-werkplaats-") && <p
+        role="status" data-testid="gemini-staged-prepared"
+        className="rounded border border-warn/40 p-2 text-xs text-warn">
+        Gemini Werkplaats-sessie alleen voorbereid: geen verborgen bootstrap, modelbeurt of bevestigde native login.
+        Jouw eerste eigen Verstuur probeert de bestaande Gemini CLI te bereiken. ACF mag deze sessie pas na
+        aantoonbaar geslaagde uitvoering en persistente history bindbaar noemen.
+      </p>}
       {session?.status==="prepared" && agentId==="codex" && <p role="status" data-testid="codex-staged-prepared"
         className="rounded border border-accent/40 p-2 text-xs text-accent">
         Codex Werkplaats-sessie voorbereid zonder modelaanvraag. ChatGPT CLI-login is geverifieerd;

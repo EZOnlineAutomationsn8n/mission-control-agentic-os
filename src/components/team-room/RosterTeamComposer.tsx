@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import type { AcfTeamRoomRun } from "@/lib/acf/types";
 import { agentLabel, refusalText, type CallControl } from "./OperatorDeck";
 import { CLAUDE_AGENT, LEGACY_SESSION, classifyClaudeError } from "@/lib/acf/werkplaats-session-recovery";
@@ -218,6 +219,9 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
       const choice=choices[a.agent_id]??{selected:false,session:"",functions:""};
       const exact=selectedSession(a);
       const chosen=a.sessions.find(s=>s.session_ref===exact);
+      const nativePrepared=(a.agent_id==="gemini"||a.agent_id==="codex") ?
+        (chosen?.status==="prepared" ? chosen :
+         a.sessions.find(s=>s.status==="prepared"&&s.session_ref.startsWith("acf-werkplaats-"))) : undefined;
       const ok=chosen?selectable(chosen):false;
       const verdict=a.route!=="ENABLED"?a.route:chosen?.verdict??a.why_not??"geen sessie gekozen";
       return <article key={a.agent_id} className={"mc-team-composer-agent-card min-w-0 rounded-lg border p-3 text-xs "+(choice.selected?"border-cyan-400/70 bg-cyan-950/30":"border-border bg-panel-2")} data-testid={"roster-agent-"+a.agent_id}>
@@ -253,6 +257,19 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
             {a.sessions.map(s=><option key={s.session_ref} value={s.session_ref}>{s.session_ref} · {s.verdict}</option>)}
           </select>
         </label>
+        {roster?.environment==="WERKPLAATS" && (a.agent_id==="gemini"||a.agent_id==="codex") &&
+          nativePrepared && nativePrepared.session_ref.startsWith("acf-werkplaats-") &&
+          <div className="mt-2 rounded-md border border-warn/50 bg-warn/5 p-2 text-[11px]"
+            data-testid={"team-native-first-turn-"+a.agent_id}>
+            <p className="text-warn">PREPARED · niet ACF-bindbaar. Het eerste echte native antwoord moet nog in precies deze Werkplaats-sessie worden uitgevoerd.</p>
+            <Link
+              href={"/?agent="+encodeURIComponent(a.agent_id)+"&session="+encodeURIComponent(nativePrepared.session_ref)}
+              className="mt-1 inline-flex rounded border border-cyan-400/40 px-2 py-1 text-cyan-200 hover:underline"
+              data-testid={"open-stage-native-pane-"+a.agent_id}>
+              Open bestaande {a.label??agentLabel(a.agent_id)}-sessie in vrij pane
+            </Link>
+            <p className="mt-1 text-muted">Alleen jouw eigen Verstuur start een native modelbeurt. Daarna deze roster vernieuwen; geen automatische dispatch of sessiereset.</p>
+          </div>}
         {chosen && <div className="mt-1 break-words">
           <p className={ok?"text-ok":"text-warn"}>{verdict}{canPin(chosen)?" · uses your own "+(a.label??a.agent_id)+" pane":""}</p>
           <p className="mt-0.5 text-muted">{chosen.reason}{chosen.live?.reason?" · "+chosen.live.reason:""}</p>
