@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { appendAuditEvent } from "@/lib/audit-log-store";
 import { clearConversation, isValidConversationKey, readConversation } from "@/lib/agent-conversations/store";
+import { isExistingSharedClaudeBinding, existingClaudeOwnerGet } from "@/lib/claude-code/werkplaats-existing-executor";
 
 export const dynamic = "force-dynamic";
 const CLEAR_CONFIRMATION = "CLEAR CONVERSATION";
@@ -16,6 +17,8 @@ export async function GET(_request: Request, context: { params: Promise<{ agentI
   const { agentId, sessionId } = await context.params;
   const invalid = validate(agentId, sessionId);
   if (invalid) return invalid;
+  if (agentId==="claude-code" && isExistingSharedClaudeBinding(sessionId))
+    return existingClaudeOwnerGet("history");
   return NextResponse.json({ entries: await readConversation(agentId, sessionId) });
 }
 
@@ -23,6 +26,8 @@ export async function DELETE(request: Request, context: { params: Promise<{ agen
   const { agentId, sessionId } = await context.params;
   const invalid = validate(agentId, sessionId);
   if (invalid) return invalid;
+  if (agentId==="claude-code" && isExistingSharedClaudeBinding(sessionId))
+    return NextResponse.json({error:"SHARED_CLAUDE_HISTORY_CLEAR_PROHIBITED"},{status:409});
   let body: unknown;
   try { body = await request.json(); } catch { body = null; }
   if ((body as { confirmation?: unknown } | null)?.confirmation !== CLEAR_CONFIRMATION) {
