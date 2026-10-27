@@ -3,16 +3,17 @@ import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
 import { effectiveWerkplaatsWorkspace } from "@/lib/acf/runtime-root";
+import { stageCliProfileEnvironment } from "./stage-cli-profile";
 
 const execFileAsync = promisify(execFile);
 const CODEX_BINARY = process.env.CODEX_AGENT_BINARY || "/usr/bin/codex";
 const CODEX_RUNTIME = "Codex CLI 0.144.3";
 
-function execCodex(args: string[], cwd: string): Promise<string> {
+function execCodex(args: string[], cwd: string, env: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = execFile(CODEX_BINARY, args, {
       cwd,
-      env: { ...process.env },
+      env,
       timeout: Number(process.env.CODEX_AGENT_TIMEOUT_MS || 660_000),
       maxBuffer: 40 * 1024 * 1024,
       encoding: "utf8",
@@ -60,10 +61,11 @@ export async function runCodexTurn(options: {
   create: boolean;
 }): Promise<ConnectorConversationResult> {
   const effectiveWorkspace=effectiveWerkplaatsWorkspace(options.session.workspace);
+  const nativeEnv=await stageCliProfileEnvironment("codex");
   try {
     await execFileAsync(CODEX_BINARY, ["login", "status"], {
       cwd: effectiveWorkspace,
-      env: { ...process.env },
+      env: nativeEnv,
       timeout: 10_000,
       maxBuffer: 1024 * 1024,
       encoding: "utf8",
@@ -77,7 +79,7 @@ export async function runCodexTurn(options: {
   if (!options.create && !options.session.runtimeSessionId) throw new Error("Codex runtime thread ID is missing");
 
   try {
-    const stdout = await execCodex(args, effectiveWorkspace);
+    const stdout = await execCodex(args, effectiveWorkspace, nativeEnv);
     const parsed = parseEvents(stdout, options.session.runtimeSessionId);
     return {
       status: "completed",

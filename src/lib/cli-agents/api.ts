@@ -10,6 +10,7 @@ import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-co
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { runAgyTurn } from "./agy-runner";
 import { isPreparedStageNativeFirstTurn } from "./first-native-turn";
+import { stageCliProfileEnvironment } from "./stage-cli-profile";
 import { runHermesTurn } from "./hermes-runner";
 import { runOpenClawTurn } from "./openclaw-runner";
 import { runGeminiTurn } from "./gemini-runner";
@@ -192,9 +193,12 @@ export async function changeCliAgentSession(request: Request, agentId: CliAgentI
   if (process.env.MC_PREVIEW === "1" && agentId === "codex") {
     if (existing) return NextResponse.json({error:"STAGE_SESSION_ALREADY_EXISTS_NO_RESET",
       session:existing},{status:409});
+    let codexNativeEnv: NodeJS.ProcessEnv;
+    try { codexNativeEnv = await stageCliProfileEnvironment("codex"); }
+    catch { return NextResponse.json({error:"STAGE_NATIVE_PROFILE_NOT_ISOLATED",modelCalls:0},{status:409}); }
     try {
       const {stdout,stderr}=await promisify(execFile)(process.env.CODEX_AGENT_BINARY || "/usr/bin/codex",
-        ["login","status"],{timeout:8000,encoding:"utf8",maxBuffer:1024*1024});
+        ["login","status"],{timeout:8000,encoding:"utf8",maxBuffer:1024*1024,env:codexNativeEnv});
       // codex CLI writes the login status to STDERR in some versions.
       // Only inspect the local auth type; do not expose raw output to browser.
       if (!codexUsesChatGptSubscriptionAuth(String(stdout)+"\n"+String(stderr))) {
@@ -293,6 +297,11 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
       detail:verdict.code,transport:verdict,agentId,providerCalls:0,
       admission:"STAGE_AUTH_AND_ISOLATION",
     },{status:409});
+  }
+  // Prove real isolated HOME before moving PREPARED to RUNNING or recording a turn.
+  if (process.env.MC_PREVIEW === "1" && (agentId === "codex" || agentId === "gemini")) {
+    try { await stageCliProfileEnvironment(agentId); }
+    catch { return NextResponse.json({error:"STAGE_NATIVE_PROFILE_NOT_ISOLATED",modelCalls:0},{status:409}); }
   }
   const effectivePrompt = promptWithAttachments(prompt.trim(), attachments);
 

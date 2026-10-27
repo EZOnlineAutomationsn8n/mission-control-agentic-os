@@ -3,6 +3,7 @@ import { promisify } from "util";
 import type { ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import type { CliAgentSession } from "./session-store";
 import { effectiveWerkplaatsWorkspace } from "@/lib/acf/runtime-root";
+import { stageCliProfileEnvironment } from "./stage-cli-profile";
 
 const execFileAsync = promisify(execFile);
 const GEMINI_BINARY = process.env.GEMINI_AGENT_BINARY || "/usr/bin/gemini";
@@ -66,6 +67,7 @@ export async function runGeminiTurn(options: {
 }): Promise<ConnectorConversationResult> {
   if (!options.session.runtimeSessionId) throw new Error("Gemini runtime session ID is missing");
   const effectiveWorkspace = geminiExecutionWorkspace(options.session.workspace);
+  const nativeEnv = await stageCliProfileEnvironment("gemini");
   const args = [
     "--skip-trust",
     ...(process.env.GEMINI_AGENT_OUTER_SANDBOX === "1" ? [] : ["--sandbox"]),
@@ -78,7 +80,7 @@ export async function runGeminiTurn(options: {
   try {
     const { stdout } = await execFileAsync(GEMINI_BINARY, args, {
       cwd: effectiveWorkspace,
-      env: { ...process.env },
+      env: nativeEnv,
       timeout: Number(process.env.GEMINI_AGENT_TIMEOUT_MS || 660_000),
       maxBuffer: 40 * 1024 * 1024,
       encoding: "utf8",
