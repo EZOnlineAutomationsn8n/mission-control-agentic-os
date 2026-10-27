@@ -1393,6 +1393,12 @@ export function TeamRoomView() {
   const latestSequence = discussion?.latestParticipantMessage?.sequence ?? null;
   const currentTurn = discussion?.timeline.length ?? 0;
 
+  useEffect(() => {
+    if (!historyOpen || !selected?.runId || !viewRestored) return;
+    // Scroll only on run/open-state change, never on the repeating ACF poll.
+    window.requestAnimationFrame(() => document.getElementById("team-room-canonical-history")?.scrollIntoView({block:"start"}));
+  }, [historyOpen,selected?.runId,viewRestored]);
+
   const latestLineage = discussion?.latestParticipantMessage
     ? discussion.timeline.find((entry) => entry.messageId === discussion.latestParticipantMessage?.messageId)?.lineage ?? null
     : null;
@@ -1481,6 +1487,40 @@ export function TeamRoomView() {
             Er is geen nieuwe run of agentbeurt gestart.</p>
         </section>
       )}
+      {mode === "discuss" && display?.availability === "available" && selected && discussion && (
+          <section className="acf-history-panel mx-4 my-3" id="team-room-canonical-history" data-testid="team-room-canonical-history" aria-label="Canoniek historisch Team Room-gesprek">
+            <button
+              type="button"
+              onClick={() => setHistoryOpen((open) => !open)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+              aria-expanded={historyOpen}
+            >
+              <span>
+                <span className="text-sm font-semibold">Conversation History · Team Room-run {selected.runId}</span>
+                <span className="ml-2 text-[11px] text-muted">{discussion.history.length} canonieke ACF-berichten · {discussion.participants.map(p=>p.agentId).join(" + ")} · {selected.goal}</span>
+              </span>
+              <span className="mc-button mc-button-secondary mc-button-sm">{historyOpen ? "Hide" : "View history"}</span>
+            </button>
+
+            {historyOpen && (
+              <div className="mt-4 max-h-[28rem] overflow-y-auto space-y-2 pr-1">
+                {discussion.history.map((message: AcfMessageReadModel) => (
+                  <article data-testid="team-room-canonical-message" key={message.messageId} className="rounded-lg border border-border/70 bg-background/30 p-3">
+                    <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                      <span className="mono text-muted">seq {message.sequence}</span>
+                      <span className="font-semibold">{message.from} → {message.to}</span>
+                      <span className="rounded border border-border px-1.5 py-0.5 mono text-muted">{message.kind}</span>
+                      <span className="text-muted">{formatClock(message.at)}</span>
+                    </div>
+                    <div className="mt-2 whitespace-pre-wrap text-sm leading-5 text-foreground/90">{message.body}</div>
+                    {message.inReplyTo && <div className="mt-2 mono text-[10px] text-muted">in_reply_to={message.inReplyTo}</div>}
+                  </article>
+                ))}
+                {discussion.history.length === 0 && <div className="text-xs text-muted">No ACF messages exported for this run.</div>}
+              </div>
+            )}
+          </section>
+      )}
       {mode === "discuss" && (display?.availability === "empty" || (display?.availability === "available" && selected && discussion)) && (
         <TeamRoomShell
           key={selected?.runId ?? "empty"}
@@ -1540,8 +1580,8 @@ export function TeamRoomView() {
           <div className="mt-2 flex flex-wrap gap-2">
             {display.runs.map((historicalRun) => (
               <button type="button" key={historicalRun.runId} className="mc-button mc-button-secondary mc-button-sm"
-                onClick={()=>{setSelectedRunId(historicalRun.runId);setFocusPreference({role:null,sequence:null});void refresh(historicalRun.runId);}}>
-                {historicalRun.runId} · {historicalRun.runState}
+                onClick={()=>{setSelectedRunId(historicalRun.runId);setFocusPreference({role:null,sequence:null});setHistoryOpen(true);void refresh(historicalRun.runId);}}>
+                {historicalRun.runId} · {historicalRun.runState} · {historicalRun.goal}
               </button>
             ))}
           </div>
@@ -1829,38 +1869,7 @@ export function TeamRoomView() {
             </aside>
           </div>
 
-          <section className="acf-history-panel">
-            <button
-              type="button"
-              onClick={() => setHistoryOpen((open) => !open)}
-              className="flex w-full items-center justify-between gap-3 text-left"
-              aria-expanded={historyOpen}
-            >
-              <span>
-                <span className="text-sm font-semibold">Conversation History</span>
-                <span className="ml-2 text-[11px] text-muted">{discussion.history.length} messages · secondary surface</span>
-              </span>
-              <span className="mc-button mc-button-secondary mc-button-sm">{historyOpen ? "Hide" : "View history"}</span>
-            </button>
 
-            {historyOpen && (
-              <div className="mt-4 max-h-[28rem] overflow-y-auto space-y-2 pr-1">
-                {discussion.history.map((message: AcfMessageReadModel) => (
-                  <article key={message.messageId} className="rounded-lg border border-border/70 bg-background/30 p-3">
-                    <div className="flex flex-wrap items-center gap-2 text-[10px]">
-                      <span className="mono text-muted">seq {message.sequence}</span>
-                      <span className="font-semibold">{message.from} → {message.to}</span>
-                      <span className="rounded border border-border px-1.5 py-0.5 mono text-muted">{message.kind}</span>
-                      <span className="text-muted">{formatClock(message.at)}</span>
-                    </div>
-                    <div className="mt-2 whitespace-pre-wrap text-sm leading-5 text-foreground/90">{message.body}</div>
-                    {message.inReplyTo && <div className="mt-2 mono text-[10px] text-muted">in_reply_to={message.inReplyTo}</div>}
-                  </article>
-                ))}
-                {discussion.history.length === 0 && <div className="text-xs text-muted">No ACF messages exported for this run.</div>}
-              </div>
-            )}
-          </section>
 
           <section className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-muted">Runs</span>
@@ -1871,11 +1880,11 @@ export function TeamRoomView() {
                 onClick={() => {
                   setSelectedRunId(run.runId);
                   setFocusPreference({ role: null, sequence: null });
-                  setHistoryOpen(false);
+                  setHistoryOpen(true);
                 }}
                 className={`rounded-lg border px-2.5 py-1.5 text-xs mono ${selected.runId === run.runId ? "border-cyan-400/50 bg-cyan-400/10 text-cyan-200" : "border-border bg-panel-2 text-muted hover:text-foreground"}`}
               >
-                {run.runId} · {run.runState}
+                {run.runId} · {run.runState} · {run.goal}
               </button>
             ))}
           </section>
