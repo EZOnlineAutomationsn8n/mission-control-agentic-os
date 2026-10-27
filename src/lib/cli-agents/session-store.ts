@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import path from "path";
 import { databaseEnabled } from "@/lib/persistence/database";
-import { listPersistedSessions, patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
+import { claimPreparedPersistedSession, insertPersistedSessionIfAbsent, listPersistedSessions, patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
 
 export type CliAgentId = "hermes" | "openclaw" | "agy" | "gemini" | "codex";
 export type CliAgentSessionStatus = "starting" | "prepared" | "idle" | "running" | "stopped" | "error";
@@ -104,7 +104,15 @@ function roleFor(agentId: CliAgentId): string {
   return "Mission Control Codex agent";
 }
 
-export async function createCliAgentSession(agentId: CliAgentId, sessionKey: string): Promise<CliAgentSession> {
+export class CliAgentSessionAlreadyExistsError extends Error {
+  constructor() { super("SESSION_ALREADY_EXISTS_NO_RESET"); this.name = "CliAgentSessionAlreadyExistsError"; }
+}
+
+/** Prepared is a registry state, never evidence of executed native conversation. */
+export async function createCliAgentSession(
+  agentId: CliAgentId, sessionKey: string,
+  options: { prepared?: boolean; failIfExists?: boolean } = {},
+): Promise<CliAgentSession> {
   const create = async () => {
     const sessions = databaseEnabled() ? {} : await readSessions();
     const now = new Date().toISOString();
@@ -125,7 +133,7 @@ export async function createCliAgentSession(agentId: CliAgentId, sessionKey: str
               ? "Codex workspace-write sandbox"
           : "OpenClaw exec policy",
       executionMode: "on-demand-cli",
-      status: "starting",
+      status: options.prepared ? "prepared" : "starting",
       active: true,
       createdAt: now,
       updatedAt: now,
@@ -138,7 +146,14 @@ export async function createCliAgentSession(agentId: CliAgentId, sessionKey: str
       transportModelAlias: null,
       actualRuntimeModel: null,
     };
-    if (databaseEnabled()) return upsertPersistedSession("cli", agentId, sessionKey, session);
+    if (databaseEnabled()) {
+      if (!options.failIfExists) return upsertPersistedSession("cli", agentId, sessionKey, session);
+      const inserted=await insertPersistedSessionIfAbsent("cli",agentId,sessionKey,session);
+      if (!inserted) throw new CliAgentSessionAlreadyExistsError();
+      return inserted;
+    }
+    if (options.failIfExists && sessions[recordKey(agentId,sessionKey)])
+      throw new CliAgentSessionAlreadyExistsError();
     sessions[recordKey(agentId, sessionKey)] = session;
     await writeSessions(sessions);
     return session;
@@ -164,6 +179,26 @@ export async function updateCliAgentSession(
     if (!current) throw new Error(`${agentId} session does not exist`);
     const next: CliAgentSession = { ...current, ...update, updatedAt: new Date().toISOString() };
     sessions[key] = next;
+    await writeSessions(sessions);
+    return next;
+  });
+}
+
+/** Claim a prepared native WEG2 turn once before any provider dispatch.
+ * No explicit operator recovery token exists yet, so ERROR is not retried.
+ */
+export async function claimPreparedCliAgentSession(
+  agentId:CliAgentId,sessionKey:string,
+):Promise<CliAgentSession|null>{
+  if(databaseEnabled())
+    return claimPreparedPersistedSession<CliAgentSession>("cli",agentId,sessionKey);
+  return mutateSessions(async()=>{
+    const sessions=await readSessions();
+    const key=recordKey(agentId,sessionKey);
+    const previous=sessions[key];
+    if(!previous?.active||previous.status!=="prepared")return null;
+    const next:CliAgentSession={...previous,status:"running",updatedAt:new Date().toISOString()};
+    sessions[key]=next;
     await writeSessions(sessions);
     return next;
   });

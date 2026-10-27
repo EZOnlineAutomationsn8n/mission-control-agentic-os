@@ -403,7 +403,9 @@ export function AgentConversationPanel({
     }
   }
 
-  async function lifecycle(action: "start" | "stop") {
+  const weg2PreparedSession=/^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(sessionId) &&
+    (agentId==="gemini"||agentId==="codex"||agentId==="agy");
+  async function lifecycle(action: "start" | "prepare" | "stop") {
     if (running) return;
     setRunning(true);
     setLoadError(null);
@@ -425,7 +427,8 @@ export function AgentConversationPanel({
       };
       if (!response.ok) throw new Error(data.error ?? data.auditError ?? `session action returned HTTP ${response.status}`);
       setSession(data.session ?? null);
-      setBootstrap(data.bootstrap ?? (action === "stop" ? `${label} session stopped.` : null));
+      setBootstrap(data.bootstrap ?? (action === "stop" ? `${label} session stopped.` :
+        action === "prepare" ? `${label} registered PREPARED — no model call; first native turn only after your Send.` : null));
     } catch (error) {
       const aborted = error instanceof Error && error.name === "AbortError";
       const message = aborted ? `${label} start timed out in the browser. Refresh to read server state.` :
@@ -528,9 +531,9 @@ export function AgentConversationPanel({
         <div className="mc-lifecycle-row flex items-center justify-end gap-1.5 shrink-0">
           <PanelFocusButton />
           {!active ? (
-            <button type="button" onClick={() => void lifecycle("start")} disabled={busy}
-              className="mc-button mc-button-success mc-button-sm" aria-label={`Start ${label} session`}>
-              {busy ? "Starting…" : "Start"}
+            <button type="button" onClick={() => void lifecycle(weg2PreparedSession?"prepare":"start")} disabled={busy}
+              className="mc-button mc-button-success mc-button-sm" aria-label={weg2PreparedSession?`Prepare ${label} session without model call`:`Start ${label} session`}>
+              {busy ? "Starting…" : weg2PreparedSession ? "Prepare" : "Start"}
             </button>
           ) : (
             <button type="button" onClick={() => void lifecycle("stop")} disabled={busy}
@@ -547,9 +550,9 @@ export function AgentConversationPanel({
               {busy ? "Running" : active ? (session?.status ?? "idle") : "Stopped"}
             </span>
             {!active ? (
-              <button type="button" onClick={() => void lifecycle("start")} disabled={busy}
-                className="mc-button mc-button-success mc-button-sm" aria-label={`Start ${label} session`}>
-                {busy ? "Starting…" : "Start"}
+              <button type="button" onClick={() => void lifecycle(weg2PreparedSession?"prepare":"start")} disabled={busy}
+                className="mc-button mc-button-success mc-button-sm" aria-label={weg2PreparedSession?`Prepare ${label} session without model call`:`Start ${label} session`}>
+                {busy ? "Starting…" : weg2PreparedSession ? "Prepare" : "Start"}
               </button>
             ) : (
               <button type="button" onClick={() => void lifecycle("stop")} disabled={busy}
@@ -602,7 +605,7 @@ export function AgentConversationPanel({
       </p>}
       {session?.status==="prepared" && agentId==="codex" && <p role="status" data-testid="codex-staged-prepared"
         className="rounded border border-accent/40 p-2 text-xs text-accent">
-        Codex Werkplaats-sessie voorbereid zonder modelaanvraag. ChatGPT CLI-login is geverifieerd;
+        Codex Werkplaats-sessie voorbereid zonder modelaanvraag. Native authenticatie is nog niet aangetoond;
         er is nog geen native thread. Alleen je eerste eigen bericht start de nieuwe stage-thread.
         ACF meldt pas ELIGIBLE na een echte succesvolle beurt.
       </p>}

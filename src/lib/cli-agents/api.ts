@@ -20,6 +20,8 @@ import { readFirstTurnReadiness } from "@/lib/acf/first-turn-readiness";
 import { werkplaatsRuntimeRoot } from "@/lib/acf/runtime-root";
 import {
   createCliAgentSession,
+  CliAgentSessionAlreadyExistsError,
+  claimPreparedCliAgentSession,
   readCliAgentSession,
   stopCliAgentSession,
   updateCliAgentSession,
@@ -149,8 +151,42 @@ export async function changeCliAgentSession(request: Request, agentId: CliAgentI
     });
     return NextResponse.json({ session, auditRecorded: audit.ok, auditError: audit.error ?? null });
   }
-  if (action !== "start") return NextResponse.json({ error: "action must be start or stop" }, { status: 400 });
+  // WEG2: register the existing native agent for a deliberate first operator
+  // turn. This path is safe in LIVE too: never bootstrap, send or resume here.
+  if (action === "prepare") {
+    if (agentId !== "gemini" && agentId !== "codex" && agentId !== "agy")
+      return NextResponse.json({error:"PREPARE_AGENT_NOT_SUPPORTED",modelCalls:0},{status:400});
+    if (!/^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(key))
+      return NextResponse.json({error:"WERKPLAATS_SESSION_KEY_REQUIRED",modelCalls:0},{status:400});
+    let session: CliAgentSession;
+    try {
+      session=await createCliAgentSession(agentId,key,{prepared:true,failIfExists:true});
+    } catch(error) {
+      if(error instanceof CliAgentSessionAlreadyExistsError)
+        return NextResponse.json({error:"SESSION_ALREADY_EXISTS_NO_RESET",modelCalls:0,
+          existingSessionPreserved:true},{status:409});
+      throw error;
+    }
+    const audit=await appendAuditEvent({
+      timestamp:new Date().toISOString(),connectorId:agentId,
+      actionType:`${agentId}-session-prepare`,status:"completed",
+      resultSummary:`prepared ${key} (registration only; 0 model calls)`,
+      ...auditInitiatorFields(initiator),
+      source:"cli-agents/api.ts:changeCliAgentSession",
+    });
+    return NextResponse.json({
+      session,prepared:true,firstTurnByOperator:true,modelCalls:0,
+      existingOperatorModelsPreserved:true,
+      auditRecorded:audit.ok,auditError:audit.error??null,
+      // Audit failure is NOT permission to retry and overwrite this record.
+    },{status:audit.ok?200:500});
+  }
+  if (action !== "start") return NextResponse.json({ error: "action must be start, prepare or stop" }, { status: 400 });
 
+  // WEG2 keys must never follow the legacy LIVE start/bootstrap route.
+  if (/^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(key) &&
+      (agentId==="gemini"||agentId==="codex"||agentId==="agy"))
+    return NextResponse.json({error:"USE_PREPARE_FOR_WORKSHOP_SESSION",modelCalls:0},{status:409});
   const existing = await readCliAgentSession(agentId, key);
   if (existing?.active && existing.status !== "stopped") return NextResponse.json({ session: existing, alreadyActive: true });
 
@@ -302,9 +338,18 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
       admission:"STAGE_AUTH_AND_ISOLATION",
     },{status:409});
   }
+  // Registration is stage-safe; native WEG2 first turns use existing LIVE
+  // executors after CSA release. This preview must never silently dispatch
+  // via its disabled CLI binaries or copy a LIVE credential/profile.
+  if (process.env.MC_PREVIEW === "1" && /^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(key) &&
+      (agentId === "gemini" || agentId === "codex" || agentId === "agy")) {
+    return NextResponse.json({error:"WEG2_NATIVE_FIRST_TURN_REQUIRES_EXISTING_LIVE_EXECUTOR",
+      modelCalls:0,sessionPreserved:true},{status:409});
+  }
   // Fail before any session/history/audit write if the actual isolated stage
   // executor is unavailable. A previously PREPARED first turn stays PREPARED.
-  if (process.env.MC_PREVIEW === "1" && (agentId === "codex" || agentId === "gemini")) {
+  if (process.env.MC_PREVIEW === "1" && !/^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(key) &&
+      (agentId === "codex" || agentId === "gemini")) {
     const native = await inspectStageCliPreflight(agentId);
     if (!native.isolated || !native.binaryAvailable || agentId === "codex" && native.loginVerified !== true) {
       return NextResponse.json({
@@ -320,8 +365,18 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
   if (session.status === "running" || session.status === "starting") {
     return NextResponse.json({ error: `${LABELS[agentId]} session is already busy` }, { status: 409 });
   }
-
-  await updateCliAgentSession(agentId, key, { status: "running", lastError: null });
+  const weg2Key=/^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(key) &&
+    (agentId==="gemini"||agentId==="codex"||agentId==="agy");
+  if(weg2Key && session.status==="error")
+    return NextResponse.json({error:"WEG2_UNCERTAIN_NATIVE_TURN_REQUIRES_OPERATOR_INSPECTION",
+      modelCalls:0,sessionPreserved:true},{status:409});
+  if(weg2Key && session.status==="prepared"){
+    const claimed=await claimPreparedCliAgentSession(agentId,key);
+    if(!claimed)return NextResponse.json({error:"WEG2_FIRST_TURN_ALREADY_CLAIMED",
+      modelCalls:0,sessionPreserved:true},{status:409});
+  } else {
+    await updateCliAgentSession(agentId, key, { status: "running", lastError: null });
+  }
   const persisted = await executeConversationRequest({
     agentId,
     sessionId: key,

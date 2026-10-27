@@ -61,7 +61,8 @@ export async function runCodexTurn(options: {
   create: boolean;
 }): Promise<ConnectorConversationResult> {
   const effectiveWorkspace=effectiveWerkplaatsWorkspace(options.session.workspace);
-  const nativeEnv=await stageCliProfileEnvironment("codex");
+  const nativeEnv=options.session.sessionKey.startsWith("acf-werkplaats-")
+    ? {...process.env} : await stageCliProfileEnvironment("codex");
   try {
     await execFileAsync(CODEX_BINARY, ["login", "status"], {
       cwd: effectiveWorkspace,

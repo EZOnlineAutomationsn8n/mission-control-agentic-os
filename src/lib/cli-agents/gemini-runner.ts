@@ -67,7 +67,8 @@ export async function runGeminiTurn(options: {
 }): Promise<ConnectorConversationResult> {
   if (!options.session.runtimeSessionId) throw new Error("Gemini runtime session ID is missing");
   const effectiveWorkspace = geminiExecutionWorkspace(options.session.workspace);
-  const nativeEnv = await stageCliProfileEnvironment("gemini");
+  const nativeEnv = options.session.sessionKey.startsWith("acf-werkplaats-")
+    ? {...process.env} : await stageCliProfileEnvironment("gemini");
   const args = [
     "--skip-trust",
     ...(process.env.GEMINI_AGENT_OUTER_SANDBOX === "1" ? [] : ["--sandbox"]),
