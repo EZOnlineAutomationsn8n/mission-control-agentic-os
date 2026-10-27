@@ -1,4 +1,36 @@
 /** Presentation only. No side effects, no eligibility registry and no model-price gates. */
+export type PersistedClaudeTurnProof = {
+  agentId?: unknown;
+  sessionId?: unknown;
+  agentSessionId?: unknown;
+  status?: unknown;
+  text?: unknown;
+  agentRuntime?: unknown;
+  transportModelAlias?: unknown;
+  responseProvenance?: unknown;
+  installedVersion?: unknown;
+};
+
+/** Native first-turn proof must be a real persisted owner entry, never a
+ * PREPARED status, proxy healthcheck, allocated UUID or an unbound answer. */
+export function provenExistingClaudeNativeTurn(
+  entries: readonly PersistedClaudeTurnProof[],
+  sessionKey: string,
+  nativeUuid: string|null,
+): PersistedClaudeTurnProof|null {
+  if(!nativeUuid || !/^acf-werkplaats-[A-Za-z0-9_-]{1,48}$/.test(sessionKey))
+    return null;
+  return entries.find(e=>
+    e.agentId==="claude-code" &&
+    e.sessionId===sessionKey &&
+    e.agentSessionId===nativeUuid &&
+    e.status==="completed" &&
+    typeof e.text==="string" && e.text.trim().length>0 &&
+    e.agentRuntime==="Claude Code CLI" &&
+    typeof e.transportModelAlias==="string" && e.transportModelAlias.trim().length>0 &&
+    typeof e.responseProvenance==="string" && e.responseProvenance.includes("Claude Code CLI")
+  )??null;
+}
 export type ClaudeFccOperatorInput = {
   fcc: "connected"|"degraded"|"disconnected"|"unknown";
   nativeVersion: string|null;

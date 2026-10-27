@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import {test} from "node:test";
-import {deriveClaudeFccOperatorState, type ClaudeFccOperatorInput} from "../src/lib/acf/claude-fcc-operator-view";
+import {deriveClaudeFccOperatorState, provenExistingClaudeNativeTurn, type ClaudeFccOperatorInput} from "../src/lib/acf/claude-fcc-operator-view";
 const base:ClaudeFccOperatorInput={
  fcc:"connected",nativeVersion:null,stageSession:null,acfSession:null,canJoinNow:false,teamPaused:false
 };
@@ -52,4 +52,32 @@ test("prominent user control is read-only and anchored in Mijn team",async()=>{
  const panel=s.slice(s.indexOf("function ClaudeFccStatusPanel"),s.indexOf("export function TeamRoomView"));
  assert.match(panel,/GET only; no new session/);
  assert.doesNotMatch(panel,/method:\s*"POST"|team-resume\s*\(/);
+});
+
+test("exact owner persisted completion and native UUID required for a first native turn",()=>{
+ const k="acf-werkplaats-claude-code",native="471b3444-dd79-4bd9-b7cd-3023258cac63";
+ const done={agentId:"claude-code",sessionId:k,agentSessionId:native,status:"completed",
+  text:"Native response",agentRuntime:"Claude Code CLI",
+  transportModelAlias:"operator-configured-route",responseProvenance:"Claude Code CLI -> FCC"};
+ assert.ok(provenExistingClaudeNativeTurn([done],k,native));
+ for(const change of [
+  {agentSessionId:"different-uuid"},{sessionId:"operator-default"},
+  {agentId:"codex"},{status:"failed"},{text:""},{text:null},
+  {agentRuntime:"unknown"},{transportModelAlias:null},{responseProvenance:null}
+ ]){
+  assert.equal(provenExistingClaudeNativeTurn([{...done,...change}],k,native),null);
+ }
+ assert.equal(provenExistingClaudeNativeTurn([done],k,null),null);
+ assert.equal(provenExistingClaudeNativeTurn([done],"operator-default",native),null);
+ assert.equal(provenExistingClaudeNativeTurn([],k,native),null);
+});
+test("real owner history is read, never hardcode the first turn or mutate to READY",async()=>{
+ const {readFileSync}=await import("node:fs");
+ const s=readFileSync("src/components/team-room/TeamRoomView.tsx","utf8");
+ assert.match(s,/agent-conversations\/claude-code\/acf-werkplaats-claude-code/);
+ assert.match(s,/firstTurnStored:Boolean\(nativeProof\)/);
+ assert.doesNotMatch(s,/firstTurnStored:false/);
+ assert.match(s,/provenExistingClaudeNativeTurn\(/);
+ const block=s.slice(s.indexOf("function ClaudeFccStatusPanel"),s.indexOf("export function TeamRoomView"));
+ assert.doesNotMatch(block,/method:\s*["']POST["']/);
 });

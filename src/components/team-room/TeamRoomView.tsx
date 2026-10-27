@@ -38,7 +38,7 @@ import { FreeRoomPanel } from "@/components/team-room/FreeRoomPanel";
 import { AcfReplyPanel } from "@/components/team-room/AcfReplyPanel";
 import { activityFromAcf, type AcfActivity } from "@/components/team-room/acf-activity";
 import { deriveVisibleParticipants } from "@/lib/acf/visible-participants";
-import { deriveClaudeFccOperatorState, type ClaudeFccOperatorInput } from "@/lib/acf/claude-fcc-operator-view";
+import { deriveClaudeFccOperatorState, provenExistingClaudeNativeTurn, type ClaudeFccOperatorInput, type PersistedClaudeTurnProof } from "@/lib/acf/claude-fcc-operator-view";
 import { classifyClaudeError } from "@/lib/acf/werkplaats-session-recovery";
 import { ROOM_VIEW_KEY, roomShellKey, parseRoomView, parseShellView, verifySavedRun,
   type StoredRoomView, type StoredShellView } from "@/lib/acf/team-room-rehydration";
@@ -980,33 +980,41 @@ function ClaudeFccStatusPanel({teamPaused}:{teamPaused:boolean}) {
         "/api/acf/team-room/roster",
         "/api/connectors/fcc/status",
         "/api/cockpit/runtime-truth",
+        "/api/agent-conversations/claude-code/acf-werkplaats-claude-code",
       ];
       const responses=await Promise.all(urls.map(url=>fetch(url,{cache:"no-store"})));
       if(responses.some(r=>!r.ok))throw Error("READ_SOURCE_UNAVAILABLE");
-      const [sessionBody,rosterBody,fccBody,runtimeBody]=await Promise.all(
+      const [sessionBody,rosterBody,fccBody,runtimeBody,historyBody]=await Promise.all(
         responses.map(r=>r.json())) as [
           {session?:{status:string;active:boolean;claudeSessionId?:string;lastError?:string|null}|null},
           {agents?:Array<{agent_id:string;can_join_now:boolean;sessions?:Array<{session_ref:string;status:string;verdict:string;last_error?:string|null}>}>},
           {status?:string},
           {runtimes?:Array<{targetId:string;installedVersion?:string|null}>},
+          {entries?:PersistedClaudeTurnProof[]},
         ];
       const stage=sessionBody.session??null;
       const claude=rosterBody.agents?.find(a=>a.agent_id==="claude-code");
       const acf=claude?.sessions?.find(x=>x.session_ref==="acf-werkplaats-claude-code")??null;
       const rawError=acf?.last_error??stage?.lastError??"";
       const fccStatus=fccBody.status;
+      const nativeProof=provenExistingClaudeNativeTurn(
+        historyBody.entries??[], "acf-werkplaats-claude-code",
+        stage?.claudeSessionId??null,
+      );
+      const provenVersion=typeof nativeProof?.installedVersion==="string" ?
+        nativeProof.installedVersion : null;
       setReadback({
         stageSession:stage?{
           status:stage.status,active:stage.active,
           hasNativeId:Boolean(stage.claudeSessionId),
-          // Read-only status and an allocated UUID do not prove a stored first turn.
-          firstTurnStored:false,
+          // Match this native UUID to an actually completed, persisted owner entry.
+          firstTurnStored:Boolean(nativeProof),
         }:null,
         acfSession:acf?{status:acf.status,verdict:acf.verdict}:null,
         canJoinNow:claude?.can_join_now===true,
         fcc:fccStatus==="connected"||fccStatus==="degraded"||
           fccStatus==="disconnected"?fccStatus:"unknown",
-        nativeVersion:runtimeBody.runtimes?.find(r=>r.targetId==="claude-code")?.installedVersion??null,
+        nativeVersion:runtimeBody.runtimes?.find(r=>r.targetId==="claude-code")?.installedVersion??provenVersion,
         errorCode:classifyClaudeError(rawError).code,
         observedAt:new Date().toISOString(),
         readError:null,
@@ -1093,7 +1101,8 @@ function ClaudeFccStatusPanel({teamPaused}:{teamPaused:boolean}) {
             voorbereide sessie kan alleen door Dennis bewust worden gebruikt; pas na echte uitvoerings- en
             journalbewijzen kan ACF-admissie opnieuw worden beoordeeld.</p>
           <p>Model- en fallbackroutes blijven de bestaande Dennis-configuratie; geen aanvullende gratis-model- of kostentoets.</p>
-          <p>Bronnen: GET Claude-session, ACF-roster, FCC-health en runtime-truth.</p>
+          <p>Bronnen: GET bestaande Claude-owner-sessie, exact ACF-roster, FCC-health, runtime-truth en persistente owner-conversatie.</p>
+          <p>Native eerste beurt bewezen via dezelfde UUID: {readback?.stageSession?.firstTurnStored?"ja":"nee / nog niet"}.</p>
           <p>Gemeten: {readback?.observedAt??"nog niet"}</p>
         </div>
       </details>
