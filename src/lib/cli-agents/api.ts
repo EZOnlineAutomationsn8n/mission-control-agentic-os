@@ -5,6 +5,7 @@ import { lstat } from "node:fs/promises";
 import path from "node:path";
 import { appendAuditEvent } from "@/lib/audit-log-store";
 import { promptWithAttachments, resolveAttachments } from "@/lib/attachments/store";
+import { brainContextForTurn, recordInjectedSha, withBrainContext } from "@/lib/shared-brain/agent-context";
 import { executeConversationRequest, type ConnectorConversationResult } from "@/lib/agent-conversations/service";
 import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { isValidConversationKey } from "@/lib/agent-conversations/store";
@@ -382,6 +383,9 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
   } else {
     await updateCliAgentSession(agentId, key, { status: "running", lastError: null });
   }
+  // Shared Brain: same packet + injection log as the Claude Code hook, on the first turn
+  // and when the packet changed. Fail-open; the stored conversation keeps Dennis's prompt.
+  const brain = await brainContextForTurn({ runtime: agentId, sessionKey: key, workspace: session.workspace });
   const persisted = await executeConversationRequest({
     agentId,
     sessionId: key,
@@ -389,9 +393,10 @@ export async function askCliAgent(request: Request, agentId: CliAgentId) {
     attachments,
     actionType: `${agentId}-agent-turn`,
     initiator: parsedInitiator.initiator ?? undefined,
-    run: () => runAgentTurn(agentId, session, effectivePrompt,
+    run: () => runAgentTurn(agentId, session, withBrainContext(effectivePrompt, brain),
       isPreparedStageNativeFirstTurn(process.env.MC_PREVIEW === "1", agentId, session.status)),
   });
+  if (brain && persisted.entry.status === "completed") await recordInjectedSha(agentId, key, brain.packetSha);
   await updateCliAgentSession(agentId, key, {
     runtimeSessionId: persisted.entry.agentSessionId ?? session.runtimeSessionId,
     status: persisted.entry.status === "completed" ? "idle" : "error",
