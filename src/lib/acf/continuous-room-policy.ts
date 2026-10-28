@@ -98,3 +98,29 @@ export function safeToStartCollaborationAfterReplies(
   const bound = new Set(view.participants.map(participant => participant.role).filter(Boolean));
   return chosenRoles.every(role => bound.has(role));
 }
+
+/**
+ * ACF semantics: an operator team-say opens an operator intervention, so the
+ * run is PAUSED while the directed replies are made. The combined
+ * "Verstuur + samenwerken" click must therefore end exactly that intervention
+ * (team-resume, abandon_owed_replies=false) before team-collaborate.
+ * True only when that intervention was opened AFTER the click (opened_seq >
+ * lastSeqBeforeSend), every directed reply is settled, nothing is in flight,
+ * no collaboration window is open or pending, and all chosen roles are bound.
+ * A pause the operator made earlier is never ended by this path.
+ */
+export function mayEndOwnInterventionForCollaboration(
+  view: AcfTeamViewV1 | null,
+  chosenRoles: string[],
+  lastSeqBeforeSend: number,
+): boolean {
+  if (!view || view.schema !== 2 || view.run_status !== "PAUSED" || view.in_flight) return false;
+  const open = view.intervention?.open;
+  if (!open || (open.owed?.length ?? 0) > 0) return false;
+  if (!Number.isFinite(lastSeqBeforeSend) || !(open.opened_seq > lastSeqBeforeSend)) return false;
+  if (view.collaboration && view.collaboration.status !== "ENDED") return false;
+  if ((view.collaboration?.open_pending?.length ?? 0) > 0) return false;
+  if (chosenRoles.length < 2 || new Set(chosenRoles).size !== chosenRoles.length) return false;
+  const bound = new Set(view.participants.map(participant => participant.role).filter(Boolean));
+  return chosenRoles.every(role => bound.has(role));
+}

@@ -6,7 +6,7 @@ import type { AcfTeamRoomRun, AcfTeamViewV1 } from "@/lib/acf/types";
 import { deriveEvidenceGroupReport, type EvidenceKind } from "@/lib/acf/evidence-group-report";
 import { agentLabel, refusalText, type CallControl, type ControlAnswer, type WaitForStep } from "./OperatorDeck";
 import { FREE_ROOM_STEPS_PER_CLICK, availableWindowFromStore, isUncertainTurnOutcome, readFreeRoomState,
-  type FreeRoomPendingKind, safeToStartCollaborationAfterReplies } from "@/lib/acf/continuous-room-policy";
+  type FreeRoomPendingKind, safeToStartCollaborationAfterReplies, mayEndOwnInterventionForCollaboration } from "@/lib/acf/continuous-room-policy";
 
 type Props = {
   run: AcfTeamRoomRun;
@@ -267,7 +267,8 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
     if (submissionGuard.current || locked || uncertain || selected.length < 1 ||
       !message || message.length > limit || owed.length || (withCollaboration && selected.length < 2)) return;
     submissionGuard.current = true;
-    setBusy("free-room-send"); setNote(""); setThinking("");
+    setBusy(withCollaboration ? "free-room-send-collaborate" : "free-room-send"); setNote(""); setThinking("");
+    const lastSeqBeforeSend = run.teamView?.last_seq ?? Number.NaN;
     try {
       const chosenRoles = [...selected];
       const to: string | string[] = recipients.includes("TEAM") || chosenRoles.length === members.length ? "TEAM" : chosenRoles;
@@ -286,7 +287,19 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
         setNote("Opdracht opgeslagen; antwoorden nog niet bewezen afgerond. Geen samenwerking gestart en geen automatische retry. Controleer ACF en gebruik 'Open antwoorden ophalen'.");
         return;
       }
-      const current = await readView(run.runId);
+      let current = await readView(run.runId);
+      // Our own team-say opened an ACF operator intervention (run PAUSED).
+      // End exactly that one, once, then re-read the journal before starting.
+      if (mayEndOwnInterventionForCollaboration(current, chosenRoles, lastSeqBeforeSend)) {
+        setBusy("free-room-send-collaborate");
+        const resumed = await callControl("team-resume", { run_id: run.runId, abandon_owed_replies: false });
+        if (!resumed.ok) {
+          if (isUncertainTurnOutcome(resumed.code)) setUncertain(true);
+          setNote("Antwoorden bewaard; pauze na jouw opdracht niet opgeheven: " + refusalText(resumed) + ". Geen samenwerking gestart, geen tweede verzoek.");
+          return;
+        }
+        current = await readView(run.runId);
+      }
       if (!safeToStartCollaborationAfterReplies(current, chosenRoles)) {
         setNote("Antwoorden gelezen; ACF bevestigt geen veilige start van de samenwerking. Bestaand gesprek blijft intact; geen extra dispatch.");
         return;
@@ -370,7 +383,7 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
             title="Plaats jouw opdracht eenmalig, haal gerichte antwoorden op en start pas daarna een nieuw ACF-samenwerkingsvenster als het journal dat veilig toestaat."
             disabled={locked || uncertain || Boolean(owed.length) || selected.length<2 || !text.trim() ||
               !safeToStartCollaborationAfterReplies(run.teamView, selected)}
-            onClick={()=>void send(true)}>Verstuur + samenwerken</button>
+            onClick={()=>void send(true)}>{busy==="free-room-send-collaborate" ? "Bezig: antwoorden, dan samenwerken…" : "Verstuur + samenwerken"}</button>
         </div>
       </div>
       {!safeToStartCollaborationAfterReplies(run.teamView, selected) && selected.length>=2 &&
