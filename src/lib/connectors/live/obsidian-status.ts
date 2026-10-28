@@ -71,7 +71,20 @@ async function readProjectionManifest(): Promise<ProjectionManifest | null> {
  * build an in-memory link graph. Never returns note bodies — only counts
  * and note titles (filenames), which is graph metadata.
  */
+// Whole-vault walk is CPU-heavy; every open tab polled it every 10 s (Hostinger
+// CPU-credit exhaustion 2026-10-25). Cache 120 s, single-flight. Read-only, same output.
+const GRAPH_CACHE_TTL_MS = 120_000;
+let graphCache: { root: string; at: number; value: GraphMetrics | null } | null = null;
+let graphInFlight: Promise<GraphMetrics | null> | null = null;
 async function scanVaultGraph(rootDir: string): Promise<GraphMetrics | null> {
+  if (graphCache && graphCache.root === rootDir && Date.now() - graphCache.at < GRAPH_CACHE_TTL_MS) return graphCache.value;
+  if (graphInFlight) return graphInFlight;
+  graphInFlight = scanVaultGraphUncached(rootDir)
+    .then((value) => { graphCache = { root: rootDir, at: Date.now(), value }; return value; })
+    .finally(() => { graphInFlight = null; });
+  return graphInFlight;
+}
+async function scanVaultGraphUncached(rootDir: string): Promise<GraphMetrics | null> {
   const notes = new Map<string, { title: string; outLinks: Set<string> }>();
   let visited = 0;
 

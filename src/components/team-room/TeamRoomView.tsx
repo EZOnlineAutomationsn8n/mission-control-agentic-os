@@ -43,9 +43,20 @@ import { classifyClaudeError } from "@/lib/acf/werkplaats-session-recovery";
 import { ROOM_VIEW_KEY, roomShellKey, parseRoomView, parseShellView, verifySavedRun,
   type StoredRoomView, type StoredShellView } from "@/lib/acf/team-room-rehydration";
 
-const POLL_MS = 5_000;
+const POLL_MS = 8_000;
 const STALE_AFTER_MS = 15_000;
-const READINESS_POLL_MS = 5_000;
+const READINESS_POLL_MS = 10_000;
+/** Poll only while this tab is visible; on return, one fresh read at once.
+ * A hidden/forgotten tab costs the VPS nothing (Hostinger CPU credits). */
+function visibleInterval(fn: () => void, ms: number): () => void {
+  const tick = () => { if (document.visibilityState !== "hidden") fn(); };
+  const timer = window.setInterval(tick, ms);
+  const onVisible = () => { if (document.visibilityState === "visible") fn(); };
+  document.addEventListener("visibilitychange", onVisible);
+  return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", onVisible); };
+}
+/** One failed poll is not an outage: show ACF_UNAVAILABLE only after this many in a row. */
+const FAILURES_BEFORE_ALARM = 2;
 const READINESS_STALE_AFTER_MS = 20_000;
 
 type ReadinessAgentId = "hermes" | "claude-code" | "openclaw" | "antigravity" | "gemini" | "codex";
@@ -1029,8 +1040,7 @@ function ClaudeFccStatusPanel({teamPaused}:{teamPaused:boolean}) {
   useEffect(()=>{
     // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous external GET read; state is updated only after responses
     void check();
-    const timer=window.setInterval(()=>void check(),15_000);
-    return ()=>window.clearInterval(timer);
+    return visibleInterval(()=>void check(),15_000);
   },[check]);
   const state=deriveClaudeFccOperatorState({
     stageSession:readback?.stageSession??null,acfSession:readback?.acfSession??null,
@@ -1121,6 +1131,7 @@ export function TeamRoomView() {
   // The run the operator looks at now. A read answer for any other run arrives late and is dropped, so the room never
   // shows (or steps) a run the operator just navigated away from (ACF-OPERATOR-CONTROL-DECK-REALWORLD-001).
   const wantedRunId = useRef<string | null>(null);
+  const failureStreak = useRef(0);
   const setSelectedRunId = useCallback((runId: string | null) => {
     wantedRunId.current = runId;
     setSelectedRunIdState(runId);
@@ -1218,6 +1229,7 @@ export function TeamRoomView() {
       }
       setSnapshot(next);
       if (response.ok && (next.availability === "available" || next.availability === "empty")) {
+        failureStreak.current = 0;
         setLastGood(next);
         setLastGoodAt(Date.now());
         setRefreshError(null);
@@ -1226,16 +1238,22 @@ export function TeamRoomView() {
         setRecoveryReason(null);
         if (!runId && next.selectedRun?.runId) setSelectedRunId(next.selectedRun.runId);
       } else {
-        setRefreshError(next.error || `ACF read failed with HTTP ${response.status}`);
-        setRefreshFailureKind(next.availability === "malformed" ? "malformed" : "unavailable");
+        failureStreak.current += 1;
+        if (failureStreak.current >= FAILURES_BEFORE_ALARM || next.availability === "malformed") {
+          setRefreshError(next.error || `ACF read failed with HTTP ${response.status}`);
+          setRefreshFailureKind(next.availability === "malformed" ? "malformed" : "unavailable");
+        }
       }
     } catch (error) {
       if (runId===wantedRunId.current && runId) {
         setRecoveryRunId(runId);
         setRecoveryReason("ACF is tijdelijk niet beschikbaar. De gekozen run blijft bewaard.");
       }
-      setRefreshError(error instanceof Error ? error.message : "ACF read failed");
-      setRefreshFailureKind("unavailable");
+      failureStreak.current += 1;
+      if (failureStreak.current >= FAILURES_BEFORE_ALARM) {
+        setRefreshError(error instanceof Error ? error.message : "ACF read failed");
+        setRefreshFailureKind("unavailable");
+      }
     }
   }, [setSelectedRunId]);
 
@@ -1243,8 +1261,7 @@ export function TeamRoomView() {
     if (!viewRestored)return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- external read-only ACF request (async result), not local setState
     void refresh(selectedRunId);
-    const timer = window.setInterval(() => void refresh(selectedRunId), POLL_MS);
-    return () => window.clearInterval(timer);
+    return visibleInterval(() => void refresh(selectedRunId), POLL_MS);
   }, [refresh, selectedRunId, viewRestored]);
 
   useEffect(() => {
@@ -1264,10 +1281,10 @@ export function TeamRoomView() {
       }
     }
     void loadSessions();
-    const timer = window.setInterval(() => void loadSessions(), 10_000);
+    const stopPoll = visibleInterval(() => void loadSessions(), 10_000);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stopPoll();
     };
   }, []);
 
@@ -1557,10 +1574,10 @@ export function TeamRoomView() {
     }
 
     void loadOperationalEvidence();
-    const timer = window.setInterval(() => void loadOperationalEvidence(), READINESS_POLL_MS);
+    const stopPoll = visibleInterval(() => void loadOperationalEvidence(), READINESS_POLL_MS);
     return () => {
       cancelled = true;
-      window.clearInterval(timer);
+      stopPoll();
     };
   }, [discussion]);
 
