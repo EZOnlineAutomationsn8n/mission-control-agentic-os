@@ -101,9 +101,10 @@ export function safeToStartCollaborationAfterReplies(
 
 /**
  * ACF semantics: an operator team-say opens an operator intervention, so the
- * run is PAUSED while the directed replies are made. The combined
- * "Verstuur + samenwerken" click must therefore end exactly that intervention
- * (team-resume, abandon_owed_replies=false) before team-collaborate.
+ * run is PAUSED while the directed replies are made. ACF team-collaborate itself
+ * ends an open intervention once no reply is owed (team_room.team_collaborate ->
+ * team_resume, one journal step). The combined "Verstuur + samenwerken" click may
+ * therefore call team-collaborate directly in that state.
  * True only when that intervention was opened AFTER the click (opened_seq >
  * lastSeqBeforeSend), every directed reply is settled, nothing is in flight,
  * no collaboration window is open or pending, and all chosen roles are bound.

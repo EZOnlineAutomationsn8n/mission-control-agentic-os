@@ -287,20 +287,12 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
         setNote("Opdracht opgeslagen; antwoorden nog niet bewezen afgerond. Geen samenwerking gestart en geen automatische retry. Controleer ACF en gebruik 'Open antwoorden ophalen'.");
         return;
       }
-      let current = await readView(run.runId);
+      const current = await readView(run.runId);
       // Our own team-say opened an ACF operator intervention (run PAUSED).
-      // End exactly that one, once, then re-read the journal before starting.
-      if (mayEndOwnInterventionForCollaboration(current, chosenRoles, lastSeqBeforeSend)) {
-        setBusy("free-room-send-collaborate");
-        const resumed = await callControl("team-resume", { run_id: run.runId, abandon_owed_replies: false });
-        if (!resumed.ok) {
-          if (isUncertainTurnOutcome(resumed.code)) setUncertain(true);
-          setNote("Antwoorden bewaard; pauze na jouw opdracht niet opgeheven: " + refusalText(resumed) + ". Geen samenwerking gestart, geen tweede verzoek.");
-          return;
-        }
-        current = await readView(run.runId);
-      }
-      if (!safeToStartCollaborationAfterReplies(current, chosenRoles)) {
+      // ACF team-collaborate ends that intervention itself (no reply owed),
+      // so that state is a valid start, exactly like an ACTIVE run.
+      if (!safeToStartCollaborationAfterReplies(current, chosenRoles) &&
+          !mayEndOwnInterventionForCollaboration(current, chosenRoles, lastSeqBeforeSend)) {
         setNote("Antwoorden gelezen; ACF bevestigt geen veilige start van de samenwerking. Bestaand gesprek blijft intact; geen extra dispatch.");
         return;
       }
@@ -350,7 +342,10 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
       {ordered.map(m => {
         const operator = m.from === "OPERATOR" || m.from === "DENNIS";
         const member = byHandle.get(m.from);
-        const author = operator ? "Dennis" : member ? agentLabel(member.agent) + " · " + m.from : m.from;
+        // ACF writes its own routing notes (collaboration topic, hand-over) as OPERATOR
+        // messages; they are not words Dennis said, so they are labelled as system.
+        const acfSystem = operator && (m.origin?.via === "ACF_COLLAB" || m.origin?.via === "ACF_COLLAB_HANDOVER");
+        const author = acfSystem ? "Systeem (ACF)" : operator ? "Dennis" : member ? agentLabel(member.agent) + " · " + m.from : m.from;
         const replyTo = m.inReplyTo ? ordered.find(x => x.messageId === m.inReplyTo) : null;
         const messageCard = <article className={"rounded-lg border px-3 py-2 text-xs " + (operator ? "border-cyan-400/50 bg-cyan-950/30" : "border-border bg-panel-2")} data-testid={operator ? "free-room-operator-message" : "free-room-agent-message"}>
           <div className="flex flex-wrap justify-between gap-2"><strong>{author}</strong><span className="text-muted">#{m.sequence} · {m.kind} · naar {m.to}</span></div>
@@ -438,11 +433,17 @@ export function FreeRoomPanel({ run, busy, setBusy, callControl, waitForStep, re
         </button>}
       </div>
       {confirmStop && <div role="group" aria-label="Stop Free Room bevestigen" className="mt-2 rounded-md border border-warn p-3 text-xs" data-testid="free-room-stop-confirm">
-        <p>Wil je deze ACF-run definitief beëindigen? Het gesprek en bewijs blijven bewaard. Een geannuleerde run wordt niet opnieuw geopend.</p>
-        <div className="mt-2 flex gap-2">
+        <p><strong>Pauzeren of definitief afsluiten?</strong></p>
+        <p className="mt-1">Pauzeren: het gesprek staat stil en je kunt later verder met Hervat. Definitief afsluiten: de run gaat dicht en kan niet meer verder; gesprek en bewijs blijven bewaard.</p>
+        <p className="mt-1 text-warn">Wil je nog ACK/NACK vragen? Doe dat vóór definitief afsluiten; daarna kan het niet meer.</p>
+        <div className="mt-2 flex flex-wrap gap-2">
           <button type="button" className="mc-button mc-button-secondary" onClick={()=>setConfirmStop(false)}>Annuleer</button>
+          <button type="button" data-testid="free-room-stop-pause-instead" className="mc-button mc-button-secondary"
+            title="Zet het gesprek stil. Later verder met Hervat."
+            disabled={!canPause} onClick={()=>{ setConfirmStop(false); void pauseRoom(); }}>Pauzeer (later verder)</button>
           <button type="button" data-testid="free-room-stop-confirm-button" className="mc-button mc-button-primary"
-            disabled={locked || uncertain} onClick={()=>void stopRoom()}>Bevestig stoppen</button>
+            title="Sluit deze run voorgoed. Kan niet worden heropend."
+            disabled={locked || uncertain} onClick={()=>void stopRoom()}>Definitief afsluiten</button>
         </div>
       </div>}
       <p className="mt-1 text-[11px] text-muted">Pauzeren gebruikt ACF team-intervene; hervatten gebruikt team-resume.
