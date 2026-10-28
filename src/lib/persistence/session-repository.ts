@@ -113,3 +113,31 @@ export async function listPersistedSessions<T>(
   );
   return result.rows.map((row) => row.payload);
 }
+
+/** Atomic single-row owner CAS; stale/racing state returns null, no upsert. */
+export async function recoverExistingClaudePersistedSession<T extends object>(
+ sessionKey:string,uuid:string,expectedUpdatedAt:string,expectedLastError:string,now:string,
+):Promise<T|null>{
+ const sql=[
+  "UPDATE agent_sessions",
+  " SET payload = payload || jsonb_build_object(",
+  "   'status','prepared','active',true,",
+  "   'lastError',NULL,'historyLastError',payload->>'lastError',",
+  "   'recoveryHold',true,'updatedAt',$5::text),",
+  "   updated_at = NOW()",
+  " WHERE session_kind='claude-code' AND agent_id='claude-code'",
+  "   AND session_key=$1 AND $1='acf-werkplaats-claude-code'",
+  "   AND payload->>'sessionKey'=$1",
+  "   AND payload->>'claudeSessionId'=$2",
+  "   AND payload->>'updatedAt'=$3",
+  "   AND payload->>'lastError'=$4",
+  "   AND payload->>'status'='error'",
+  "   AND payload->'active'='false'::jsonb",
+  "   AND (NOT (payload ? 'historyLastError') OR payload->'historyLastError'='null'::jsonb)",
+  "   AND NOT (payload ? 'recoveryHold')",
+  " RETURNING payload",
+ ].join(" ");
+ const result=await databaseQuery<SessionRow<T>>(sql,
+  [sessionKey,uuid,expectedUpdatedAt,expectedLastError,now]);
+ return result.rows[0]?.payload??null;
+}

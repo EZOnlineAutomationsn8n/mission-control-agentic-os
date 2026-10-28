@@ -4,11 +4,14 @@ import { isValidConversationKey } from "@/lib/agent-conversations/store";
 import { auditInitiatorFields, parseConversationInitiator } from "@/lib/agent-conversations/initiator";
 import { runClaudeCodeTurn } from "@/lib/claude-code/runner";
 import { isExistingSharedClaudeBinding, existingClaudeOwnerGet } from "@/lib/claude-code/werkplaats-existing-executor";
-import { createClaudeCodeSession, prepareClaudeAfcStageSession, readClaudeCodeSession, stopClaudeCodeSession, updateClaudeCodeSession } from "@/lib/claude-code/session-store";
+import { createClaudeCodeSession, prepareClaudeAfcStageSession, recoverExistingClaudeCodeSession, readClaudeCodeSession, stopClaudeCodeSession, updateClaudeCodeSession } from "@/lib/claude-code/session-store";
 import { classifyClaudeError, ACF_SESSION_PATTERN } from "@/lib/acf/werkplaats-session-recovery";
 import { FALLBACK_MODEL_ROUTES } from "@/lib/connectors/live/fcc-actions";
 import {validateWerkplaatsOperator} from "@/lib/connectors/live/manus-stage-setup";
 import { readFirstTurnReadiness } from "@/lib/acf/first-turn-readiness";
+import { readConversation } from "@/lib/agent-conversations/store";
+import { CLAUDE_R2_KEY, validateNativePendingTurns } from "@/lib/claude-code/recover-existing";
+import { validateRecoveryOperator } from "@/lib/claude-code/recovery-operator-auth";
 
 export const dynamic = "force-dynamic";
 
@@ -41,6 +44,41 @@ export async function POST(request: Request) {
   const parsedInitiator = parseConversationInitiator((body as { initiator?: unknown } | null)?.initiator);
   if (!parsedInitiator.ok) return NextResponse.json({ error: parsedInitiator.error }, { status: 400 });
   const initiator = parsedInitiator.initiator;
+  if (action === "recover-existing") {
+    if(sessionId!==CLAUDE_R2_KEY)
+      return NextResponse.json({error:"RECOVERY_KEY_NOT_ALLOWED",modelCalls:0},{status:403});
+    // Owner-correct operator auth: LIVE owner = LIVE Nginx realm (browser, same-origin);
+    // native-isolated stage = existing Werkplaats operator (fixtures). AGENTS MODE never
+    // proxies a recovery into :3330 — the operator performs it at the LIVE owner.
+    const unauthorized=await validateRecoveryOperator(request);
+    if(unauthorized)return NextResponse.json({error:unauthorized,modelCalls:0},{status:403});
+    const expectedNativeUuid=(body as {expectedNativeUuid?:unknown}|null)?.expectedNativeUuid;
+    if(typeof expectedNativeUuid!=="string")
+      return NextResponse.json({error:"RECOVERY_EXPECTED_NATIVE_UUID_REQUIRED",modelCalls:0},{status:400});
+    try{
+      // Reuse existing durable history. Unknown/pending native turns fail closed.
+      const history=await readConversation("claude-code",sessionId,200);
+      const blocked=validateNativePendingTurns(history,sessionId,expectedNativeUuid,history.length<200);
+      if(blocked)return NextResponse.json({error:blocked,modelCalls:0},{status:409});
+      const result=await recoverExistingClaudeCodeSession(sessionId,expectedNativeUuid);
+      if(result.code!=="RECOVERY_CAS_APPLIED")
+        return NextResponse.json({error:result.code,
+          sessionStatus:result.session?.status??null,modelCalls:0},{status:409});
+      const audit=await appendAuditEvent({
+        timestamp:new Date().toISOString(),connectorId:"claude-code",
+        actionType:"claude-code-session-recover-existing",status:"completed",
+        resultSummary:"Exact session owner CAS: error/inactive to prepared/active with unchanged UUID; native turn held",
+        ...auditInitiatorFields(initiator),source:"claude-code/session/route.ts:POST",
+      });
+      return NextResponse.json({session:result.session,code:result.code,
+        nativeTurnAllowed:false,requiresNativeResumabilityProof:true,modelCalls:0,
+        auditRecorded:audit.ok,auditError:audit.error??null});
+    }catch{
+      // Never retry an unknown CAS outcome. Operator inspects persisted state.
+      return NextResponse.json({error:"RECOVERY_CAS_OUTCOME_UNKNOWN_NO_RETRY",
+        modelCalls:0},{status:503});
+    }
+  }
 
   if (action === "prepare-stage") {
     if(process.env.MC_PREVIEW!=="1"||sessionId!=="acf-werkplaats-claude-code")
@@ -65,7 +103,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ session, auditRecorded: audit.ok, auditError: audit.error ?? null });
   }
-  if (action !== "start") return NextResponse.json({ error: "action must be start, stop or prepare-stage" }, { status: 400 });
+  if (action !== "start") return NextResponse.json({ error: "action must be start, stop, prepare-stage or recover-existing" }, { status: 400 });
 
   if(process.env.MC_PREVIEW==="1"){
     if(process.env.GAOS_STAGE_NATIVE_ISOLATED!=="1" ||

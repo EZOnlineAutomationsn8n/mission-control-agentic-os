@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { AcfTeamRoomRun } from "@/lib/acf/types";
 import { agentLabel, refusalText, type CallControl } from "./OperatorDeck";
 import { CLAUDE_AGENT, LEGACY_SESSION, classifyClaudeError } from "@/lib/acf/werkplaats-session-recovery";
+import { ClaudeR2RecoveryPanel } from "./ClaudeR2RecoveryPanel";
 
 export interface RosterSession {
   session_ref: string;
@@ -285,6 +286,7 @@ export function RosterTeamComposer({run,busy,callControl,onSelectRun,refresh,cho
             })():<>Laatste fout: {chosen.last_error}</>}
           </p>}
         </div>}
+        {a.agent_id===CLAUDE_AGENT && roster?.environment!=="WERKPLAATS" && <ClaudeR2RecoveryPanel/>}
         <label className="mt-2 block">Functies (optioneel, komma&apos;s)
           <input className={style+" mt-1"} value={choice.functions} onChange={e=>byKey(a.agent_id,{functions:e.target.value})} placeholder="analyse, review"/>
         </label>

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { validateRecoveryOperator } from "@/lib/claude-code/recovery-operator-auth";
 import { promptWithAttachments, resolveAttachments } from "@/lib/attachments/store";
 import { executeConversationRequest } from "@/lib/agent-conversations/service";
 import { parseConversationInitiator } from "@/lib/agent-conversations/initiator";
@@ -43,6 +44,39 @@ export async function POST(request: Request) {
     }));
   }
   const session = await readClaudeCodeSession(sessionId);
+  if(session?.recoveryHold === true){
+    // R2 hold release: exactly ONE operator-initiated resume of the SAME native UUID.
+    // No bootstrap, no --session-id, no new UUID, never a second attempt.
+    if((body as {recoveryResume?:unknown}|null)?.recoveryResume!==true)
+      return NextResponse.json({error:"CLAUDE_R2_RECOVERY_HOLD_USE_RECOVERY_RESUME",
+        modelCalls:0,sessionPreserved:true},{status:409});
+    const unauthorized=await validateRecoveryOperator(request);
+    if(unauthorized)return NextResponse.json({error:unauthorized,modelCalls:0},{status:403});
+    if(session.status!=="prepared"||session.active!==true||session.recoveryTurnStartedAt)
+      return NextResponse.json({error:"CLAUDE_R2_RECOVERY_TURN_ALREADY_ATTEMPTED_NO_RETRY",
+        sessionStatus:session.status,modelCalls:0},{status:409});
+    if(attachments.length)
+      return NextResponse.json({error:"CLAUDE_R2_RECOVERY_TURN_NO_ATTACHMENTS",modelCalls:0},{status:400});
+    const marked=await updateClaudeCodeSession(sessionId,{status:"running",
+      recoveryTurnStartedAt:new Date().toISOString()});
+    if(marked.claudeSessionId!==session.claudeSessionId)
+      return NextResponse.json({error:"CLAUDE_R2_NATIVE_UUID_CHANGED_NO_DISPATCH",modelCalls:0},{status:409});
+    const persisted = await executeConversationRequest({
+      agentId:"claude-code", sessionId, prompt:prompt.trim(), attachments:[],
+      actionType:"claude-code-r2-recovery-resume-turn",
+      initiator: parsedInitiator.initiator ?? undefined,
+      run: () => runClaudeCodeTurn({ session, prompt: effectivePrompt, create:false }),
+    });
+    const sameUuid=!persisted.entry.agentSessionId||persisted.entry.agentSessionId===session.claudeSessionId;
+    const recovered=persisted.entry.status==="completed"&&sameUuid;
+    await updateClaudeCodeSession(sessionId, recovered
+      ? {status:"idle",active:true,lastError:null,recoveryHold:false}
+      : {status:"error",active:false,
+         lastError:persisted.entry.error??(sameUuid?"CLAUDE_R2_RESUME_FAILED":"CLAUDE_R2_RESUME_RETURNED_FOREIGN_UUID")});
+    return NextResponse.json({...persisted.entry,recovered,nativeUuidPreserved:sameUuid,
+      auditRecorded:persisted.auditRecorded,auditError:persisted.auditError},
+      {status:persisted.auditRecorded?200:500});
+  }
   if (!session?.active) return NextResponse.json({ error: "Claude Code session is stopped; start it before sending a prompt" }, { status: 409 });
   if (session.status === "running" || session.status === "starting") {
     return NextResponse.json({ error: "Claude Code session is already busy" }, { status: 409 });

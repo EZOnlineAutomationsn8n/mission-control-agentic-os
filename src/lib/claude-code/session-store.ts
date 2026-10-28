@@ -1,10 +1,11 @@
 import { randomUUID } from "crypto";
+import {CLAUDE_R2_KEY,recoveredClaudeState,validateClaudeRecoverExisting} from "./recover-existing";
 import type { DisposableFixtureOwnership } from "./disposable-fixture-cleanup";
 import { promises as fs } from "fs";
 import path from "path";
 import { werkplaatsRuntimeRoot } from "@/lib/acf/runtime-root";
 import { databaseEnabled } from "@/lib/persistence/database";
-import { insertPersistedFixtureSession, listPersistedSessions, patchPersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
+import { insertPersistedFixtureSession, listPersistedSessions, patchPersistedSession, recoverExistingClaudePersistedSession, readPersistedSession, upsertPersistedSession } from "@/lib/persistence/session-repository";
 
 export type ClaudeCodeSessionStatus = "prepared" | "starting" | "idle" | "running" | "stopped" | "error";
 
@@ -20,6 +21,9 @@ export interface ClaudeCodeSession {
   createdAt: string;
   updatedAt: string;
   lastError: string | null;
+  historyLastError?: string | null;
+  recoveryHold?: boolean;
+  recoveryTurnStartedAt?: string | null;
   disposableFixture?: DisposableFixtureOwnership;
 }
 
@@ -110,7 +114,7 @@ export async function createClaudeCodeSession(sessionKey: string, fixture?: { or
 
 export async function updateClaudeCodeSession(
   sessionKey: string,
-  update: Partial<Pick<ClaudeCodeSession, "status" | "active" | "lastError">>
+  update: Partial<Pick<ClaudeCodeSession, "status" | "active" | "lastError" | "recoveryHold" | "recoveryTurnStartedAt">>
 ): Promise<ClaudeCodeSession> {
   if (databaseEnabled()) {
     return patchPersistedSession<ClaudeCodeSession>("claude-code", "claude-code", sessionKey, update);
@@ -153,4 +157,34 @@ export async function prepareClaudeAfcStageSession(sessionKey="acf-werkplaats-cl
     status:"prepared",active:true,
     lastError:null,
   });
+}
+
+/** R2 only. CAS never overwrites another registration or the native UUID. */
+export async function recoverExistingClaudeCodeSession(
+ key:string,uuid:string,
+):Promise<{session:ClaudeCodeSession|null;code:string}>{
+ if(key!==CLAUDE_R2_KEY)return {session:null,code:"RECOVERY_KEY_NOT_ALLOWED"};
+ if(databaseEnabled()){
+  const row=await readClaudeCodeSession(key);
+  const mismatch=validateClaudeRecoverExisting(row,key,uuid);
+  if(mismatch)return {session:row,code:mismatch};
+  if(!row)return {session:null,code:"RECOVERY_SESSION_NOT_FOUND"};
+  const changed=await recoverExistingClaudePersistedSession<ClaudeCodeSession>(
+    key,uuid,row.updatedAt,row.lastError!,new Date().toISOString());
+  return changed?{session:changed,code:"RECOVERY_CAS_APPLIED"}:
+    {session:await readClaudeCodeSession(key),code:"RECOVERY_CAS_CONFLICT"};
+ }
+ try{return await withFileSessionLock(async()=>{
+  const rows=await readSessions(),row=rows[key]??null;
+  const mismatch=validateClaudeRecoverExisting(row,key,uuid);
+  if(mismatch)return {session:row,code:mismatch};
+  if(!row)return {session:null,code:"RECOVERY_SESSION_NOT_FOUND"};
+  const changed=recoveredClaudeState(row,new Date().toISOString());
+  rows[key]=changed;await writeSessions(rows);
+  return {session:changed,code:"RECOVERY_CAS_APPLIED"};
+ });}catch(error){
+  if((error as NodeJS.ErrnoException).code==="EEXIST")
+   return {session:null,code:"RECOVERY_CAS_LOCK_CONFLICT"};
+  throw error;
+ }
 }
